@@ -19,6 +19,10 @@
     {
       "path": "Cargo.lock",
       "pattern": "^name = \"n8tray-platform\"\\nversion = \"(.*)\"$"
+    },
+    {
+      "path": "Cargo.lock",
+      "pattern": "^name = \"n8tray\"\\nversion = \"(.*)\"$"
     }
   ],
   "workflows": "package",

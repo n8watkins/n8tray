@@ -99,3 +99,15 @@ The snapshot types in `n8tray-core` derive `ts_rs::TS` instead: ts-rs is stable,
 Besides the contract's folders (modules, runtime), the host keeps `settings.json`, `status.json`, `logs/` and `history/` in `%LOCALAPPDATA%\N8Tray` on Windows, `~/Library/Application Support/N8Tray` on macOS, and the XDG config and state folders on Linux.
 `N8TRAY_HOME` moves all of it, and the contract's folders, under one folder.
 The status file is the snapshot the window shows, rewritten every 10 s and on every level change, so tests and scripts can read the host's state without a window.
+
+## D17. The window exists only while it is used (2026-11-09)
+
+The tray icon and its menu are native and need no WebView.
+The window (and its WebView2 processes) is created when it opens, hidden when it closes or loses focus, and destroyed 60 s after it was hidden, so its memory goes back to the system; reopening within 60 s is instant, later it takes a moment to create.
+The menu is rebuilt only when its shape changes (an app or an action appears or goes); otherwise only the texts and states that changed are updated, so an open menu does not flicker.
+
+## D18. The window gets four commands and no plugins (2026-11-09)
+
+`capabilities/hub.json` gives the window `get_snapshot`, `module_action`, `open_item` and `hide_window`, and the snapshot event, nothing else: no file system, shell, HTTP or opener plugin.
+`open_item` takes an app id and the key of an entry the manifest declared, never a path or URL, so the window cannot make N8 Tray open anything an app did not declare.
+The only plugin is single-instance, used in Rust: starting N8 Tray again opens the window, `--hide` closes it and `--exit` ends the running copy.

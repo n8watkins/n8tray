@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-module-action"
+description = "Enables the module_action command without any pre-configured scope."
+commands.allow = ["module_action"]
+
+[[permission]]
+identifier = "deny-module-action"
+description = "Denies the module_action command without any pre-configured scope."
+commands.deny = ["module_action"]

@@ -1,0 +1,22 @@
+{
+  "name": "n8tray-ui",
+  "private": true,
+  "version": "0.0.0",
+  "description": "N8 Tray's window: a view of the host's snapshot.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4",
+    "preact": "10.29.8"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "2.10.6",
+    "typescript": "5.9.3",
+    "vite": "7.3.7"
+  }
+}

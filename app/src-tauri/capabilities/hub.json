@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "hub",
+  "description": "The hub window: it hears the snapshot and asks for actions, nothing else. No plugin, file system, shell or HTTP access.",
+  "windows": ["hub"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-get-snapshot",
+    "allow-module-action",
+    "allow-open-item",
+    "allow-hide-window"
+  ]
+}

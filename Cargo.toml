@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "app/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,3 +14,9 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+
+# The tray stays resident all day: a smaller, stripped binary maps less into memory.
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true

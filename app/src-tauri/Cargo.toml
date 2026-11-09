@@ -1,0 +1,26 @@
+[package]
+name = "n8tray"
+description = "N8 Tray: one tray for local apps that follow the N8 Tray contract."
+version.workspace = true
+edition.workspace = true
+rust-version = "1.89"
+license.workspace = true
+repository.workspace = true
+default-run = "n8tray"
+
+[lints]
+workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+n8tray-core = { path = "../../crates/n8tray-core" }
+n8tray-platform = { path = "../../crates/n8tray-platform" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tauri = { version = "2.11.6", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2.4.5"
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "ansi"] }
