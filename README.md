@@ -12,8 +12,9 @@ This repository is new and is being built in phases.
 
 | Phase | What | State |
 |---|---|---|
-| 1 | The contract: specification, JSON Schema, fixtures and a conformance kit | In progress |
-| 2 to 5 | The Tauri app on Windows: host core, measurement, hub, checks and setup | Next |
+| 1 | The contract: specification, JSON Schema, fixtures and a conformance kit | Done (v0.1.0) |
+| 2 | The host core on Windows: discovery, supervision in Job Objects, status, lease, settings | In progress |
+| 3 to 5 | Measurement and memory pressure, the hub, checks and setup | Next |
 | 11, 12 | macOS and Linux | Later |
 
 The PowerShell N8 Tray that runs on the owner's PC today lives in a private repo until the Tauri app replaces it.
@@ -30,6 +31,10 @@ crates/
   n8tray-contract/       the contract's Rust types and validation
   n8tray-conformance/    the conformance kit: the n8tray-contract CLI (check, probe, the test tray)
                          and n8tray-fake-module
+  n8tray-platform/       the OS layer: process snapshots, Job Objects, memory, GPU counters,
+                         start at sign-in
+  n8tray-core/           the host without a window: discovery, intent, supervision, status,
+                         ownership, the lease, settings; tested against the fake module
 docs/
   DECISIONS.md       why things are the way they are
 ```
