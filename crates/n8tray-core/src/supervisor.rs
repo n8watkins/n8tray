@@ -8,6 +8,7 @@
 //! processes that pass ownership verification, and on Windows only inside
 //! the app's Job Object.
 
+use std::collections::HashMap;
 use std::path::Path;
 #[cfg(test)]
 use std::path::PathBuf;
@@ -20,12 +21,15 @@ use n8tray_contract::manifest::{
 };
 use n8tray_contract::status::{Level, State, Status};
 use n8tray_platform::container::Container;
+use n8tray_platform::gpu::GpuUse;
 
+use crate::alerts::{Alert, AlertState};
+use crate::demand::DemandState;
 use crate::discovery::Discovered;
 use crate::folders::Folders;
 use crate::model::{
-    ActionKindView, ActionView, AppView, ComponentView, LevelName, MenuView, OpenView, OutcomeView,
-    ProcessView,
+    ActionKindView, ActionView, AppView, ComponentView, GpuView, HistoryView, LevelName, MenuView,
+    OpenView, OutcomeView, ProcessView,
 };
 use crate::resolve;
 use crate::settings::AppSettings;
@@ -41,6 +45,8 @@ pub const BACKOFF_SECONDS: [i64; 3] = [5, 30, 120];
 pub const CRASH_WINDOW_MINUTES: i64 = 10;
 /// How long an action's outcome stays on the row.
 pub const OUTCOME_SECONDS: i64 = 10;
+/// How long the app's own figures may differ from the host's before it is noted.
+pub const MISMATCH_SECONDS: i64 = 60;
 
 /// The app's root process.
 pub struct Root {
@@ -87,6 +93,14 @@ pub struct AppRuntime {
     pub start_error: Option<String>,
     /// "Start with N8 Tray" was applied (once, when the app was first found).
     pub auto_start_applied: bool,
+    pub alerts: AlertState,
+    pub alert: Option<Alert>,
+    /// The app's demand rule, when it has one.
+    pub demand: Option<DemandState>,
+    /// The pressure level the app last accepted.
+    pub pressure_sent: Option<LevelName>,
+    /// Since when the app's own figures differ from the host's by over 25%.
+    pub mismatch_since: Option<DateTime<Utc>>,
 }
 
 /// What the app needs from the host for one decision.
@@ -97,6 +111,24 @@ pub struct Context<'a> {
     pub table: &'a ProcessTable,
     /// The PowerShell tray runs: watch only.
     pub watch_only: bool,
+    /// GPU use per process, where the OS has counters.
+    pub gpu: &'a HashMap<u32, GpuUse>,
+    pub history: Option<HistoryView>,
+}
+
+/// What the host measured for one app.
+#[derive(Debug, Clone, Default)]
+pub struct Measured {
+    pub memory_mb: Option<f64>,
+    pub private_mb: Option<f64>,
+    pub cpu_percent: Option<f64>,
+    pub gpu: Option<GpuView>,
+    pub processes: Vec<ProcessView>,
+    pub counted: usize,
+    /// For the processes both the app reported and the host counted: what
+    /// the app says and what the host measures, in MiB.
+    pub reported_mb: f64,
+    pub measured_reported_mb: f64,
 }
 
 impl AppRuntime {
@@ -116,6 +148,11 @@ impl AppRuntime {
             attribution: Attribution::default(),
             start_error: None,
             auto_start_applied: false,
+            alerts: AlertState::default(),
+            alert: None,
+            demand: None,
+            pressure_sent: None,
+            mismatch_since: None,
         }
     }
 
@@ -223,13 +260,19 @@ impl AppRuntime {
         if !exited {
             return false;
         }
-        self.root = None;
+        let exited_pid = self.root.take().map(|r| r.pid);
         // A status from another process of the same app (it handed over to
         // an instance that already ran) is adopted next tick, not a crash.
+        // A status that still names the process that just exited is not one.
         let handed_over = self
             .status()
-            .is_some_and(|s| table.is_alive(s.pid, s.pid_started_at));
-        self.stopping.is_none() && !handed_over
+            .is_some_and(|s| Some(s.pid) != exited_pid && table.is_alive(s.pid, s.pid_started_at));
+        if handed_over {
+            return false;
+        }
+        // Its last status is gone with it.
+        self.observation = Observation::Absent;
+        self.stopping.is_none()
     }
 
     /// Notes a crash and plans the restart, or gives up after the fourth
@@ -263,6 +306,10 @@ impl AppRuntime {
         let busy = self.pending.is_some() || self.stopping.is_some();
         let (state, summary, detail) = self.state(ctx, running, should_run);
         let mut level: LevelName = state.level(should_run).into();
+        let alert = self.alert.as_ref().filter(|_| running && settings.enabled);
+        if let Some(alert) = alert {
+            level = level.max(alert.level);
+        }
         if !settings.enabled {
             level = LevelName::Off;
         }
@@ -374,7 +421,7 @@ impl AppRuntime {
             })
             .collect();
 
-        let (memory_mb, private_mb, processes) = self.measure(ctx.table);
+        let measured = self.measure(ctx.table, ctx.gpu);
         let namespaced: f64 = self
             .status()
             .and_then(|s| s.resources.namespaces.as_ref())
@@ -386,6 +433,15 @@ impl AppRuntime {
         }
         if matches!(self.observation, Observation::Unauthorized) {
             notes.push("The app refused N8 Tray's token".into());
+        }
+        if self
+            .mismatch_since
+            .is_some_and(|since| ctx.now - since >= Duration::seconds(MISMATCH_SECONDS))
+        {
+            notes.push(format!(
+                "The app reports {:.0} MB for its processes; N8 Tray measures {:.0} MB",
+                measured.reported_mb, measured.measured_reported_mb
+            ));
         }
 
         AppView {
@@ -427,12 +483,14 @@ impl AppRuntime {
             components,
             open,
             menu,
-            memory_mb,
-            private_mb,
-            cpu_percent: None,
-            gpu: None,
+            memory_mb: measured.memory_mb,
+            private_mb: measured.private_mb,
+            cpu_percent: measured.cpu_percent,
+            gpu: measured.gpu,
             namespaced_mb: (namespaced > 0.0).then_some(round1(namespaced)),
-            processes,
+            processes: measured.processes,
+            alert: alert.and_then(|a| a.text.clone()),
+            history: ctx.history.clone(),
             notes,
         }
     }
@@ -460,6 +518,20 @@ impl AppRuntime {
         }
         if let Some(status) = self.status() {
             return (status.state, status.summary.clone(), status.detail.clone());
+        }
+        if !running && self.demand.as_ref().is_some_and(|d| d.idle) {
+            let names = self
+                .manifest()
+                .lifecycle
+                .as_ref()
+                .and_then(|l| l.demand.as_ref())
+                .map(|d| d.processes.join(", "))
+                .unwrap_or_default();
+            return (
+                State::Idle,
+                "Sleeping, starts when needed".into(),
+                Some(format!("Starts again when one of these runs: {names}")),
+            );
         }
         if running {
             let since = self
@@ -508,35 +580,50 @@ impl AppRuntime {
         (State::Stopped, summary, None)
     }
 
-    /// Memory of counted processes and the process table for the panel.
-    fn measure(&self, table: &ProcessTable) -> (Option<f64>, Option<f64>, Vec<ProcessView>) {
+    /// The host's own figures for the app's counted processes, and the
+    /// process table for the panel.
+    pub fn measure(&self, table: &ProcessTable, gpu: &HashMap<u32, GpuUse>) -> Measured {
         let reported = self
             .status()
             .map(|s| s.resources.processes.clone())
             .unwrap_or_default();
-        let mut rss = 0.0;
-        let mut private = 0.0;
-        let mut any_private = false;
-        let mut views = Vec::new();
+        let mut m = Measured::default();
+        let (mut rss, mut private, mut cpu, mut gpu_mem, mut gpu_pct) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        let (mut any_private, mut any_cpu, mut any_gpu) = (false, false, false);
         for (&pid, verdict) in &self.attribution.verdicts {
             let os = table.get(pid);
             let r = reported.iter().find(|p| p.pid == pid);
             let counted = matches!(verdict, Verdict::Verified | Verdict::Unreported);
+            let process_cpu = table.cpu_percent(pid);
             if counted && let Some(p) = os {
+                m.counted += 1;
                 rss += mib(p.rss_bytes);
                 if let Some(b) = p.private_bytes {
                     private += mib(b);
                     any_private = true;
                 }
+                if let Some(c) = process_cpu {
+                    cpu += c;
+                    any_cpu = true;
+                }
+                if let Some(g) = gpu.get(&pid) {
+                    gpu_mem += g.mem_mb;
+                    gpu_pct += g.percent;
+                    any_gpu = true;
+                }
+                if let Some(r) = r {
+                    m.reported_mb += r.rss_mb;
+                    m.measured_reported_mb += mib(p.rss_bytes);
+                }
             }
-            views.push(ProcessView {
+            m.processes.push(ProcessView {
                 pid,
                 role: r.map(|p| format!("{:?}", p.role).to_lowercase()),
                 component: r.and_then(|p| p.component().map(str::to_string)),
                 name: os.map(|p| p.name.clone()).unwrap_or_default(),
                 rss_mb: os.map(|p| round1(mib(p.rss_bytes))),
                 private_mb: os.and_then(|p| p.private_bytes).map(|b| round1(mib(b))),
-                cpu_percent: None,
+                cpu_percent: process_cpu.map(round1),
                 started_at: os
                     .map(|p| crate::util::timestamp(p.started_at))
                     .or_else(|| r.map(|p| crate::util::timestamp(p.started_at)))
@@ -547,7 +634,7 @@ impl AppRuntime {
         }
         if let Some(status) = self.status() {
             for p in status.resources.namespaces.iter().flatten() {
-                views.push(ProcessView {
+                m.processes.push(ProcessView {
                     pid: p.pid,
                     role: p.role.map(|r| format!("{r:?}").to_lowercase()),
                     component: p.component.clone().flatten(),
@@ -561,12 +648,52 @@ impl AppRuntime {
                 });
             }
         }
-        let counted = self.attribution.counted().count() > 0;
-        (
-            counted.then_some(round1(rss)),
-            (counted && any_private).then_some(round1(private)),
-            views,
-        )
+        if m.counted > 0 {
+            m.memory_mb = Some(round1(rss));
+            m.private_mb = any_private.then_some(round1(private));
+            m.cpu_percent = any_cpu.then_some(round1(cpu));
+        }
+        // The host's GPU counters where it has them, else what the app reports.
+        let reported_gpu: Vec<_> = reported
+            .iter()
+            .filter(|p| self.attribution.is_owned(p.pid))
+            .filter_map(|p| p.gpu.as_ref())
+            .collect();
+        m.gpu = if any_gpu {
+            Some(GpuView {
+                mem_mb: Some(round1(gpu_mem)),
+                percent: Some(round1(gpu_pct.min(100.0))),
+                source: "measured".into(),
+            })
+        } else if !reported_gpu.is_empty() {
+            Some(GpuView {
+                mem_mb: Some(round1(reported_gpu.iter().filter_map(|g| g.mem_mb).sum())),
+                percent: Some(round1(
+                    reported_gpu
+                        .iter()
+                        .filter_map(|g| g.percent)
+                        .sum::<f64>()
+                        .min(100.0),
+                )),
+                source: "reported".into(),
+            })
+        } else {
+            None
+        };
+        m
+    }
+
+    /// Notes when the app's own memory figures stay over 25% off the host's.
+    pub fn track_mismatch(&mut self, measured: &Measured, now: DateTime<Utc>) {
+        let off = measured.measured_reported_mb > 1.0
+            && ((measured.reported_mb - measured.measured_reported_mb).abs()
+                / measured.measured_reported_mb)
+                > 0.25;
+        if !off {
+            self.mismatch_since = None;
+        } else if self.mismatch_since.is_none() {
+            self.mismatch_since = Some(now);
+        }
     }
 
     fn component_memory(&self, table: &ProcessTable, component: &str) -> f64 {
@@ -728,12 +855,15 @@ mod tests {
         let folders = Folders::under(Path::new("/t"));
         let table = ProcessTable::default();
         let mut settings = AppSettings::default();
+        let gpu = HashMap::new();
         let ctx = |settings: AppSettings| Context {
             folders: &folders,
             settings,
             now: Utc::now(),
             table: &table,
             watch_only: false,
+            gpu: &gpu,
+            history: None,
         };
         let view = app.view(&ctx(settings.clone()));
         assert_eq!(view.state, "stopped");

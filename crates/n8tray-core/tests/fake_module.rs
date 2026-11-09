@@ -59,6 +59,7 @@ struct Tray {
     folders: Folders,
     host: Option<HostHandle>,
     latest: Arc<Mutex<Option<Arc<HostSnapshot>>>>,
+    notices: Arc<Mutex<Vec<String>>>,
 }
 
 impl Tray {
@@ -71,6 +72,7 @@ impl Tray {
             folders,
             host: None,
             latest: Arc::new(Mutex::new(None)),
+            notices: Arc::new(Mutex::new(Vec::new())),
         };
         tray.start_host();
         tray
@@ -79,10 +81,14 @@ impl Tray {
     fn start_host(&mut self) {
         let mut options = Options::new(self.folders.clone());
         options.tick = Duration::from_millis(200);
+        options.sample_open = Duration::from_millis(500);
+        options.sample_closed = Duration::from_millis(500);
         let latest = Arc::clone(&self.latest);
-        let host = host::start(options, move |event| {
-            if let Event::Snapshot(s) = event {
-                *latest.lock().unwrap() = Some(s);
+        let notices = Arc::clone(&self.notices);
+        let host = host::start(options, move |event| match event {
+            Event::Snapshot(s) => *latest.lock().unwrap() = Some(s),
+            Event::Notify { title, body } => {
+                notices.lock().unwrap().push(format!("{title}: {body}"))
             }
         })
         .expect("the host starts");
@@ -570,4 +576,146 @@ fn one_host_at_a_time() {
         assert!(Instant::now() < end, "the status file appears");
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+/// Starts a tray whose settings are written first.
+fn tray_with_settings(settings: serde_json::Value) -> Tray {
+    let dir = tempfile::tempdir().unwrap();
+    let folders = Folders::under(dir.path());
+    std::fs::create_dir_all(&folders.modules).unwrap();
+    std::fs::write(&folders.settings_file, settings.to_string()).unwrap();
+    let mut tray = Tray {
+        _dir: dir,
+        folders,
+        host: None,
+        latest: Arc::new(Mutex::new(None)),
+        notices: Arc::new(Mutex::new(Vec::new())),
+    };
+    tray.start_host();
+    tray
+}
+
+#[test]
+fn pushes_memory_pressure_and_measures_cpu_and_history() {
+    // Thresholds no computer meets: the first reading is a problem at once.
+    let tray = tray_with_settings(json!({
+        "memory": { "attentionBelowGiB": 200000, "problemBelowGiB": 100000 }
+    }));
+    let port = free_port().to_string();
+    tray.write_manifest(
+        "pressured",
+        fake_manifest(
+            "pressured",
+            json!({ "type": "http", "url": format!("http://127.0.0.1:{port}/n8/v2/status"), "intervalSeconds": 1, "timeoutMs": 1000 }),
+            &["--status", "http", "--port", &port, "--interval-seconds", "1"],
+            json!({ "lifecycle": { "features": ["pressure"] }, "autoStartDefault": true }),
+        ),
+    );
+    let snapshot = tray.wait("the problem level", |s| {
+        s.memory.level == LevelName::Problem && s.pressure == LevelName::Problem
+    });
+    assert_eq!(snapshot.level, LevelName::Problem);
+    // The app hears it (its summary repeats the level it got).
+    tray.wait_app("pressured", "the pushed level", |a| {
+        a.summary.ends_with("pressure problem")
+    });
+    assert!(
+        tray.notices
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|n| n.starts_with("Low memory")),
+        "a problem notifies"
+    );
+    // CPU needs two samples; history fills in 10 s steps.
+    let app = tray.wait_app("pressured", "CPU and history", |a| {
+        a.cpu_percent.is_some()
+            && a.history
+                .as_ref()
+                .is_some_and(|h| h.memory_mb.iter().any(|m| *m > 0.0))
+    });
+    assert_eq!(app.history.unwrap().memory_mb.len(), 90);
+    let snapshot = tray.wait("the tray's own CPU", |s| s.tray.cpu_percent.is_some());
+    assert!(snapshot.tray.history.is_some());
+}
+
+#[test]
+fn alerts_when_an_app_goes_over_its_budget() {
+    let tray = Tray::start();
+    tray.write_manifest(
+        "hungry",
+        fake_manifest(
+            "hungry",
+            json!({ "type": "file", "intervalSeconds": 1 }),
+            &[
+                "--status",
+                "file",
+                "--eat-mb",
+                "64",
+                "--interval-seconds",
+                "1",
+            ],
+            json!({
+                "resources": { "budget": { "warnMb": 10, "maxMb": 20, "sustainSeconds": 10 } },
+                "autoStartDefault": true
+            }),
+        ),
+    );
+    let app = tray.wait_app("hungry", "the over-limit alert", |a| {
+        a.alert.is_some() && a.level == LevelName::Problem
+    });
+    assert_eq!(app.alert.as_deref(), Some("Over its 20 MB limit"));
+    let notices = tray.notices.lock().unwrap().clone();
+    assert_eq!(
+        notices
+            .iter()
+            .filter(|n| n.contains("Over its 20 MB limit"))
+            .count(),
+        1,
+        "once per episode: {notices:?}"
+    );
+}
+
+#[test]
+fn an_app_with_a_demand_rule_sleeps_until_its_process_runs() {
+    let tray = Tray::start();
+    // A program named "demandprobe" plays the browser.
+    let probe_dir = tempfile::tempdir().unwrap();
+    let probe = probe_dir
+        .path()
+        .join(format!("demandprobe{}", std::env::consts::EXE_SUFFIX));
+    std::fs::copy(fake_module(), &probe).unwrap();
+    tray.write_manifest(
+        "sleepy",
+        fake_manifest(
+            "sleepy",
+            json!({ "type": "file", "intervalSeconds": 1 }),
+            &["--status", "file", "--interval-seconds", "1"],
+            json!({
+                "lifecycle": { "demand": { "processes": ["demandprobe"], "stopAfterMinutes": 1 } },
+                "autoStartDefault": true
+            }),
+        ),
+    );
+    let app = tray.wait_app("sleepy", "the app to sleep", |a| a.state == "idle");
+    assert_eq!(app.level, LevelName::Ok, "sleeping is healthy");
+    assert!(!app.running);
+
+    let mut child = Command::new(&probe)
+        .args([
+            "--id",
+            "probe",
+            "--status",
+            "file",
+            "--exit-after-seconds",
+            "120",
+        ])
+        .env("N8TRAY_RUN_DIR", tray.run_dir())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let app = tray.wait_app("sleepy", "the app to wake up", |a| a.state == "ready");
+    assert!(app.running);
+    let _ = child.kill();
+    let _ = child.wait();
 }

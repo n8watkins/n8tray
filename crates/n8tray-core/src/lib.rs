@@ -9,12 +9,16 @@
 //! processes they own ([`verify`]), writes the host lease ([`lease`]) and
 //! publishes one [`model::HostSnapshot`] for the tray and the window to show.
 
+pub mod alerts;
+pub mod demand;
 pub mod discovery;
 pub mod folders;
+pub mod history;
 pub mod host;
 pub mod lease;
 pub mod logging;
 pub mod model;
+pub mod pressure;
 pub mod resolve;
 pub mod settings;
 pub mod status_io;

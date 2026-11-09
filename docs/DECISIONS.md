@@ -111,3 +111,43 @@ The menu is rebuilt only when its shape changes (an app or an action appears or 
 `capabilities/hub.json` gives the window `get_snapshot`, `module_action`, `open_item` and `hide_window`, and the snapshot event, nothing else: no file system, shell, HTTP or opener plugin.
 `open_item` takes an app id and the key of an entry the manifest declared, never a path or URL, so the window cannot make N8 Tray open anything an app did not declare.
 The only plugin is single-instance, used in Rust: starting N8 Tray again opens the window, `--hide` closes it and `--exit` ends the running copy.
+
+## D20. One measurement pass, at the window's pace (2026-11-09)
+
+The host measures every process with one OS snapshot per pass: every 3 s while the window is open or while something is happening (a start, a stop, an action, a planned restart, an app waiting for its demand process), every 10 s otherwise.
+CPU is the CPU time a process used between two passes over the wall time and every logical processor, as Task Manager shows it; the first pass after a process appears has none ("measuring").
+GPU counters, the most expensive read, are taken at most every 10 s, and only on Windows.
+The figures users see are the host's for every process it counts; an app's own figures are used only for processes inside WSL and, when the host has no counters, for GPU, and a gap over 25% for a minute becomes a note in the panel.
+A test measures one pass's CPU cost on every CI runner and fails above 0.1% of the machine at the 10 s pace (0.5% for debug builds).
+
+## D21. Two memory levels from one reading (2026-11-09)
+
+System memory has the PowerShell tray's thresholds and hysteresis: attention below 3.0 GB free, problem below 1.5 GB, back only 10% above the threshold (3.3 and 1.65 GB).
+The level shown in the tray dwells 10 s both ways, as before.
+The level pushed to apps with the `pressure` feature enters after the same 10 s but recovers only after 60 s, so an engine is not stopped and started again every few seconds while memory hovers (plan 5.5).
+A problem notifies once per episode, as do an app's memory alerts; CPU alerts only color the row.
+
+## D22. History in memory and in day files (2026-11-09)
+
+Every app and the tray itself keep 15 minutes in memory at 10 s resolution (the maximum memory and average CPU of each 10 s), sent with the snapshot for the sparklines.
+On disk, one row per app per minute goes to `history/YYYY-MM-DD.csv` (UTC days): minute, app, memory, private memory, CPU, GPU memory and process count, kept for `history.keepDays` days (7).
+CSV keeps the files readable without N8 Tray and cheap to append.
+
+## D19. A lean WebView2, and handing memory back when idle (2026-11-09)
+
+Measured on the owner's PC (Windows 11, WebView2 157), with the window open:
+
+| WebView2 arguments | Processes | Working set | Private |
+|---|---|---|---|
+| Tauri's defaults | 6 | 344 MB | 157 MB |
+| plus `--in-process-gpu` | 5 | 297 MB | 118 MB |
+| plus `--disable-gpu --in-process-gpu --renderer-process-limit=1 --disable-background-networking` | 5 | 275 MB | 90 MB |
+
+The window is a small static page, so it needs no GPU process and at most one renderer: the last row is the default.
+`N8TRAY_WEBVIEW_ARGS` replaces the arguments, for measuring.
+Most of WebView2's working set is shared, mapped runtime code; its private bytes are what it costs the system.
+
+The tray hands its unused resident pages back to Windows (EmptyWorkingSet) 30 s after start and after its window is destroyed: start-up and the WebView touch far more memory than an idle tray keeps.
+Measured, the idle tray's working set went from 33 MB to 5.4 MB (12.8 MB private), and back to 5.6 MB 70 s after the window closed.
+
+The tray's own figures are its process and its window's processes, never the apps it started, although those are its child processes too.

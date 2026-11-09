@@ -19,7 +19,11 @@ headline: string,
 /**
  * The first reason for the level, such as "VoiceDock: Stopped: crashed".
  */
-reason: string | null, running: number, total: number, memory: MemoryView, apps: Array<AppView>, problems: Array<ProblemView>, tray: TrayUsage, 
+reason: string | null, running: number, total: number, memory: MemoryView, 
+/**
+ * The memory pressure level pushed to apps (10 s in, 60 s out).
+ */
+pressure: LevelName, apps: Array<AppView>, problems: Array<ProblemView>, tray: TrayUsage, 
 /**
  * The tray's hover text, at most 127 characters.
  */

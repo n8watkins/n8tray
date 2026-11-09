@@ -102,6 +102,7 @@ fn main() {
                 hub::show(app, None);
             }
         }))
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_snapshot,
             commands::module_action,
@@ -129,12 +130,27 @@ fn main() {
                     tray::update(&events, &snapshot);
                 }
                 Event::Notify { title, body } => {
-                    info!("Notice: {title}: {body}");
+                    use tauri_plugin_notification::NotificationExt;
+                    info!("Notification: {title}: {body}");
+                    if let Err(e) = events
+                        .notification()
+                        .builder()
+                        .title(&title)
+                        .body(&body)
+                        .show()
+                    {
+                        warn!("The notification could not be shown: {e}");
+                    }
                 }
             });
             match started {
                 Ok(host) => {
                     *handle.state::<AppState>().host.lock().unwrap() = Some(host);
+                    // Start-up touches far more memory than an idle tray keeps.
+                    std::thread::spawn(|| {
+                        std::thread::sleep(Duration::from_secs(30));
+                        n8tray_platform::memory::trim_own_working_set();
+                    });
                     info!(
                         "N8 Tray {} started{}",
                         n8tray_core::VERSION,

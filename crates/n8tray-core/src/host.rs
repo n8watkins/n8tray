@@ -14,21 +14,26 @@ use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{DateTime, Duration, Utc};
 use n8tray_contract::action::{ActionResult, Outcome};
-use n8tray_contract::manifest::{ActionKind, StatusSource, StopKind};
+use n8tray_contract::manifest::{ActionKind, LifecycleFeature, StatusSource, StopKind};
 use n8tray_platform::autostart::{self, Autostart, Location};
 use n8tray_platform::container::Container;
+use n8tray_platform::gpu::{GpuSampler, GpuUse};
 use n8tray_platform::process::Processes;
 use n8tray_platform::spawn::{SpawnSpec, spawn};
 use n8tray_platform::{folders as pfolders, legacy, memory, signal};
 use tracing::{info, warn};
 
+use crate::alerts::Budget;
+use crate::demand::{self, DemandState};
 use crate::discovery::{self, Problem};
 use crate::folders::Folders;
+use crate::history::{self, History};
 use crate::lease::{HostLock, LeaseWriter};
 use crate::logging::Limiter;
 use crate::model::{
     HostSnapshot, LevelName, MemoryView, ProblemView, SettingsView, TrayUsage, UpdateView,
 };
+use crate::pressure::Hysteresis;
 use crate::resolve;
 use crate::settings::{self, Channel};
 use crate::status_io::{self, ActionError, Http, Observation};
@@ -46,6 +51,11 @@ pub struct Options {
     pub check_updates: bool,
     /// The tick's period.
     pub tick: StdDuration,
+    /// How often the host measures every process while the window is open,
+    /// or while something is happening (plan 3.2).
+    pub sample_open: StdDuration,
+    /// How often it measures while the window is closed.
+    pub sample_closed: StdDuration,
 }
 
 impl Options {
@@ -56,6 +66,8 @@ impl Options {
             autostart_location: Location::User,
             check_updates: false,
             tick: StdDuration::from_secs(1),
+            sample_open: StdDuration::from_secs(3),
+            sample_closed: StdDuration::from_secs(10),
         }
     }
 }
@@ -248,6 +260,10 @@ enum Done {
         result: Result<ActionResult, String>,
     },
     Update(Result<update::Outcome, String>),
+    Pressure {
+        app: String,
+        accepted: bool,
+    },
 }
 
 #[derive(Default)]
@@ -281,10 +297,21 @@ struct Host {
     legacy_checked: Option<Instant>,
     limiter: Limiter,
     last: Option<Arc<HostSnapshot>>,
-    status_written: Option<(Instant, LevelName)>,
+    /// When the status file was written, and the states it had.
+    status_written: Option<(Instant, String)>,
     update: UpdateState,
     sign_in_foreign: bool,
     window_open: bool,
+    cpus: u32,
+    gpu_sampler: Option<GpuSampler>,
+    gpu: HashMap<u32, GpuUse>,
+    gpu_at: Option<Instant>,
+    history: History,
+    /// System memory: the level shown and the level pushed to apps.
+    display_pressure: Hysteresis,
+    push_pressure: Hysteresis,
+    memory: Option<memory::SystemMemory>,
+    memory_notified: bool,
 }
 
 impl Host {
@@ -316,6 +343,10 @@ impl Host {
             );
         }
         let (done_tx, done_rx) = mpsc::channel();
+        let history_dir = options.folders.history.clone();
+        let keep_days = settings.settings.history.keep_days;
+        let attention = settings.settings.memory.attention_below_gib;
+        let problem = settings.settings.memory.problem_below_gib;
         info!(
             "N8 Tray {} host started, pid {pid}, modules {}, runtime {}",
             crate::VERSION,
@@ -349,6 +380,15 @@ impl Host {
             update: UpdateState::default(),
             sign_in_foreign: false,
             window_open: false,
+            cpus: n8tray_platform::process::logical_cpus(),
+            gpu_sampler: GpuSampler::new(),
+            gpu: HashMap::new(),
+            gpu_at: None,
+            history: History::new(&history_dir, keep_days),
+            display_pressure: Hysteresis::display(attention, problem),
+            push_pressure: Hysteresis::push(attention, problem),
+            memory: None,
+            memory_notified: false,
         }
     }
 
@@ -396,22 +436,33 @@ impl Host {
             self.rescan_due = None;
             self.reconcile();
         }
-        if self
-            .table_at
-            .is_none_or(|t| t.elapsed() >= StdDuration::from_millis(900))
-        {
+        let interval = if self.window_open || self.busy() {
+            self.options.sample_open
+        } else {
+            self.options.sample_closed
+        };
+        let mut sampled = false;
+        if self.table_at.is_none_or(|t| t.elapsed() >= interval) {
             match self.processes.snapshot() {
-                Ok(snapshot) => self.table = ProcessTable::new(snapshot),
+                Ok(snapshot) => {
+                    let table = ProcessTable::new(snapshot).with_cpu_from(&self.table, self.cpus);
+                    self.table = table;
+                    self.table_at = Some(Instant::now());
+                    sampled = true;
+                }
                 Err(e) => {
+                    self.table_at = Some(Instant::now());
                     if self.limiter.due("snapshot", &e.to_string(), now) {
                         warn!("The process table could not be read: {e}");
                     }
                 }
             }
-            self.table_at = Some(Instant::now());
         }
         self.check_legacy();
         self.observe(now);
+        if sampled {
+            self.sample(now);
+        }
         self.auto_start(now);
         self.supervise(now);
         if !self.watch_only() {
@@ -602,6 +653,21 @@ impl Host {
                 continue;
             }
             app.wanted = true;
+            // With a demand rule, it starts only while a demand process runs.
+            if let Some(demand) = app
+                .manifest()
+                .lifecycle
+                .as_ref()
+                .and_then(|l| l.demand.clone())
+                && !demand.processes.iter().any(|p| self.table.has_program(p))
+            {
+                app.demand = Some(DemandState::sleeping());
+                info!(
+                    "{id}: sleeping until one of {} runs",
+                    demand.processes.join(", ")
+                );
+                continue;
+            }
             if !app.running(&self.table) && app.manifest().run.is_some() {
                 info!("{id}: starting with N8 Tray");
                 if let Err(e) = self.start_app(&id, now) {
@@ -609,6 +675,243 @@ impl Host {
                 }
             }
         }
+    }
+
+    /// The tray's own processes: itself and its descendants (its window's
+    /// WebView), without the apps it started, which are its children too.
+    fn own_processes(&self) -> Vec<u32> {
+        let apps: std::collections::HashSet<u32> = self
+            .apps
+            .values()
+            .flat_map(|a| a.attribution.verdicts.keys().copied())
+            .collect();
+        let mut own = vec![self.pid];
+        let mut stack = vec![self.pid];
+        while let Some(pid) = stack.pop() {
+            for child in self.table.children(pid) {
+                if !apps.contains(&child) && !own.contains(&child) {
+                    own.push(child);
+                    stack.push(child);
+                }
+            }
+        }
+        own
+    }
+
+    /// Whether something is happening that needs the faster sampling:
+    /// a start, a stop, an action, a planned restart or an app waiting for
+    /// its demand process.
+    fn busy(&self) -> bool {
+        self.apps.values().any(|a| {
+            a.pending.is_some()
+                || a.stopping.is_some()
+                || a.restart_at.is_some()
+                || a.demand.as_ref().is_some_and(|d| d.idle)
+                || a.root.as_ref().is_some_and(|r| r.started_at.is_none())
+                || (a.root.is_some() && a.status().is_none())
+        })
+    }
+
+    /// One measurement pass (plan 3.2 to 3.5, 5.3 and 5.5): GPU counters,
+    /// system memory pressure, history, alerts, demand rules.
+    fn sample(&mut self, now: DateTime<Utc>) {
+        // GPU counters are the most expensive read: at most every 10 s.
+        if let Some(sampler) = self.gpu_sampler.as_mut()
+            && self
+                .gpu_at
+                .is_none_or(|t| t.elapsed() >= StdDuration::from_secs(10))
+        {
+            self.gpu = sampler.sample();
+            self.gpu_at = Some(Instant::now());
+        }
+
+        // System memory: the shown level and the level pushed to apps.
+        self.memory = memory::system_memory();
+        let settings = self.settings.settings.clone();
+        for h in [&mut self.display_pressure, &mut self.push_pressure] {
+            h.attention_below = settings.memory.attention_below_gib;
+            h.problem_below = settings.memory.problem_below_gib;
+        }
+        match self.memory {
+            Some(m) => {
+                let free = m.available_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+                let shown = self.display_pressure.step(free, now);
+                self.push_pressure.step(free, now);
+                if shown == LevelName::Problem && !self.memory_notified {
+                    self.memory_notified = true;
+                    self.notify("Low memory", &format!("{free:.1} GB free"));
+                } else if shown == LevelName::Ok {
+                    self.memory_notified = false;
+                }
+            }
+            None => {
+                self.display_pressure.reset();
+                self.push_pressure.reset();
+            }
+        }
+        let push = self.push_pressure.level().unwrap_or(LevelName::Ok);
+
+        self.history.set_keep_days(settings.history.keep_days);
+        let ids: Vec<String> = self.apps.keys().cloned().collect();
+        let mut notices = Vec::new();
+        let mut decisions = Vec::new();
+        let mut pushes = Vec::new();
+        for id in &ids {
+            let app = self.apps.get_mut(id).unwrap();
+            let user = settings.app(id);
+            let measured = app.measure(&self.table, &self.gpu);
+            app.track_mismatch(&measured, now);
+            if measured.counted > 0 {
+                let sample = history::Sample {
+                    memory_mb: measured.memory_mb.unwrap_or(0.0),
+                    private_mb: measured.private_mb,
+                    cpu_percent: measured.cpu_percent,
+                    gpu_mem_mb: measured.gpu.as_ref().and_then(|g| g.mem_mb),
+                    processes: measured.counted,
+                };
+                if let Err(e) = self.history.record(id, now, &sample)
+                    && self.limiter.due("history", &e.to_string(), now)
+                {
+                    warn!("Could not write the resource history: {e}");
+                }
+            }
+            let budget = Budget::resolve(
+                app.manifest()
+                    .resources
+                    .as_ref()
+                    .and_then(|r| r.budget.as_ref()),
+                user.budget.as_ref(),
+            );
+            let alert = app
+                .alerts
+                .step(measured.memory_mb, measured.cpu_percent, &budget, now);
+            if let Some(text) = &alert.notify {
+                notices.push((app.manifest().name.clone(), text.clone()));
+            }
+            if alert.text != app.alert.as_ref().and_then(|a| a.text.clone()) {
+                match &alert.text {
+                    Some(text) => warn!("{id}: {text}"),
+                    None if app.alert.as_ref().is_some_and(|a| a.text.is_some()) => {
+                        info!("{id}: back within its budget")
+                    }
+                    None => {}
+                }
+            }
+            app.alert = Some(alert);
+
+            // Memory pressure, to apps that take it, on every change and when they start.
+            if app.manifest().has_feature(LifecycleFeature::Pressure) && app.status().is_some() {
+                if app.pressure_sent != Some(push) && !self.legacy {
+                    app.pressure_sent = Some(push);
+                    pushes.push((id.clone(), push));
+                }
+            } else {
+                app.pressure_sent = None;
+            }
+
+            // Demand rules, for apps that should run.
+            if let Some(rule) = app
+                .manifest()
+                .lifecycle
+                .as_ref()
+                .and_then(|l| l.demand.clone())
+                && app.wanted
+                && user.enabled
+                && !self.legacy
+            {
+                let present = rule.processes.iter().any(|p| self.table.has_program(p));
+                let after = Duration::minutes(rule.stop_after_minutes.unwrap_or(10) as i64);
+                let decision = app.demand.get_or_insert_default().step(present, now, after);
+                decisions.push((id.clone(), decision, rule.processes.join(", ")));
+            }
+        }
+        // The tray itself, in the history too.
+        let tree = self.own_processes();
+        let tray_mb: f64 = tree
+            .iter()
+            .filter_map(|&p| self.table.get(p))
+            .map(|p| mib(p.rss_bytes))
+            .sum();
+        let tray_cpu: Option<f64> = tree.iter().map(|&p| self.table.cpu_percent(p)).sum();
+        let _ = self.history.record(
+            "n8tray",
+            now,
+            &history::Sample {
+                memory_mb: tray_mb,
+                private_mb: self
+                    .table
+                    .get(self.pid)
+                    .and_then(|p| p.private_bytes)
+                    .map(mib),
+                cpu_percent: tray_cpu,
+                gpu_mem_mb: None,
+                processes: tree.len(),
+            },
+        );
+
+        for (title, body) in notices {
+            self.notify(&title, &body);
+        }
+        for (id, decision, names) in decisions {
+            match decision {
+                demand::Decision::Stop => {
+                    info!("{id}: none of {names} has run for a while; stopping it to save memory");
+                    self.stop_app(&id, false, now);
+                }
+                demand::Decision::Start => {
+                    info!("{id}: one of {names} runs again; starting it");
+                    if !self.apps[&id].running(&self.table)
+                        && let Err(e) = self.start_app(&id, now)
+                    {
+                        warn!("{id}: could not start: {e}");
+                    }
+                }
+                demand::Decision::Nothing => {}
+            }
+        }
+        for (id, level) in pushes {
+            self.push_pressure_to(&id, level);
+        }
+    }
+
+    fn notify(&self, title: &str, body: &str) {
+        if self.settings.settings.notifications {
+            (self.on_event)(Event::Notify {
+                title: title.to_string(),
+                body: body.to_string(),
+            });
+        }
+    }
+
+    /// `POST /n8/v2/pressure` (spec 5.4), on a worker.
+    fn push_pressure_to(&self, id: &str, level: LevelName) {
+        let Some(origin) = self.apps[id].manifest().status.origin().map(str::to_string) else {
+            return;
+        };
+        let pressure = match level {
+            LevelName::Problem => n8tray_contract::action::PressureLevel::Problem,
+            LevelName::Attention => n8tray_contract::action::PressureLevel::Attention,
+            _ => n8tray_contract::action::PressureLevel::Ok,
+        };
+        let (run, tx, app) = (self.run_dir(), self.done_tx.clone(), id.to_string());
+        let _ = std::thread::Builder::new()
+            .name(format!("n8tray-pressure-{id}"))
+            .spawn(move || {
+                let accepted = status_io::read_token(&run, &app).is_some_and(|token| {
+                    Http::new()
+                        .pressure(&origin, &token, pressure, StdDuration::from_secs(2))
+                        .is_ok()
+                });
+                info!(
+                    "{app}: memory pressure {pressure:?} {}",
+                    if accepted {
+                        "sent"
+                    } else {
+                        "not accepted; sent again later"
+                    }
+                );
+                let _ = tx.send(Done::Pressure { app, accepted });
+            });
     }
 
     /// Stops in progress, restarts after crashes.
@@ -830,6 +1133,9 @@ impl Host {
                 app.gave_up = None;
                 app.crashes.clear();
                 app.restart_at = None;
+                // The user's start overrides a demand rule's sleep until the
+                // rule decides again.
+                app.demand = None;
                 if running {
                     app.record("start", Outcome::Already, None, now);
                     return;
@@ -859,6 +1165,7 @@ impl Host {
                 let app = self.apps.get_mut(id).unwrap();
                 app.wanted = false;
                 app.restart_at = None;
+                app.demand = None;
                 let outcome = self.stop_app(id, false, now);
                 if outcome != Outcome::Ok {
                     self.apps
@@ -1056,6 +1363,11 @@ impl Host {
                     }
                 }
             }
+            Done::Pressure { app, accepted } => {
+                if !accepted && let Some(runtime) = self.apps.get_mut(&app) {
+                    runtime.pressure_sent = None;
+                }
+            }
             Done::Update(result) => {
                 self.update.in_flight = false;
                 self.update.checked_at = Some(now);
@@ -1216,16 +1528,19 @@ impl Host {
     fn publish(&mut self, now: DateTime<Utc>) {
         let snapshot = Arc::new(self.snapshot(now));
         let changed = self.last.as_deref() != Some(&*snapshot);
-        let level_changed = self
-            .status_written
-            .as_ref()
-            .is_none_or(|(_, l)| *l != snapshot.level);
-        if level_changed
-            || self
-                .status_written
-                .as_ref()
-                .is_none_or(|(t, _)| t.elapsed() >= StdDuration::from_secs(10))
-        {
+        let level_changed = self.last.as_ref().is_none_or(|l| l.level != snapshot.level);
+        // The status file follows every change of level or of an app's state
+        // at once, and the figures every 10 s.
+        let mut states = format!("{:?}", snapshot.level);
+        for app in &snapshot.apps {
+            states.push_str(&format!(
+                "|{}:{}:{}:{:?}",
+                app.id, app.state, app.running, app.pending
+            ));
+        }
+        if self.status_written.as_ref().is_none_or(|(t, written)| {
+            *written != states || t.elapsed() >= StdDuration::from_secs(10)
+        }) {
             match serde_json::to_vec_pretty(&*snapshot) {
                 Ok(bytes) => {
                     if let Err(e) =
@@ -1240,7 +1555,7 @@ impl Host {
                 }
                 Err(e) => warn!("Could not encode the status: {e}"),
             }
-            self.status_written = Some((Instant::now(), snapshot.level));
+            self.status_written = Some((Instant::now(), states));
         }
         if level_changed && self.last.is_some() {
             info!(
@@ -1268,6 +1583,8 @@ impl Host {
                 now,
                 table: &self.table,
                 watch_only: self.watch_only(),
+                gpu: &self.gpu,
+                history: self.history.view(app.id(), now),
             };
             apps.push(app.view(&ctx));
         }
@@ -1279,7 +1596,7 @@ impl Host {
         // The tray itself: its process, and its window's processes (the
         // WebView runs as its children).
         let own = self.table.get(self.pid);
-        let tree = self.table.tree(self.pid);
+        let tree = self.own_processes();
         let window_mb: f64 = tree
             .iter()
             .filter(|&&pid| pid != self.pid)
@@ -1291,7 +1608,12 @@ impl Host {
             rss_mb: round1(own.map(|p| mib(p.rss_bytes)).unwrap_or(0.0)),
             window_mb: round1(window_mb),
             private_mb: own.and_then(|p| p.private_bytes).map(|b| round1(mib(b))),
-            cpu_percent: None,
+            cpu_percent: tree
+                .iter()
+                .map(|&p| self.table.cpu_percent(p))
+                .sum::<Option<f64>>()
+                .map(round1),
+            history: self.history.view("n8tray", now),
         };
 
         let hosted: Vec<_> = apps
@@ -1374,6 +1696,7 @@ impl Host {
             reason,
             running: running_names.len() as u32,
             total: hosted.len() as u32,
+            pressure: self.push_pressure.level().unwrap_or(LevelName::Ok),
             memory,
             problems: self
                 .problems
@@ -1409,17 +1732,11 @@ impl Host {
         } else {
             "Linux"
         };
-        let memory = memory::system_memory();
         let gib = |b: u64| b as f64 / (1024.0 * 1024.0 * 1024.0);
-        let free = memory.map(|m| gib(m.available_bytes));
-        let total = memory.map(|m| gib(m.total_bytes));
-        let thresholds = &self.settings.settings.memory;
-        let level = match free {
-            None => LevelName::Off,
-            Some(f) if f < thresholds.problem_below_gib => LevelName::Problem,
-            Some(f) if f < thresholds.attention_below_gib => LevelName::Attention,
-            Some(_) => LevelName::Ok,
-        };
+        let free = self.memory.map(|m| gib(m.available_bytes));
+        let total = self.memory.map(|m| gib(m.total_bytes));
+        // The level with hysteresis and dwell, not the raw reading.
+        let level = self.display_pressure.level().unwrap_or(LevelName::Off);
         let mut text = match (free, total) {
             (Some(f), Some(t)) => format!("{os} {f:.1}/{t:.1} GB free"),
             _ => format!("{os} memory unknown"),

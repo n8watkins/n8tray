@@ -86,13 +86,38 @@ pub fn hide(app: &AppHandle) {
         {
             info!("The window was hidden for {KEEP_HIDDEN:?}: destroyed to free its memory");
             let _ = window.destroy();
+            // Give the pages the WebView left behind back to the system.
+            std::thread::sleep(Duration::from_secs(2));
+            n8tray_platform::memory::trim_own_working_set();
         }
     });
 }
 
+/// WebView2's browser arguments: Tauri's defaults plus what keeps a small
+/// window small (D19). `N8TRAY_WEBVIEW_ARGS` replaces them, for measuring.
+#[cfg(windows)]
+fn webview_args() -> String {
+    if let Ok(args) = std::env::var("N8TRAY_WEBVIEW_ARGS") {
+        return args;
+    }
+    WEBVIEW_ARGS.to_string()
+}
+
+#[cfg(windows)]
+const WEBVIEW_ARGS: &str = concat!(
+    // Tauri's defaults.
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection",
+    // A small static page needs no GPU process and one renderer at most.
+    " --disable-gpu --in-process-gpu --renderer-process-limit=1",
+    " --disable-background-networking",
+);
+
 fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let started = Instant::now();
-    let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
+    let builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()));
+    #[cfg(windows)]
+    let builder = builder.additional_browser_args(&webview_args());
+    let window = builder
         .title("N8 Tray")
         .inner_size(WIDTH, HEIGHT)
         .resizable(false)
