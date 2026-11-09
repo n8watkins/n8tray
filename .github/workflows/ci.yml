@@ -63,6 +63,22 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: npm run lint
 
+  # Clippy on Windows too: the Job Object, process and GPU code compiles
+  # only there.
+  lint-windows:
+    name: Lint (Windows)
+    needs: changes
+    if: needs.changes.outputs.checks == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install # the version in rust-toolchain.toml
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
   # Unit, schema and integration tests on every OS the tray ships on.
   test:
     name: Test (${{ matrix.os }})
@@ -81,13 +97,23 @@ jobs:
       - run: rustup toolchain install # the version in rust-toolchain.toml
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo test --workspace --locked
+      - name: The TypeScript bindings match the Rust types
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          changed="$(git status --porcelain -- app/ui/src/bindings)"
+          if [ -n "$changed" ]; then
+            echo "::error::app/ui/src/bindings is out of date; run cargo test and commit the result."
+            echo "$changed"
+            exit 1
+          fi
 
   # The only required check: passes when every job above passed or was
   # skipped on purpose by its lane.
   result:
     name: CI result
     if: always()
-    needs: [changes, kit, lint, test]
+    needs: [changes, kit, lint, lint-windows, test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

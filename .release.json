@@ -11,6 +11,14 @@
     {
       "path": "Cargo.lock",
       "pattern": "^name = \"n8tray-conformance\"\\nversion = \"(.*)\"$"
+    },
+    {
+      "path": "Cargo.lock",
+      "pattern": "^name = \"n8tray-core\"\\nversion = \"(.*)\"$"
+    },
+    {
+      "path": "Cargo.lock",
+      "pattern": "^name = \"n8tray-platform\"\\nversion = \"(.*)\"$"
     }
   ],
   "workflows": "package",

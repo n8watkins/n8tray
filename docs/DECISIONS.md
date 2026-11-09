@@ -60,3 +60,42 @@ A fixture holds exactly what the PowerShell tray writes, so the schema can never
 `crates/n8tray-conformance` builds both tools, `n8tray-contract` (check, probe, the test tray) and `n8tray-fake-module`, so one install gives an adopter everything, and the contract library stays free of the HTTP server and process-table dependencies the tools need.
 Adopters install it with `cargo install --locked --git https://github.com/n8watkins/n8tray --tag vX.Y.Z n8tray-conformance`, which works on every GitHub-hosted runner without a release pipeline; prebuilt binaries can come with the Tauri release work.
 The probe reads process creation times through sysinfo, which gives whole seconds, so its identity check allows for that; the host will use the precise OS calls.
+
+## D11. One OS crate with unsafe code, and only there (2026-11-09)
+
+The workspace forbids unsafe code.
+`crates/n8tray-platform` is the exception: it denies unsafe code too, but allows it in `src/win/`, where each Windows API is wrapped once behind a safe function, and in two `libc::kill` calls on Unix.
+`n8tray-core` keeps the workspace's `forbid` and takes the OS only through those safe functions, so its logic is tested with data.
+The process snapshot on Windows is one `NtQuerySystemInformation(SystemProcessInformation)` call per pass, the way Task Manager reads processes: pid, parent, creation time to 100 ns, CPU times, working set and private bytes for every process at once.
+macOS and Linux read the same through sysinfo until their phases.
+
+## D12. Every app the host starts runs in a named Job Object (2026-11-09)
+
+On Windows the host creates the job `Local\N8Tray.App.<id>` and starts the app suspended, puts it in the job, then resumes it, so nothing the app starts can escape the job.
+The job has no kill-on-close: apps keep running when N8 Tray exits, and after a restart the host opens the job by name again.
+`resources.hardCapMb` becomes the job's memory limit.
+A force stop ends the job, never a process outside it; an app the host did not start (found running) is only ever asked to stop.
+
+## D13. The host watches only while the PowerShell tray runs (2026-11-09)
+
+When `Local\N8Tray_SingleInstance` exists, the new host reads every app's status but writes no lease and starts, stops or restarts nothing, so the two trays never fight over an app.
+Replacing the old tray (spec 8.1, plan section 15) comes with the switch-over in Phase 9.
+With `N8TRAY_HOME`, `N8TRAY_RUN_DIR` or `N8TRAY_MODULES_DIR` set, the folders are not the ones the old tray uses, so the host ignores it; that is how a build is tried next to the running tray.
+
+## D14. "Start with N8 Tray" applies when an app is first found (2026-11-09)
+
+An app whose start-with-N8-Tray setting is on (the manifest's `autoStartDefault` until the user changes it) starts when the host starts, and also when its manifest appears while the host runs, so installing an app makes it run without restarting the tray.
+It applies once per app per host run: an app the user stopped stays stopped.
+An app that exits unexpectedly while it should run is restarted after 5 s, 30 s and 2 min, and the host gives up at the fourth exit in 10 minutes, as the PowerShell tray did for N8 Hotkeys.
+
+## D15. TypeScript types generated with ts-rs (2026-11-09)
+
+The plan named specta for the bindings between Rust and the window's TypeScript.
+The snapshot types in `n8tray-core` derive `ts_rs::TS` instead: ts-rs is stable, needs no Tauri plugin, and keeps `n8tray-core` free of Tauri.
+`cargo test` writes the files to `app/ui/src/bindings/`, and CI fails when they differ from what is committed, so a mismatch fails the build as the plan asks.
+
+## D16. A host folder of its own, and `N8TRAY_HOME` (2026-11-09)
+
+Besides the contract's folders (modules, runtime), the host keeps `settings.json`, `status.json`, `logs/` and `history/` in `%LOCALAPPDATA%\N8Tray` on Windows, `~/Library/Application Support/N8Tray` on macOS, and the XDG config and state folders on Linux.
+`N8TRAY_HOME` moves all of it, and the contract's folders, under one folder.
+The status file is the snapshot the window shows, rewritten every 10 s and on every level change, so tests and scripts can read the host's state without a window.
