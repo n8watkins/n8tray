@@ -144,7 +144,7 @@ The interpreters and the exact command line the host builds:
 
 `stop.type`:
 
-- `http`: the host invokes the `stop` action over HTTP (5.3).
+- `http`: the host sends `POST /n8/v2/actions/stop` (5.3), which every app with this stop type serves without declaring it in `actions`.
 - `exec`: the host runs the app's program or script again with `stop.args`, which asks the running instance to stop (for example through a named event).
 - `terminate`: the host asks the OS to end the app's main process (a close request first, where the OS has one).
 
@@ -473,4 +473,4 @@ An app with `trayIcon: "hide-when-hosted"` reads the lease at start and every 5 
 | `duplicate-id` | status | Two components or two jobs share an id. |
 | `lease-start-order` | lease | `heartbeat` is earlier than `pidStartedAt` (1 s tolerance). |
 
-`n8tray-contract probe` checks a running app; its checks are described in the conformance kit's README.
+`n8tray-contract probe` checks a running app; its checks are listed in the [conformance kit's README](../crates/n8tray-conformance/README.md).

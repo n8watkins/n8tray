@@ -54,3 +54,9 @@ That is what lets an app be tested against the conformance kit's test tray in CI
 
 The lease N8 Tray 0.26.0 writes and VoiceDock 1.2 reads (heartbeat every 5 s, fresh for 15 s either way, host pid alive, a 30 s grace at start, never deleted) is section 8 of the specification unchanged.
 A fixture holds exactly what the PowerShell tray writes, so the schema can never drift from the tray that runs today.
+
+## D10. The conformance kit is one crate, installed with Cargo from a tag (2026-11-09)
+
+`crates/n8tray-conformance` builds both tools, `n8tray-contract` (check, probe, the test tray) and `n8tray-fake-module`, so one install gives an adopter everything, and the contract library stays free of the HTTP server and process-table dependencies the tools need.
+Adopters install it with `cargo install --locked --git https://github.com/n8watkins/n8tray --tag vX.Y.Z n8tray-conformance`, which works on every GitHub-hosted runner without a release pipeline; prebuilt binaries can come with the Tauri release work.
+The probe reads process creation times through sysinfo, which gives whole seconds, so its identity check allows for that; the host will use the precise OS calls.
