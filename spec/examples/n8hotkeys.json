@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "group": "Hotkeys",
   "description": "Global hotkey worker for app focus, audio toggles and game-aware blocking.",
-  "icon": "config/n8hotkeys.ico",
+  "icon": "config/n8hotkeys.svg",
   "installDir": "%USERPROFILE%\\Scripts\\n8tray\\n8hotkeys",
   "platforms": ["windows"],
   "status": { "type": "file" },

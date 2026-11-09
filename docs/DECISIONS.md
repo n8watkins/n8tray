@@ -151,3 +151,12 @@ The tray hands its unused resident pages back to Windows (EmptyWorkingSet) 30 s 
 Measured, the idle tray's working set went from 33 MB to 5.4 MB (12.8 MB private), and back to 5.6 MB 70 s after the window closed.
 
 The tray's own figures are its process and its window's processes, never the apps it started, although those are its child processes too.
+
+## D23. App icons may be SVG (2026-11-09)
+
+The hub shows each app's own icon, so users recognize the app at a glance, as the PowerShell tray's hand-drawn icons did.
+Contract 2 allowed only `.png` and `.ico`; it now also allows `.svg` (spec 3.11), the preferred format because it stays sharp at every display scale.
+This widens what is valid and makes nothing invalid, so it stays within contract 2; a kit release before it rejects an SVG icon in `n8tray-contract check`, and an app checked against it pins that kit.
+The host never had a release that read manifests, so no installed host rejects such a manifest.
+The host reads an icon itself (at most 256 KB) and the window shows it only as an image, so an SVG's scripts or external references never run; a missing or unusable icon shows the generic app glyph.
+`spec/examples/icons/` has the icons for the five example apps, redrawn in SVG from the PowerShell tray's artwork: a speaker for VoiceDock, a keyboard for N8 Hotkeys, a camera for N8 Commentary, a briefcase for Lead Scraper and a memory chip for WSL Memory.

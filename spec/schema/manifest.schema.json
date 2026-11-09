@@ -14,7 +14,7 @@
     "version": { "$ref": "#/$defs/semver" },
     "group": { "type": "string", "minLength": 1, "maxLength": 32 },
     "description": { "type": "string", "minLength": 1, "maxLength": 200 },
-    "icon": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "pattern": "\\.(png|ico)$" }] },
+    "icon": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "pattern": "\\.(png|ico|svg)$" }] },
     "installDir": { "type": "string", "minLength": 1, "maxLength": 260 },
     "platforms": {
       "type": "array",

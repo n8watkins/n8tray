@@ -5,6 +5,7 @@
   "version": "1.0.0",
   "group": "Commentary",
   "description": "YouTube and OBS commentary controller with its own F8 shortcut.",
+  "icon": "n8commentary.svg",
   "installDir": "%USERPROFILE%\\Scripts\\n8tray\\n8commentary",
   "platforms": [
     "windows"
