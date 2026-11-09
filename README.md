@@ -35,6 +35,10 @@ crates/
                          start at sign-in
   n8tray-core/           the host without a window: discovery, intent, supervision, status,
                          ownership, the lease, settings; tested against the fake module
+app/
+  src-tauri/             the tray app (Tauri 2): icon with a level badge, native menu, window,
+                         single instance, start at sign-in
+  ui/                    the window (Preact and TypeScript): a view of the host's snapshot
 docs/
   DECISIONS.md       why things are the way they are
 ```
@@ -51,6 +55,15 @@ npm install        # release-kit and the git hooks
 npm run lint       # cargo fmt --check, clippy with warnings as errors, the text check
 npm test           # every test in the workspace
 ```
+
+The tray app embeds its window, so build the window before Cargo builds the app:
+
+```bash
+npm ci --prefix app/ui && npm run build --prefix app/ui
+cargo run -p n8tray            # the tray; N8TRAY_HOME=/tmp/n8 keeps it in its own folders
+```
+
+`n8tray --exit` ends a running N8 Tray (apps keep running), `n8tray --hide` closes its window, and starting it again opens the window.
 
 Commits follow Conventional Commits and land through pull requests; see [RELEASING.md](RELEASING.md) and [AGENTS.md](AGENTS.md).
 

@@ -59,6 +59,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Linux packages for the tray and the WebView
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+      - name: Build the window (the app embeds it)
+        run: npm ci --prefix app/ui && npm run build --prefix app/ui
       - run: rustup toolchain install # the version in rust-toolchain.toml
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: npm run lint
@@ -75,6 +80,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Build the window (the app embeds it)
+        run: npm ci --prefix app/ui && npm run build --prefix app/ui
       - run: rustup toolchain install # the version in rust-toolchain.toml
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -94,6 +106,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Linux packages for the tray and the WebView
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Build the window (the app embeds it)
+        run: npm ci --prefix app/ui && npm run build --prefix app/ui
       - run: rustup toolchain install # the version in rust-toolchain.toml
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo test --workspace --locked

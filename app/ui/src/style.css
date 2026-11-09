@@ -1,0 +1,44 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1f2937;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --ok: #2e9e5b;
+  --attention: #d48806;
+  --problem: #d64545;
+  --off: #9ca3af;
+  color-scheme: light dark;
+  font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1f2329;
+    --fg: #f3f4f6;
+    --muted: #9ca3af;
+    --line: #333a44;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); }
+main { padding: 12px; }
+.empty { color: var(--muted); padding: 24px; }
+.status { display: flex; gap: 10px; align-items: flex-start; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.status h1 { font-size: 15px; margin: 0; }
+.status p { margin: 2px 0 0; }
+.status .close { margin-left: auto; }
+.muted { color: var(--muted); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--off); flex: none; margin-top: 4px; }
+.ok > .dot { background: var(--ok); }
+.attention > .dot { background: var(--attention); }
+.problem > .dot { background: var(--problem); }
+.apps { list-style: none; margin: 0; padding: 0; }
+.app { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.app .text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.app .text span { color: var(--muted); overflow-wrap: anywhere; }
+.app .outcome { color: var(--problem); }
+.buttons { display: flex; gap: 4px; flex: none; }
+button { font: inherit; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+button:disabled { opacity: 0.45; cursor: default; }
+button:focus-visible { outline: 2px solid var(--ok); outline-offset: 1px; }
+.problem { color: var(--problem); }
+footer { margin-top: 10px; font-size: 12px; }

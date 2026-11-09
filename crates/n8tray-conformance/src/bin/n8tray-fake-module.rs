@@ -167,12 +167,11 @@ fn main() -> ExitCode {
             let status =
                 status_document(&args, &table, me, started_at, &child_pids, first, &shared);
             first = false;
-            if args.status == Transport::File {
-                if let Err(e) =
+            if args.status == Transport::File
+                && let Err(e) =
                     files::write_atomic(&files::status_path(&run_dir, &args.id), status.as_bytes())
-                {
-                    eprintln!("fake module: cannot write the status file: {e}");
-                }
+            {
+                eprintln!("fake module: cannot write the status file: {e}");
             }
             shared.lock().unwrap().status = status;
             if let Some(path) = args.manifest_out.as_deref().filter(|p| !p.exists()) {
