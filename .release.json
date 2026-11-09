@@ -1,0 +1,20 @@
+{
+  "versionFiles": [
+    {
+      "path": "Cargo.toml",
+      "pattern": "^version = \"(.*)\"$"
+    },
+    {
+      "path": "Cargo.lock",
+      "pattern": "^name = \"n8tray-contract\"\\nversion = \"(.*)\"$"
+    }
+  ],
+  "workflows": "package",
+  "repository": "n8watkins/n8tray",
+  "visibility": "public",
+  "protect": {
+    "checks": [
+      "CI result"
+    ]
+  }
+}

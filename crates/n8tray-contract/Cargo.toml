@@ -1,0 +1,11 @@
+[package]
+name = "n8tray-contract"
+description = "The N8 Tray contract: types, JSON Schema validation and the conformance CLI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
