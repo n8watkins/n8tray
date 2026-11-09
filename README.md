@@ -21,11 +21,18 @@ The PowerShell N8 Tray that runs on the owner's PC today lives in a private repo
 ## Layout
 
 ```text
+spec/
+  contract-v2.md     the contract: manifest, status protocol, vocabulary, resources, ownership, security, lease
+  schema/            its JSON Schemas (normative for the shape of every document)
+  examples/          manifests for VoiceDock, Commentary, Hotkeys, Lead Scraper and WSL Memory
+  fixtures/          valid and invalid documents every implementation is tested against
 crates/
-  n8tray-contract/   the contract's types and validation
+  n8tray-contract/   the contract's Rust types and validation
 docs/
   DECISIONS.md       why things are the way they are
 ```
+
+Start with [`spec/contract-v2.md`](spec/contract-v2.md).
 
 ## Development
 

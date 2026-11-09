@@ -1,0 +1,76 @@
+{
+  "contract": 2,
+  "id": "n8commentary",
+  "name": "N8 Commentary",
+  "version": "1.0.0",
+  "group": "Commentary",
+  "description": "YouTube and OBS commentary controller with its own F8 shortcut.",
+  "installDir": "%USERPROFILE%\\Scripts\\n8tray\\n8commentary",
+  "platforms": [
+    "windows"
+  ],
+  "status": {
+    "type": "file",
+    "intervalSeconds": 3
+  },
+  "run": {
+    "interpreter": "powershell",
+    "script": "n8commentary.ps1",
+    "args": [],
+    "stop": {
+      "type": "exec",
+      "args": [
+        "-Stop"
+      ],
+      "graceSeconds": 12
+    }
+  },
+  "actions": [
+    {
+      "id": "restart",
+      "label": "Restart",
+      "type": "exec",
+      "args": [
+        "-Restart"
+      ]
+    },
+    {
+      "id": "open-obs",
+      "label": "Open OBS",
+      "type": "exec",
+      "args": [
+        "-OpenObs"
+      ]
+    }
+  ],
+  "requires": [
+    {
+      "check": "node",
+      "why": "Runs the commentary controller and the Chrome bridge."
+    },
+    {
+      "check": "obs",
+      "why": "Records the commentary."
+    },
+    {
+      "check": "browser",
+      "why": "The N8 Commentary extension watches the video."
+    }
+  ],
+  "resources": {
+    "budget": {
+      "warnMb": 400,
+      "maxMb": 1000,
+      "cpuWarnPercent": 30,
+      "sustainSeconds": 60
+    }
+  },
+  "open": {
+    "settings": "config/settings.json",
+    "logs": "logs/",
+    "readme": "README.md",
+    "folder": "."
+  },
+  "trayIcon": "hide-when-hosted",
+  "autoStartDefault": false
+}

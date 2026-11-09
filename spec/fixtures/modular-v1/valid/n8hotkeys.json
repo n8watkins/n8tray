@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "n8hotkeys",
+  "name": "N8 Hotkeys",
+  "group": "Hotkeys",
+  "description": "Global hotkey worker.",
+  "entry": "n8hotkeys.ps1",
+  "launchArgs": [
+    "-NoTray"
+  ],
+  "settings": "config/settings.json",
+  "settingsExample": "config/settings.example.json",
+  "log": "logs/n8hotkeys.log",
+  "autoStartDefault": true,
+  "monitor": {
+    "type": "process",
+    "match": "n8hotkeys.ps1",
+    "requiredArgs": [
+      "-NoTray"
+    ]
+  },
+  "tray": {
+    "panel": "built-in",
+    "icon": "config/n8hotkeys.ico"
+  }
+}

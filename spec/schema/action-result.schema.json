@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/n8watkins/n8tray/main/spec/schema/action-result.schema.json",
+  "title": "N8 Tray action result, contract 2",
+  "description": "The answer to POST /n8/v2/actions/<id> and POST /n8/v2/pressure: an outcome (200) or a job (202). See spec/contract-v2.md, section 5.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome"],
+      "properties": {
+        "outcome": { "enum": ["ok", "already", "refused", "failed"] },
+        "message": { "type": "string", "maxLength": 200 }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobId"],
+      "properties": {
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$" }
+      }
+    }
+  ]
+}

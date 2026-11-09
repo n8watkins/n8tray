@@ -1,0 +1,11 @@
+{
+  "contract": 2,
+  "id": "fake",
+  "name": "Fake",
+  "version": "0.1.0",
+  "installDir": "C:\\Users\\someone\\apps\\fake",
+  "status": {
+    "type": "file"
+  },
+  "icon": "C:/icons/fake.png"
+}

@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/n8watkins/n8tray/main/spec/schema/manifest.schema.json",
+  "title": "N8 Tray app manifest, contract 2",
+  "description": "The file <id>.json an app installs in N8 Tray's modules folder. See spec/contract-v2.md, section 3.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "id", "name", "version", "status"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "contract": { "const": 2 },
+    "id": { "$ref": "#/$defs/id" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 40 },
+    "version": { "$ref": "#/$defs/semver" },
+    "group": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "icon": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "pattern": "\\.(png|ico)$" }] },
+    "installDir": { "type": "string", "minLength": 1, "maxLength": 260 },
+    "platforms": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["windows", "macos", "linux"] }
+    },
+    "status": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "url"],
+          "properties": {
+            "type": { "const": "http" },
+            "url": { "type": "string", "pattern": "^http://127\\.0\\.0\\.1:[0-9]{1,5}/n8/v2/status$" },
+            "intervalSeconds": { "$ref": "#/$defs/intervalSeconds" },
+            "timeoutMs": { "type": "integer", "minimum": 50, "maximum": 5000 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "const": "file" },
+            "intervalSeconds": { "$ref": "#/$defs/intervalSeconds" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "builtin" } }
+        }
+      ]
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        { "required": ["program"], "not": { "anyOf": [{ "required": ["interpreter"] }, { "required": ["script"] }] } },
+        { "required": ["interpreter", "script"], "not": { "required": ["program"] } }
+      ],
+      "properties": {
+        "program": { "$ref": "#/$defs/relativePath" },
+        "interpreter": { "enum": ["powershell", "pwsh", "node"] },
+        "script": { "$ref": "#/$defs/relativePath" },
+        "args": { "$ref": "#/$defs/args" },
+        "cwd": { "$ref": "#/$defs/relativePath" },
+        "hidden": { "type": "boolean" },
+        "stop": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "enum": ["http", "exec", "terminate"] },
+            "args": { "$ref": "#/$defs/args" },
+            "graceSeconds": { "type": "integer", "minimum": 1, "maximum": 120 }
+          },
+          "if": { "properties": { "type": { "const": "exec" } } },
+          "then": { "required": ["args"] },
+          "else": { "not": { "required": ["args"] } }
+        }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "type"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,47}$" },
+          "label": { "type": "string", "minLength": 1, "maxLength": 60 },
+          "type": { "enum": ["http", "exec"] },
+          "args": { "$ref": "#/$defs/args" },
+          "component": { "type": "boolean" },
+          "progress": { "type": "boolean" },
+          "confirm": { "type": "boolean" }
+        },
+        "if": { "properties": { "type": { "const": "exec" } } },
+        "then": { "required": ["args"] }
+      }
+    },
+    "requires": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check", "why"],
+        "properties": {
+          "check": { "enum": ["browser", "uv", "python", "engine-env", "node", "wsl", "obs", "devguard", "libfuse2"] },
+          "for": { "type": "array", "uniqueItems": true, "minItems": 1, "items": { "$ref": "#/$defs/id" } },
+          "why": { "type": "string", "minLength": 1, "maxLength": 140 }
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "demand": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["processes"],
+          "properties": {
+            "processes": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[a-z0-9._-]{1,64}$" }
+            },
+            "stopAfterMinutes": { "type": "integer", "minimum": 1, "maximum": 1440 }
+          }
+        },
+        "features": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["pressure", "presence"] }
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "warnMb": { "type": "integer", "minimum": 1 },
+            "maxMb": { "type": "integer", "minimum": 1 },
+            "cpuWarnPercent": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "sustainSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 }
+          }
+        },
+        "hardCapMb": { "type": "integer", "minimum": 16 }
+      }
+    },
+    "open": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "enum": ["settings", "logs", "folder", "readme"] },
+      "additionalProperties": { "$ref": "#/$defs/pathOrLoopbackUrl" }
+    },
+    "menu": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "type", "url"],
+            "properties": {
+              "label": { "$ref": "#/$defs/label" },
+              "type": { "const": "open-url" },
+              "url": { "type": "string", "pattern": "^(http://127\\.0\\.0\\.1:[0-9]{1,5}/|https://)[^\\s]*$", "maxLength": 2048 }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "type", "path"],
+            "properties": {
+              "label": { "$ref": "#/$defs/label" },
+              "type": { "const": "open-path" },
+              "path": { "$ref": "#/$defs/relativePath" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "type", "action"],
+            "properties": {
+              "label": { "$ref": "#/$defs/label" },
+              "type": { "const": "action" },
+              "action": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,47}$" }
+            }
+          }
+        ]
+      }
+    },
+    "owns": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["program"],
+        "properties": {
+          "program": { "type": "string", "minLength": 1, "maxLength": 260 },
+          "argsContain": { "type": "string", "minLength": 1, "maxLength": 200 }
+        }
+      }
+    },
+    "trayIcon": { "enum": ["hide-when-hosted", "none"] },
+    "autoStartDefault": { "type": "boolean" }
+  },
+  "if": { "required": ["status"], "properties": { "status": { "required": ["type"], "properties": { "type": { "const": "builtin" } } } } },
+  "then": { "not": { "anyOf": [{ "required": ["installDir"] }, { "required": ["run"] }] } },
+  "else": { "required": ["installDir"] },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,47}$" },
+    "semver": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+    },
+    "intervalSeconds": { "type": "integer", "minimum": 1, "maximum": 60 },
+    "label": { "type": "string", "minLength": 1, "maxLength": 60 },
+    "relativePath": { "type": "string", "minLength": 1, "maxLength": 260 },
+    "args": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "type": "string", "maxLength": 1024 }
+    },
+    "pathOrLoopbackUrl": { "type": "string", "minLength": 1, "maxLength": 2048 }
+  }
+}

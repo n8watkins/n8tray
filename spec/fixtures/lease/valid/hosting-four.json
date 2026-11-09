@@ -1,0 +1,14 @@
+{
+  "contract": 2,
+  "host": "n8tray",
+  "version": "1.0.0",
+  "pid": 9124,
+  "pidStartedAt": "2026-11-09T08:01:40.118Z",
+  "heartbeat": "2026-11-09T18:04:10.002Z",
+  "hosting": [
+    "voicedock",
+    "n8commentary",
+    "n8hotkeys",
+    "leadscraper"
+  ]
+}

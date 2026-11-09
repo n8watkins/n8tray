@@ -1,0 +1,24 @@
+{
+  "contract": 2,
+  "id": "fake",
+  "version": "0.1.0",
+  "updatedAt": "2026-11-09T10:04:11.204-08:00",
+  "pid": 4100,
+  "pidStartedAt": "2026-11-09T08:01:57.412Z",
+  "state": "ready",
+  "summary": "Ready",
+  "resources": {
+    "sampledAt": "2026-11-09T18:04:10.950Z",
+    "intervalSeconds": 5,
+    "processes": [
+      {
+        "pid": 4100,
+        "startedAt": "2026-11-09T08:01:57.412Z",
+        "parentPid": 900,
+        "role": "main",
+        "rssMb": 12.5,
+        "cpuPercent": 0.3
+      }
+    ]
+  }
+}
