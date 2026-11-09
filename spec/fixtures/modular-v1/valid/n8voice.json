@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 2,
+  "id": "n8voice",
+  "name": "VoiceDock",
+  "group": "Audio",
+  "description": "Runs the VoiceDock engines.",
+  "entry": "n8voice.ps1",
+  "settings": "config/settings.json",
+  "log": "logs/n8voice.log",
+  "autoStartDefault": true,
+  "monitor": {
+    "type": "process",
+    "match": "n8voice.ps1"
+  },
+  "health": [
+    {
+      "name": "Piper",
+      "type": "http",
+      "path": "/health",
+      "hostSetting": "piper.host",
+      "portSetting": "piper.port",
+      "timeoutMs": 300
+    }
+  ],
+  "tray": {
+    "panel": "built-in"
+  }
+}

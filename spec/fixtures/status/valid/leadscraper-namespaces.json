@@ -1,0 +1,57 @@
+{
+  "contract": 2,
+  "id": "leadscraper",
+  "version": "0.1.0",
+  "updatedAt": "2026-11-09T18:04:11.204Z",
+  "pid": 4100,
+  "pidStartedAt": "2026-11-09T08:01:57.412Z",
+  "state": "ready",
+  "summary": "Sweeping pool cell 14 of 40",
+  "resources": {
+    "sampledAt": "2026-11-09T18:04:10.950Z",
+    "intervalSeconds": 5,
+    "processes": [
+      {
+        "pid": 4100,
+        "startedAt": "2026-11-09T08:01:57.412Z",
+        "parentPid": 900,
+        "role": "main",
+        "rssMb": 12.5,
+        "cpuPercent": 0.3
+      },
+      {
+        "pid": 4188,
+        "startedAt": "2026-11-09T08:01:58.020Z",
+        "parentPid": 4100,
+        "role": "helper",
+        "rssMb": 12.5,
+        "cpuPercent": 0.3,
+        "exe": "wsl.exe"
+      }
+    ],
+    "namespaces": [
+      {
+        "namespace": "wsl:Ubuntu-24.04",
+        "pid": 2231,
+        "startedAt": "2026-11-09T08:02:03.500Z",
+        "role": "worker",
+        "component": "daemon",
+        "rssMb": 1180.0,
+        "cpuPercent": 7.5
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "daemon",
+      "name": "Daemon",
+      "state": "ready",
+      "detail": "Sweeping"
+    },
+    {
+      "id": "hub",
+      "name": "Hub",
+      "state": "ready"
+    }
+  ]
+}

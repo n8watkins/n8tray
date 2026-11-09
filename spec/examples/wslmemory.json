@@ -1,0 +1,19 @@
+{
+  "contract": 2,
+  "id": "wslmemory",
+  "name": "WSL Memory",
+  "version": "1.0.0",
+  "group": "System",
+  "description": "WSL free memory and dev servers by worktree, from devguard's status file.",
+  "platforms": ["windows"],
+  "status": { "type": "builtin" },
+  "requires": [
+    { "check": "wsl", "why": "Shows the memory of the WSL virtual machine." },
+    { "check": "devguard", "why": "Its status file is where the figures come from." }
+  ],
+  "menu": [
+    { "label": "Devguard on GitHub", "type": "open-url", "url": "https://github.com/n8watkins/devguard" }
+  ],
+  "trayIcon": "none",
+  "autoStartDefault": true
+}

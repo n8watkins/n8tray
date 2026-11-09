@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/n8watkins/n8tray/main/spec/schema/modular-v1.schema.json",
+  "title": "N8 Tray module manifest, contract 1 (modular.json)",
+  "description": "The manifest the PowerShell N8 Tray reads (schemaVersion 1 and 2). Accepted during the migration only; see spec/contract-v2.md, section 10. Unknown fields are allowed, as the PowerShell tray ignores them.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "name", "entry"],
+  "properties": {
+    "schemaVersion": { "enum": [1, 2] },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,47}$" },
+    "name": { "type": "string", "minLength": 1 },
+    "group": { "type": "string" },
+    "description": { "type": "string" },
+    "entry": { "type": "string", "pattern": "\\.ps1$" },
+    "launchArgs": { "type": "array", "items": { "type": "string" } },
+    "settings": { "type": "string" },
+    "settingsExample": { "type": "string" },
+    "log": { "type": "string" },
+    "autoStartDefault": { "type": "boolean" },
+    "monitor": {
+      "type": "object",
+      "required": ["type", "match"],
+      "properties": {
+        "type": { "const": "process" },
+        "match": { "type": "string", "minLength": 1 },
+        "requiredArgs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "health": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "path"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "type": { "const": "http" },
+          "path": { "type": "string", "pattern": "^/" },
+          "hostSetting": { "type": "string" },
+          "portSetting": { "type": "string" },
+          "timeoutMs": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "tray": {
+      "type": "object",
+      "properties": {
+        "panel": { "type": "string" },
+        "icon": { "type": "string" }
+      }
+    }
+  }
+}

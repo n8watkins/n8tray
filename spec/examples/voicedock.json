@@ -1,0 +1,47 @@
+{
+  "contract": 2,
+  "id": "voicedock",
+  "name": "VoiceDock",
+  "version": "1.3.0",
+  "group": "Audio",
+  "description": "Local voices for the VoiceDock extension.",
+  "icon": "icon.png",
+  "installDir": "%N8TRAY_APPS%/voicedock/1.3.0",
+  "platforms": ["windows", "macos", "linux"],
+  "status": { "type": "http", "url": "http://127.0.0.1:7477/n8/v2/status", "intervalSeconds": 3, "timeoutMs": 300 },
+  "run": {
+    "program": "bin/voicedock-hub.exe",
+    "args": ["--managed"],
+    "stop": { "type": "http", "graceSeconds": 10 }
+  },
+  "actions": [
+    { "id": "restart", "label": "Restart", "type": "http" },
+    { "id": "engine.start", "label": "Start {component}", "type": "http", "component": true },
+    { "id": "engine.stop", "label": "Stop {component}", "type": "http", "component": true },
+    { "id": "engine.install", "label": "Set up {component}", "type": "http", "component": true, "progress": true, "confirm": true }
+  ],
+  "requires": [
+    { "check": "browser", "why": "The VoiceDock extension reads pages aloud in the browser." },
+    { "check": "uv", "for": ["kokoro", "pocket"], "why": "Runs the Python voice engines." }
+  ],
+  "lifecycle": {
+    "demand": { "processes": ["chrome", "msedge", "brave", "vivaldi"], "stopAfterMinutes": 10 },
+    "features": ["pressure", "presence"]
+  },
+  "resources": {
+    "budget": { "warnMb": 900, "maxMb": 1600, "cpuWarnPercent": 40, "sustainSeconds": 60 },
+    "hardCapMb": 2500
+  },
+  "open": { "settings": "http://127.0.0.1:7477/settings", "logs": "logs/" },
+  "owns": [
+    { "program": "bin/voicedock-hub.exe" },
+    { "program": "engines/piper/*/piper.exe" },
+    { "program": "%N8TRAY_TOOLS%/uv/python*", "argsContain": "voicedock" }
+  ],
+  "menu": [
+    { "label": "Engine history", "type": "open-url", "url": "http://127.0.0.1:7477/report" },
+    { "label": "Open voices folder", "type": "open-path", "path": "voices/" }
+  ],
+  "trayIcon": "hide-when-hosted",
+  "autoStartDefault": true
+}

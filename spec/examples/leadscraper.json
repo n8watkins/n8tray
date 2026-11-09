@@ -1,0 +1,27 @@
+{
+  "contract": 2,
+  "id": "leadscraper",
+  "name": "Lead Scraper",
+  "version": "1.0.0",
+  "group": "Watchers",
+  "description": "Runs a headless scrape daemon inside WSL and reports it.",
+  "installDir": "%USERPROFILE%\\Scripts\\n8leadscraper",
+  "platforms": ["windows"],
+  "status": { "type": "file", "intervalSeconds": 5 },
+  "run": {
+    "interpreter": "powershell",
+    "script": "n8leadscraper.ps1",
+    "args": [],
+    "stop": { "type": "exec", "args": ["-Stop"], "graceSeconds": 20 }
+  },
+  "actions": [
+    { "id": "restart", "label": "Restart", "type": "exec", "args": ["-Restart"] }
+  ],
+  "requires": [
+    { "check": "wsl", "why": "The scrape daemon runs inside WSL." }
+  ],
+  "resources": { "budget": { "warnMb": 1024, "maxMb": 2560, "cpuWarnPercent": 50, "sustainSeconds": 120 } },
+  "open": { "settings": "config/settings.json", "logs": "logs/", "readme": "README.md", "folder": "." },
+  "trayIcon": "hide-when-hosted",
+  "autoStartDefault": false
+}

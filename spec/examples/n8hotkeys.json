@@ -1,0 +1,30 @@
+{
+  "contract": 2,
+  "id": "n8hotkeys",
+  "name": "N8 Hotkeys",
+  "version": "1.0.0",
+  "group": "Hotkeys",
+  "description": "Global hotkey worker for app focus, audio toggles and game-aware blocking.",
+  "icon": "config/n8hotkeys.ico",
+  "installDir": "%USERPROFILE%\\Scripts\\n8tray\\n8hotkeys",
+  "platforms": ["windows"],
+  "status": { "type": "file" },
+  "run": {
+    "interpreter": "powershell",
+    "script": "n8hotkeys.ps1",
+    "args": [],
+    "stop": { "type": "exec", "args": ["-Stop"], "graceSeconds": 5 }
+  },
+  "actions": [
+    { "id": "test-marker-sound", "label": "Test marker sound", "type": "exec", "args": ["-TestMarkerSound"] }
+  ],
+  "resources": { "budget": { "warnMb": 200, "maxMb": 500, "cpuWarnPercent": 10, "sustainSeconds": 60 } },
+  "open": { "settings": "config/settings.json", "logs": "logs/", "readme": "README.md", "folder": "." },
+  "menu": [
+    { "label": "Open audio folder", "type": "open-path", "path": "audio/" },
+    { "label": "Open setup guide", "type": "open-path", "path": "SETUP.md" },
+    { "label": "Test marker sound", "type": "action", "action": "test-marker-sound" }
+  ],
+  "trayIcon": "hide-when-hosted",
+  "autoStartDefault": true
+}

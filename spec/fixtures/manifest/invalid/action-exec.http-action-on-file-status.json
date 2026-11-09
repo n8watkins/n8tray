@@ -1,0 +1,17 @@
+{
+  "contract": 2,
+  "id": "fake",
+  "name": "Fake",
+  "version": "0.1.0",
+  "installDir": "/opt/fake",
+  "status": {
+    "type": "file"
+  },
+  "actions": [
+    {
+      "id": "reset",
+      "label": "Reset",
+      "type": "http"
+    }
+  ]
+}

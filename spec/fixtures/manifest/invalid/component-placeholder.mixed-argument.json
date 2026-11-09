@@ -1,0 +1,24 @@
+{
+  "contract": 2,
+  "id": "fake",
+  "name": "Fake",
+  "version": "0.1.0",
+  "installDir": "C:\\Users\\someone\\apps\\fake",
+  "status": {
+    "type": "file"
+  },
+  "run": {
+    "program": "bin/fake"
+  },
+  "actions": [
+    {
+      "id": "reset",
+      "label": "Reset {component}",
+      "type": "exec",
+      "args": [
+        "--engine={component}"
+      ],
+      "component": true
+    }
+  ]
+}

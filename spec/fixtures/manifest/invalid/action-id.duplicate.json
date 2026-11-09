@@ -1,0 +1,23 @@
+{
+  "contract": 2,
+  "id": "fake",
+  "name": "Fake",
+  "version": "0.1.0",
+  "installDir": "%HOME%/apps/fake",
+  "status": {
+    "type": "http",
+    "url": "http://127.0.0.1:7499/n8/v2/status"
+  },
+  "actions": [
+    {
+      "id": "restart",
+      "label": "Restart",
+      "type": "http"
+    },
+    {
+      "id": "restart",
+      "label": "Again",
+      "type": "http"
+    }
+  ]
+}
