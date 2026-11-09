@@ -28,6 +28,21 @@ pub fn system_memory() -> Option<SystemMemory> {
     }
 }
 
+/// Hands this process's resident pages it is not using back to the OS
+/// (Windows: EmptyWorkingSet). A resident tray calls it when it goes idle,
+/// such as after its window was destroyed; pages it needs again come back on
+/// use. Returns whether anything was done (false where the OS has no such call).
+pub fn trim_own_working_set() -> bool {
+    #[cfg(windows)]
+    {
+        crate::win::system::trim_own_working_set()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -35,5 +50,10 @@ mod tests {
         let memory = super::system_memory().expect("the OS reports memory");
         assert!(memory.total_bytes > 0);
         assert!(memory.available_bytes <= memory.total_bytes);
+    }
+
+    #[test]
+    fn trimming_is_safe() {
+        assert_eq!(super::trim_own_working_set(), cfg!(windows));
     }
 }

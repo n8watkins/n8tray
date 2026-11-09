@@ -51,6 +51,7 @@ function App() {
       ))}
       <footer class="muted">
         N8 Tray {snapshot.version} · this app {memory(snapshot.tray.rssMb)}
+        {snapshot.tray.cpuPercent !== null ? ` · ${cpu(snapshot.tray.cpuPercent)}` : ""}
         {snapshot.tray.windowMb > 0 ? ` · window ${memory(snapshot.tray.windowMb)}` : ""}
       </footer>
     </main>
@@ -72,6 +73,7 @@ function Row({ app }: { app: AppView }) {
           {app.pending ?? app.summary}
           {figures ? ` · ${figures}` : ""}
         </span>
+        {app.alert && <span class="outcome">{app.alert}</span>}
         {app.lastOutcome && app.lastOutcome.outcome !== "ok" && (
           <span class="outcome">{app.lastOutcome.message ?? app.lastOutcome.outcome}</span>
         )}

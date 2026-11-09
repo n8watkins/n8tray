@@ -2,6 +2,7 @@
 import type { ActionView } from "./ActionView";
 import type { ComponentView } from "./ComponentView";
 import type { GpuView } from "./GpuView";
+import type { HistoryView } from "./HistoryView";
 import type { LevelName } from "./LevelName";
 import type { MenuView } from "./MenuView";
 import type { OpenView } from "./OpenView";
@@ -44,4 +45,8 @@ memoryMb: number | null, privateMb: number | null, cpuPercent: number | null, gp
 /**
  * Memory reported for processes the host cannot see (inside WSL).
  */
-namespacedMb: number | null, processes: Array<ProcessView>, notes: Array<string>, };
+namespacedMb: number | null, processes: Array<ProcessView>, 
+/**
+ * A resource alert, such as "Over its 900 MB warning".
+ */
+alert: string | null, history: HistoryView | null, notes: Array<string>, };

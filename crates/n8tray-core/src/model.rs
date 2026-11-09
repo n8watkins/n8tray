@@ -46,6 +46,8 @@ pub struct HostSnapshot {
     pub running: u32,
     pub total: u32,
     pub memory: MemoryView,
+    /// The memory pressure level pushed to apps (10 s in, 60 s out).
+    pub pressure: LevelName,
     pub apps: Vec<AppView>,
     pub problems: Vec<ProblemView>,
     pub tray: TrayUsage,
@@ -82,6 +84,19 @@ pub struct TrayUsage {
     pub window_mb: f64,
     pub private_mb: Option<f64>,
     pub cpu_percent: Option<f64>,
+    pub history: Option<HistoryView>,
+}
+
+/// The last 15 minutes in 10 s steps, oldest first (0 where nothing ran).
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct HistoryView {
+    pub interval_seconds: u32,
+    /// The maximum memory of each step, in MiB.
+    pub memory_mb: Vec<f64>,
+    /// The average CPU of each step, share of the whole machine.
+    pub cpu_percent: Vec<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
@@ -125,6 +140,9 @@ pub struct AppView {
     /// Memory reported for processes the host cannot see (inside WSL).
     pub namespaced_mb: Option<f64>,
     pub processes: Vec<ProcessView>,
+    /// A resource alert, such as "Over its 900 MB warning".
+    pub alert: Option<String>,
+    pub history: Option<HistoryView>,
     pub notes: Vec<String>,
 }
 

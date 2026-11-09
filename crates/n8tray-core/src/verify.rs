@@ -24,6 +24,8 @@ pub struct ProcessTable {
     pub taken_at: DateTime<Utc>,
     by_pid: HashMap<u32, ProcInfo>,
     children: HashMap<u32, Vec<u32>>,
+    /// CPU since the previous table, share of the whole machine (0 to 100).
+    cpu: HashMap<u32, f64>,
 }
 
 impl ProcessTable {
@@ -40,7 +42,35 @@ impl ProcessTable {
             taken_at: snapshot.taken_at,
             by_pid,
             children,
+            cpu: HashMap::new(),
         }
+    }
+
+    /// Computes every process's CPU since `previous` (the same pid with the
+    /// same start time): CPU time used over wall time and all `cpus`, as Task
+    /// Manager shows it. A process seen for the first time has none yet.
+    pub fn with_cpu_from(mut self, previous: &ProcessTable, cpus: u32) -> ProcessTable {
+        let wall_ms = (self.taken_at - previous.taken_at).num_milliseconds();
+        if wall_ms <= 0 {
+            return self;
+        }
+        let capacity = wall_ms as f64 * cpus.max(1) as f64;
+        for p in self.by_pid.values() {
+            if let Some(old) = previous.get(p.pid)
+                && old.started_at == p.started_at
+                && p.cpu_time_ms >= old.cpu_time_ms
+            {
+                let used = (p.cpu_time_ms - old.cpu_time_ms) as f64;
+                self.cpu
+                    .insert(p.pid, (used / capacity * 100.0).clamp(0.0, 100.0));
+            }
+        }
+        self
+    }
+
+    /// CPU since the previous table; `None` until a process has two samples.
+    pub fn cpu_percent(&self, pid: u32) -> Option<f64> {
+        self.cpu.get(&pid).copied()
     }
 
     pub fn from_processes(processes: Vec<ProcInfo>) -> ProcessTable {
@@ -64,6 +94,25 @@ impl ProcessTable {
 
     pub fn iter(&self) -> impl Iterator<Item = &ProcInfo> {
         self.by_pid.values()
+    }
+
+    /// The direct children of a process (by parent pid; started no earlier
+    /// than the parent, so a reused parent pid adopts nothing).
+    pub fn children(&self, pid: u32) -> Vec<u32> {
+        let Some(parent) = self.by_pid.get(&pid) else {
+            return Vec::new();
+        };
+        self.children
+            .get(&pid)
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|c| {
+                self.by_pid.get(c).is_some_and(|c| {
+                    c.started_at + chrono::Duration::seconds(1) >= parent.started_at
+                })
+            })
+            .collect()
     }
 
     /// Step 1: the pid runs and started within 1 s of `started_at`.
@@ -335,6 +384,28 @@ mod tests {
         });
         assert_eq!(a.verdicts[&200], Verdict::Unverified);
         assert!(!a.is_owned(200));
+    }
+
+    #[test]
+    fn cpu_is_a_share_of_the_whole_machine() {
+        let mut first = proc(100, 1, 10);
+        first.cpu_time_ms = 1_000;
+        let mut later = first.clone();
+        later.cpu_time_ms = 1_500;
+        let reused = proc(200, 1, 99);
+        let old = ProcessTable::new(ProcessSnapshot {
+            taken_at: at(100),
+            processes: vec![first, proc(200, 1, 20)],
+        });
+        let new = ProcessTable::new(ProcessSnapshot {
+            taken_at: at(110),
+            processes: vec![later, reused, proc(300, 1, 105)],
+        })
+        .with_cpu_from(&old, 4);
+        // 500 ms of CPU in 10 s on 4 processors: 1.25% of the machine.
+        assert_eq!(new.cpu_percent(100), Some(1.25));
+        assert_eq!(new.cpu_percent(200), None, "a reused pid starts over");
+        assert_eq!(new.cpu_percent(300), None, "new: measuring");
     }
 
     #[test]

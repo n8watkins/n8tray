@@ -30,6 +30,13 @@ pub fn memory() -> Option<(u64, u64)> {
     Some((status.ullTotalPhys, status.ullAvailPhys))
 }
 
+/// Lets the OS take back this process's resident pages it is not using now.
+pub fn trim_own_working_set() -> bool {
+    use windows_sys::Win32::System::ProcessStatus::K32EmptyWorkingSet;
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    unsafe { K32EmptyWorkingSet(GetCurrentProcess()) != 0 }
+}
+
 /// Whether a named mutex exists in this session.
 pub fn mutex_exists(name: &str) -> bool {
     let name = wide(name);
