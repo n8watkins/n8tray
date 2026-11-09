@@ -27,12 +27,15 @@ spec/
   examples/          manifests for VoiceDock, Commentary, Hotkeys, Lead Scraper and WSL Memory
   fixtures/          valid and invalid documents every implementation is tested against
 crates/
-  n8tray-contract/   the contract's Rust types and validation
+  n8tray-contract/       the contract's Rust types and validation
+  n8tray-conformance/    the conformance kit: the n8tray-contract CLI (check, probe, the test tray)
+                         and n8tray-fake-module
 docs/
   DECISIONS.md       why things are the way they are
 ```
 
 Start with [`spec/contract-v2.md`](spec/contract-v2.md).
+To make an app follow the contract, use the [conformance kit](crates/n8tray-conformance/README.md).
 
 ## Development
 

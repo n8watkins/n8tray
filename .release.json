@@ -7,6 +7,10 @@
     {
       "path": "Cargo.lock",
       "pattern": "^name = \"n8tray-contract\"\\nversion = \"(.*)\"$"
+    },
+    {
+      "path": "Cargo.lock",
+      "pattern": "^name = \"n8tray-conformance\"\\nversion = \"(.*)\"$"
     }
   ],
   "workflows": "package",
