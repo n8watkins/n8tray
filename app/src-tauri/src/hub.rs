@@ -158,6 +158,17 @@ fn reveal(app: &AppHandle, window: &WebviewWindow) {
 }
 
 #[cfg(windows)]
+fn frame_insets(window: &WebviewWindow) -> Option<(i32, i32, i32, i32)> {
+    let hwnd = window.hwnd().ok()?;
+    n8tray_platform::window::frame_insets(hwnd.0 as isize)
+}
+
+#[cfg(not(windows))]
+fn frame_insets(_window: &WebviewWindow) -> Option<(i32, i32, i32, i32)> {
+    None
+}
+
+#[cfg(windows)]
 fn show_inactive(window: &WebviewWindow) -> bool {
     window
         .hwnd()
@@ -267,7 +278,6 @@ fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .shadow(true)
         .skip_taskbar(true)
         .always_on_top(true)
-        .focused(true)
         .visible(false)
         .theme(test_theme())
         .build()?;
@@ -277,7 +287,13 @@ fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     }
     let handle = app.clone();
     window.on_window_event(move |event| match event {
-        WindowEvent::Focused(false) => {
+        // Only a shown window hides on focus loss: a window still being
+        // created can lose a focus it never had, and must still appear.
+        WindowEvent::Focused(false)
+            if handle
+                .get_webview_window(LABEL)
+                .is_some_and(|w| w.is_visible().unwrap_or(false)) =>
+        {
             handle
                 .state::<AppState>()
                 .hub
@@ -361,19 +377,47 @@ fn place(app: &AppHandle, window: &WebviewWindow, log: bool) {
     let anchor = anchor.unwrap_or(Rect::new(work.right(), work.bottom(), 1, 1));
     let width = (WIDTH * scale).round() as i32;
     let wanted = (content_height * scale).round() as i32;
-    let room = placement::place(width, wanted, anchor, screen, work, placement::GAP).max_height;
+    // What users see is the visible frame: the inner size plus any border
+    // the OS draws, inside invisible resize borders (Windows). Place that.
+    let insets = frame_insets(window);
+    let border = |outer: i32, inner: i32| (outer - inner).max(0);
+    let (extra_w, extra_h) = match (insets, window.outer_size(), window.inner_size()) {
+        (Some((l, t, r, b)), Ok(o), Ok(i)) => (
+            border(o.width as i32 - l - r, i.width as i32),
+            border(o.height as i32 - t - b, i.height as i32),
+        ),
+        _ => (0, 0),
+    };
+    let room = placement::place(
+        width + extra_w,
+        wanted + extra_h,
+        anchor,
+        screen,
+        work,
+        placement::GAP,
+    )
+    .max_height
+        - extra_h;
     let height = wanted.min(room);
-    let spot = placement::place(width, height, anchor, screen, work, placement::GAP);
-    let _ = window.set_position(PhysicalPosition::new(spot.x, spot.y));
     let _ = window.set_size(PhysicalSize::new(width as u32, height as u32));
+    let spot = placement::place(
+        width + extra_w,
+        height + extra_h,
+        anchor,
+        screen,
+        work,
+        placement::GAP,
+    );
+    let (left, top) = insets.map(|(l, t, _, _)| (l, t)).unwrap_or((0, 0));
+    let _ = window.set_position(PhysicalPosition::new(spot.x - left, spot.y - top));
     let _ = window.emit_to(LABEL, "fit", height < wanted);
     if log {
         info!(
             "The window opens at {},{} ({}x{}, scale {scale}) by the {:?} taskbar; icon at {},{} ({}x{}), work area {},{} ({}x{})",
             spot.x,
             spot.y,
-            width,
-            height,
+            width + extra_w,
+            height + extra_h,
             spot.edge,
             anchor.x,
             anchor.y,

@@ -31,3 +31,20 @@ pub fn show_inactive(handle: isize) -> bool {
         false
     }
 }
+
+/// How far the visible frame sits inside the window's rectangle, as
+/// (left, top, right, bottom) in physical pixels. A frameless window on
+/// Windows keeps invisible resize borders around what users see, so placing
+/// the rectangle 2 px from something leaves the visible edge elsewhere.
+/// `None` where the OS draws no such borders or cannot say.
+pub fn frame_insets(handle: isize) -> Option<(i32, i32, i32, i32)> {
+    #[cfg(windows)]
+    {
+        crate::win::window::frame_insets(handle)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = handle;
+        None
+    }
+}
