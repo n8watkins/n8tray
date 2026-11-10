@@ -2427,6 +2427,8 @@ dependencies = [
 name = "n8tray"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "chrono",
  "n8tray-core",
  "n8tray-platform",
  "serde",

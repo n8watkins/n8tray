@@ -11,6 +11,10 @@ level: LevelName,
  */
 n8Mb: number, 
 /**
+ * The system's name for the memory line: `Windows`, `macOS` or `Linux`.
+ */
+system: string, 
+/**
  * "Windows 4.2/31.1 GB free · N8 0.3 GB".
  */
 text: string, };

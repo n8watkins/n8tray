@@ -6,6 +6,7 @@ pub mod gpu;
 pub mod job;
 pub mod process;
 pub mod system;
+pub mod window;
 
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
 

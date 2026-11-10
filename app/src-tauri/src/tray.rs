@@ -16,7 +16,7 @@ use tracing::{info, warn};
 
 use crate::state::AppState;
 
-const TRAY_ID: &str = "n8tray";
+pub const TRAY_ID: &str = "n8tray";
 
 /// One line of the menu.
 #[derive(Debug, Clone, PartialEq)]
@@ -360,7 +360,7 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
     let snapshot = state.latest();
     let folders = n8tray_core::folders::Folders::from_env();
     match id.as_str() {
-        "status" => crate::hub::show(app, None),
+        "status" => crate::hub::show(app, None, Some("details")),
         "signin" => {
             let on = snapshot
                 .as_ref()

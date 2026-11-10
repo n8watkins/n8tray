@@ -18,6 +18,7 @@ pub mod host;
 pub mod lease;
 pub mod logging;
 pub mod model;
+pub mod placement;
 pub mod pressure;
 pub mod resolve;
 pub mod settings;

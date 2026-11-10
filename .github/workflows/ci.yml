@@ -130,12 +130,120 @@ jobs:
             exit 1
           fi
 
+  # The window's view models and keyboard (Vitest), then every view against
+  # recorded snapshots in Chromium: pictures for review, the keyboard path
+  # and an accessibility scan (Playwright). The pictures are an artifact.
+  ui:
+    name: Window
+    needs: changes
+    if: needs.changes.outputs.checks == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - run: npm ci
+        working-directory: app/ui
+      - run: npm run typecheck
+        working-directory: app/ui
+      - run: npm test
+        working-directory: app/ui
+      - run: npx playwright install --with-deps chromium
+        working-directory: app/ui
+      - run: npm run screens
+        working-directory: app/ui
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: window-screens
+          path: app/ui/screens/
+          if-no-files-found: ignore
+
+  # The real app, built for release, on each OS: its own memory and CPU
+  # against the budgets (plan 3.6), enforced on Windows and reported
+  # elsewhere, and the real window through WebDriver on Windows and Linux
+  # (tauri-driver has no macOS support).
+  app:
+    name: App (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.checks == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Linux packages for the tray, the WebView and its WebDriver
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Build the window (the app embeds it)
+        run: npm ci --prefix app/ui && npm run build --prefix app/ui
+      - run: rustup toolchain install # the version in rust-toolchain.toml
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release
+      - run: cargo build --release --locked -p n8tray -p n8tray-conformance --bin n8tray --bin n8tray-fake-module
+      - name: Budget (enforced on Windows)
+        shell: bash
+        run: |
+          app=target/release/n8tray; [ "$RUNNER_OS" = Windows ] && app=target/release/n8tray.exe
+          run=""; [ "$RUNNER_OS" = Linux ] && run="xvfb-run -a"
+          enforce=""; [ "$RUNNER_OS" = Windows ] && enforce="--enforce"
+          $run node scripts/tray-budget.mjs --app "$app" $enforce --out "budget-${RUNNER_OS}.json"
+      - name: WebDriver tools (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo install tauri-driver --locked --version 2.1.0
+          # msedgedriver must match the WebView2 runtime exactly.
+          $key = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $version = (Get-ItemProperty $key).pv
+          Write-Host "WebView2 $version"
+          Invoke-WebRequest "https://msedgedriver.microsoft.com/$version/edgedriver_win64.zip" -OutFile edgedriver.zip
+          Expand-Archive edgedriver.zip -DestinationPath edgedriver
+          "NATIVE_DRIVER=$PWD\edgedriver\msedgedriver.exe" | Out-File -Append $env:GITHUB_ENV
+      - name: WebDriver tools (Linux)
+        if: runner.os == 'Linux'
+        run: cargo install tauri-driver --locked --version 2.1.0
+      - name: The real window through WebDriver
+        if: runner.os != 'macOS'
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            node app/ui/tests/e2e/webdriver.mjs --app target/release/n8tray.exe --fake target/release/n8tray-fake-module.exe --native-driver "$NATIVE_DRIVER" --out screens
+          else
+            xvfb-run -a node app/ui/tests/e2e/webdriver.mjs --app target/release/n8tray --fake target/release/n8tray-fake-module --out screens
+          fi
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-${{ matrix.os }}
+          path: |
+            budget-*.json
+            screens/
+          if-no-files-found: ignore
+
   # The only required check: passes when every job above passed or was
   # skipped on purpose by its lane.
   result:
     name: CI result
     if: always()
-    needs: [changes, kit, lint, lint-windows, test]
+    needs: [changes, kit, lint, lint-windows, test, ui, app]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

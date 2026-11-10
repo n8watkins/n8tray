@@ -160,3 +160,27 @@ This widens what is valid and makes nothing invalid, so it stays within contract
 The host never had a release that read manifests, so no installed host rejects such a manifest.
 The host reads an icon itself (at most 256 KB) and the window shows it only as an image, so an SVG's scripts or external references never run; a missing or unusable icon shows the generic app glyph.
 `spec/examples/icons/` has the icons for the five example apps, redrawn in SVG from the PowerShell tray's artwork: a speaker for VoiceDock, a keyboard for N8 Hotkeys, a camera for N8 Commentary, a briefcase for Lead Scraper and a memory chip for WSL Memory.
+
+## D24. The window's budget is private memory; both figures are shown (2026-11-09)
+
+Plan 3.6 gives N8 Tray budgets: idle with no window at most 30 MB and 0.2% CPU, with the window open at most 150 MB including the WebView, and back under 35 MB within 70 s of closing it.
+The budget metric is private memory (private bytes on Windows): what N8 Tray alone costs the system.
+The working set also counts WebView2's shared, mapped runtime code, which other WebView2 and Edge processes share, so it overstates the cost and moves with whatever else runs (D19).
+The status details show both figures for the tray and for its window, and the snapshot carries `windowPrivateMb` next to `windowMb`.
+`scripts/tray-budget.mjs` measures a release build in its own folders from the host's status file and fails CI on Windows when a figure is over budget; on Linux and macOS it reports the figures, since the budgets were set for the owner's Windows PC and WebKitGTK and WKWebView cost differently.
+
+## D25. The hub (2026-11-09)
+
+The window follows the mockup the owner approved on 2026-11-09, with the apps' own icons instead of letter tiles.
+Each row has one action, Stop while the app runs and Start while it does not; Restart is in the app's panel and the right-click menu.
+Its views are the hub, an app's panel (state, components, the last 15 minutes, processes, what to open, its settings), status details, settings and resource history (24 hours and 7 days from the day files).
+The window is a view: Rust sends the snapshot and answers a fixed list of commands (`capabilities/hub.json`); which actions are possible, levels and texts are the host's, and the window only lays them out and words them.
+
+It opens 2 px from the tray icon, away from the taskbar, inside the work area of the icon's monitor, on every taskbar edge, with an auto-hidden taskbar and from the overflow flyout: the PowerShell tray's rules, ported as `n8tray_core::placement` and unit-tested per edge.
+Its height follows its content and it grows away from the taskbar; a window taller than the work area scrolls.
+It is created hidden and shown only once it has drawn itself and reported its height (`fit_window`), so it appears in one piece; if it does not draw within 2.5 s it is shown anyway.
+On Windows it is a tool window (no Alt-Tab or taskbar entry) with Windows 11's rounded corners.
+Keyboard: Tab and Shift+Tab through every control, arrows between rows and within a row, Enter and Space, Escape back to the hub and then closed.
+High Contrast uses the system's colors through `forced-colors`, and each level stays a distinct dot.
+
+The pictures for review come from Playwright against recorded snapshots (`app/ui/preview/`), the replacement for the PowerShell tray's `-Render`; the real window is tested through WebDriver on Windows and Linux.

@@ -15,6 +15,8 @@ workspace = true
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
+base64 = "0.22.1"
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 n8tray-core = { path = "../../crates/n8tray-core" }
 n8tray-platform = { path = "../../crates/n8tray-platform" }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -24,4 +26,4 @@ tauri-plugin-notification = "2.4.0"
 tauri-plugin-single-instance = "2.4.5"
 tracing = "0.1.44"
 tracing-appender = "0.2.5"
-tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "ansi"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "ansi", "registry"] }

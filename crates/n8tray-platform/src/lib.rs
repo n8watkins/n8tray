@@ -14,6 +14,7 @@
 //!   a LaunchAgent).
 //! - [`legacy`]: whether the PowerShell N8 Tray runs.
 //! - [`folders`]: a folder only the current user can read.
+//! - [`window`]: the tray window's native style (no Alt-Tab entry, rounded corners).
 
 pub mod autostart;
 pub mod container;
@@ -24,6 +25,7 @@ pub mod memory;
 pub mod process;
 pub mod signal;
 pub mod spawn;
+pub mod window;
 
 #[cfg(windows)]
 mod win;
