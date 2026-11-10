@@ -217,6 +217,73 @@ impl History {
     }
 }
 
+/// One app's history from the day files, from `now - hours` to `now`, in
+/// `points` equal steps (the maximum memory and the average CPU of the
+/// minutes in each step; 0 where nothing ran). For the 24-hour and 7-day
+/// charts; `id` is an app's id or `n8tray`.
+pub fn read(dir: &Path, id: &str, now: DateTime<Utc>, hours: u32, points: usize) -> HistoryView {
+    let points = points.max(1);
+    let span = i64::from(hours.max(1)) * 3600;
+    let step = (span / points as i64).max(60);
+    let first = now.timestamp() - step * points as i64;
+    let mut memory = vec![0.0f64; points];
+    let mut cpu_sum = vec![0.0f64; points];
+    let mut cpu_n = vec![0u32; points];
+    let mut day = DateTime::from_timestamp(first, 0)
+        .unwrap_or(now)
+        .date_naive();
+    while day <= now.date_naive() {
+        let path = dir.join(format!("{}.csv", day.format("%Y-%m-%d")));
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            for line in text.lines().skip(1) {
+                let mut f = line.split(',');
+                let (Some(minute), Some(app), Some(mem), Some(_), Some(cpu)) =
+                    (f.next(), f.next(), f.next(), f.next(), f.next())
+                else {
+                    continue;
+                };
+                if app != id {
+                    continue;
+                }
+                let Some(at) = DateTime::parse_from_rfc3339(minute)
+                    .ok()
+                    .map(|t| t.timestamp())
+                else {
+                    continue;
+                };
+                if at < first || at >= first + step * points as i64 {
+                    continue;
+                }
+                let i = ((at - first) / step) as usize;
+                if let Ok(mem) = mem.parse::<f64>() {
+                    memory[i] = memory[i].max(mem);
+                }
+                if let Ok(cpu) = cpu.parse::<f64>() {
+                    cpu_sum[i] += cpu;
+                    cpu_n[i] += 1;
+                }
+            }
+        }
+        let Some(next) = day.succ_opt() else { break };
+        day = next;
+    }
+    HistoryView {
+        interval_seconds: step as u32,
+        memory_mb: memory.iter().map(|m| (m * 10.0).round() / 10.0).collect(),
+        cpu_percent: cpu_sum
+            .iter()
+            .zip(&cpu_n)
+            .map(|(s, n)| {
+                if *n > 0 {
+                    ((s / f64::from(*n)) * 10.0).round() / 10.0
+                } else {
+                    0.0
+                }
+            })
+            .collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,5 +341,28 @@ mod tests {
         assert!(lines[1].contains(",a,200.0,100.0,3.00,0.0,2"));
         assert!(lines[2].contains(",b,50.0,"));
         assert!(!dir.path().join("2020-01-01.csv").exists());
+    }
+
+    #[test]
+    fn day_files_read_back_in_steps() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = History::new(dir.path(), 7);
+        let t = at(0).with_second(0).unwrap();
+        for m in 0..120 {
+            let when = t + Duration::minutes(m);
+            h.record("a", when, &sample(100.0 + m as f64, 2.0)).unwrap();
+            h.record("b", when, &sample(5.0, 0.0)).unwrap();
+        }
+        h.flush().unwrap();
+        let now = t + Duration::minutes(120);
+        let v = read(dir.path(), "a", now, 24, 288);
+        assert_eq!(v.interval_seconds, 300);
+        assert_eq!(v.memory_mb.len(), 288);
+        // The last 2 hours are the last 24 five-minute steps.
+        assert_eq!(v.memory_mb[288 - 25], 0.0);
+        assert_eq!(v.memory_mb[288 - 1], 219.0);
+        assert_eq!(v.cpu_percent[288 - 1], 2.0);
+        let missing = read(dir.path(), "nobody", now, 168, 168);
+        assert!(missing.memory_mb.iter().all(|m| *m == 0.0));
     }
 }

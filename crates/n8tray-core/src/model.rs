@@ -69,6 +69,8 @@ pub struct MemoryView {
     pub level: LevelName,
     /// N8 Tray plus every hosted app, in MiB.
     pub n8_mb: f64,
+    /// The system's name for the memory line: `Windows`, `macOS` or `Linux`.
+    pub system: String,
     /// "Windows 4.2/31.1 GB free · N8 0.3 GB".
     pub text: String,
 }
@@ -82,7 +84,10 @@ pub struct TrayUsage {
     pub rss_mb: f64,
     /// Its window's processes (the WebView), while there is a window.
     pub window_mb: f64,
+    /// The tray process's private memory: what it alone costs the system.
     pub private_mb: Option<f64>,
+    /// The window's processes' private memory (the window's budget metric).
+    pub window_private_mb: Option<f64>,
     pub cpu_percent: Option<f64>,
     pub history: Option<HistoryView>,
 }
@@ -277,4 +282,18 @@ pub struct UpdateView {
     pub url: Option<String>,
     pub checked_at: Option<String>,
     pub error: Option<String>,
+}
+
+/// A warning or error from the tray log, for the status details.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WarningView {
+    /// Local time, `HH:MM`.
+    pub at: String,
+    /// `warn` or `error`.
+    pub level: String,
+    pub message: String,
+    /// How many times in a row it was logged.
+    pub count: u32,
 }

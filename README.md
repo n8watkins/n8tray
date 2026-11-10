@@ -15,7 +15,8 @@ This repository is new and is being built in phases.
 | 1 | The contract: specification, JSON Schema, fixtures and a conformance kit | Done (v0.1.0) |
 | 2 | The host core and tray on Windows: discovery, supervision in Job Objects, status, lease, menu, window | Done |
 | 3 | Measurement: CPU, memory, GPU, history, alerts, memory pressure, demand rules | Done |
-| 4, 5 | The hub, checks and opt-in setup, self-update | Next |
+| 4 | The hub: every app with its own icon, panels, status details, settings, resource history; placed at the icon on every taskbar edge; keyboard, screen readers, High Contrast | Done |
+| 5 | Checks and opt-in setup, self-update | Next |
 | 11, 12 | macOS and Linux | Later |
 
 The PowerShell N8 Tray that runs on the owner's PC today lives in a private repo until the Tauri app replaces it.
@@ -39,7 +40,8 @@ crates/
 app/
   src-tauri/             the tray app (Tauri 2): icon with a level badge, native menu, window,
                          single instance, start at sign-in
-  ui/                    the window (Preact and TypeScript): a view of the host's snapshot
+  ui/                    the window (Preact and TypeScript): a view of the host's snapshot;
+                         preview/ runs it against recorded snapshots for screenshots
 docs/
   DECISIONS.md       why things are the way they are
 ```
@@ -64,7 +66,19 @@ npm ci --prefix app/ui && npm run build --prefix app/ui
 cargo run -p n8tray            # the tray; N8TRAY_HOME=/tmp/n8 keeps it in its own folders
 ```
 
-`n8tray --exit` ends a running N8 Tray (apps keep running), `n8tray --hide` closes its window, and starting it again opens the window.
+`n8tray --exit` ends a running N8 Tray (apps keep running), `n8tray --hide` closes its window, and starting it again (or with `--show`) opens the window.
+
+The window's own checks:
+
+```bash
+cd app/ui
+npm test           # view models and keyboard (Vitest)
+npm run screens    # every view, light, dark and High Contrast, against recorded snapshots;
+                   # pictures in app/ui/screens/, plus the keyboard path and an accessibility scan
+npm run preview    # the same window in a browser at http://localhost:1430/?fixture=busy&view=hub
+```
+
+`node app/ui/tests/e2e/webdriver.mjs` drives the real window through tauri-driver, and `node scripts/tray-budget.mjs --app <n8tray>` measures N8 Tray's memory and CPU against its budgets (D24).
 
 Commits follow Conventional Commits and land through pull requests; see [RELEASING.md](RELEASING.md) and [AGENTS.md](AGENTS.md).
 

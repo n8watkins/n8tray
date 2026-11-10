@@ -1,99 +1,195 @@
-import { render } from "preact";
-import { useEffect, useState } from "preact/hooks";
+// N8 Tray's window: a view of the host's snapshot. It keeps only the
+// latest snapshot and which view it shows; every decision is Rust's.
+import { Component, render, type ComponentChildren } from "preact";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { HostSnapshot } from "./bindings/HostSnapshot";
-import type { AppView } from "./bindings/AppView";
-import { getSnapshot, hideWindow, moduleAction, onSnapshot, openItem } from "./api";
-import { cpu, memory } from "./format";
+import { fitWindow, getSnapshot, hideWindow, initialView, onFit, onNavigate, onSnapshot, type ViewName } from "./api";
+import { moveFocus } from "./keyboard";
+import { Details } from "./views/Details";
+import { History } from "./views/History";
+import { CloseButton, Hub, HubFoot, HubHead } from "./views/Hub";
+import { Panel, PanelHead } from "./views/Panel";
+import { Settings } from "./views/Settings";
+import { Glyph } from "./components/Glyph";
 import "./style.css";
 
-// A plain status view of the host's snapshot. The hub (Phase 4) replaces it.
+export type View = { name: ViewName } | { name: "panel"; id: string } | { name: "history"; id?: string };
+export type Go = (view: View) => void;
+
+const titles: Record<string, string> = { details: "Status details", settings: "Settings", history: "Resource history" };
+
 function App() {
   const [snapshot, setSnapshot] = useState<HostSnapshot | null>(null);
+  const [view, setView] = useState<View>({ name: "hub" });
+  const [clipped, setClipped] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const inner = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    let stop: (() => void) | undefined;
-    getSnapshot().then((s) => s && setSnapshot(s));
-    onSnapshot(setSnapshot).then((unlisten) => (stop = unlisten));
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") hideWindow();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      stop?.();
-      window.removeEventListener("keydown", onKey);
-    };
+  const go: Go = useCallback((next: View) => {
+    setView(next);
+    // Keyboard and screen reader users land at the top of the new view.
+    requestAnimationFrame(() => root.current?.focus());
   }, []);
 
-  if (!snapshot) return <main class="empty">Starting</main>;
-  const apps = snapshot.apps.filter((a) => a.hosted && a.level !== "hidden");
-  return (
-    <main>
-      <header class={`status ${snapshot.level}`}>
-        <span class="dot" aria-hidden="true" />
-        <div>
-          <h1>{snapshot.headline}</h1>
-          <p>{snapshot.reason ?? `${snapshot.running} of ${snapshot.total} running`}</p>
-          <p class="muted">{snapshot.memory.text}</p>
+  useEffect(() => {
+    const stops: (() => void)[] = [];
+    // The host may not have published yet when a new window asks: ask again
+    // until it has (events then carry every change).
+    let first = true;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const ask = () =>
+      getSnapshot()
+        .then((s) => {
+          if (!first) return;
+          if (s) {
+            first = false;
+            setSnapshot(s);
+          } else retry = setTimeout(ask, 300);
+        })
+        .catch(() => first && (retry = setTimeout(ask, 1000)));
+    ask();
+    stops.push(() => {
+      first = false;
+      clearTimeout(retry);
+    });
+    initialView().then((v) => setView({ name: v }));
+    onSnapshot((s) => {
+      first = false;
+      setSnapshot(s);
+    }).then((u) => stops.push(u));
+    onNavigate((v) => go({ name: v })).then((u) => stops.push(u));
+    onFit(setClipped).then((u) => stops.push(u));
+    return () => stops.forEach((s) => s());
+  }, [go]);
+
+  // The window's height follows the content; Rust sizes, places and (the
+  // first time) shows it once it has drawn, so it appears in one piece.
+  useLayoutEffect(() => {
+    const el = root.current;
+    const body = inner.current;
+    if (!el || !body || !snapshot) return;
+    let frame = 0;
+    let last = -1;
+    // Measured during layout, not in an animation frame: a hidden window
+    // runs no frames, and it is shown only once it has reported.
+    const measure = () => {
+      const head = el.querySelector<HTMLElement>(".head")?.offsetHeight ?? 0;
+      const foot = el.querySelector<HTMLElement>(".foot")?.offsetHeight ?? 0;
+      const height = Math.ceil(head + body.scrollHeight + foot);
+      if (height !== last) {
+        last = height;
+        fitWindow(height);
+      }
+    };
+    const report = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+    const observer = new ResizeObserver(report);
+    observer.observe(body);
+    measure();
+    // Icons and fonts can change the height after the first layout.
+    const settle = setTimeout(measure, 150);
+    return () => {
+      observer.disconnect();
+      clearTimeout(settle);
+      cancelAnimationFrame(frame);
+    };
+  }, [snapshot !== null, view]);
+
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (view.name === "hub") hideWindow();
+      else go({ name: "hub" });
+      return;
+    }
+    if (root.current && moveFocus(e, root.current)) e.preventDefault();
+  };
+
+  if (!snapshot) {
+    return (
+      <div class="flyout" ref={root} tabIndex={-1} role="dialog" aria-label="N8 Tray">
+        <div class="flyout-body">
+          <div ref={inner}>
+            <p class="empty">Starting</p>
+          </div>
         </div>
-        <button class="close" aria-label="Hide" onClick={() => hideWindow()}>
-          x
+      </div>
+    );
+  }
+
+  const app = view.name === "panel" ? snapshot.apps.find((a) => a.id === view.id) : undefined;
+  const back = () => go({ name: "hub" });
+  let head;
+  let body;
+  if (view.name === "panel" && app) {
+    head = <PanelHead app={app} back={back} />;
+    body = <Panel app={app} go={go} />;
+  } else if (view.name === "hub" || view.name === "panel") {
+    head = <HubHead snapshot={snapshot} go={go} />;
+    body = <Hub snapshot={snapshot} go={go} />;
+  } else {
+    head = (
+      <header class="head crumb">
+        <button class="iconbtn" aria-label="Back" title="Back" onClick={back}>
+          <Glyph name="back" />
         </button>
+        <h1 class="title" id="title">
+          {titles[view.name]}
+        </h1>
+        <span class="grow" />
+        <CloseButton />
       </header>
-      <ul class="apps" aria-label="Apps">
-        {apps.map((app) => (
-          <Row key={app.id} app={app} />
-        ))}
-      </ul>
-      {snapshot.problems.map((p) => (
-        <p class="problem" key={p.file}>
-          {p.message}
-        </p>
-      ))}
-      <footer class="muted">
-        N8 Tray {snapshot.version} · this app {memory(snapshot.tray.rssMb)}
-        {snapshot.tray.cpuPercent !== null ? ` · ${cpu(snapshot.tray.cpuPercent)}` : ""}
-        {snapshot.tray.windowMb > 0 ? ` · window ${memory(snapshot.tray.windowMb)}` : ""}
-      </footer>
-    </main>
-  );
-}
-
-function Row({ app }: { app: AppView }) {
-  const figures = [memory(app.memoryMb), cpu(app.cpuPercent)].filter(Boolean).join(" · ");
-  // Start while stopped; Stop and Restart while running.
-  const buttons = app.actions.filter((a) =>
-    a.kind === "start" ? !app.running : a.kind === "stop" || a.kind === "restart" ? app.running : false,
-  );
+    );
+    body =
+      view.name === "details" ? (
+        <Details snapshot={snapshot} />
+      ) : view.name === "settings" ? (
+        <Settings snapshot={snapshot} />
+      ) : (
+        <History snapshot={snapshot} only={"id" in view ? view.id : undefined} />
+      );
+  }
+  const isHub = view.name === "hub" || (view.name === "panel" && !app);
   return (
-    <li class={`app ${app.level}`}>
-      <span class="dot" aria-hidden="true" />
-      <div class="text">
-        <strong>{app.name}</strong>
-        <span>
-          {app.pending ?? app.summary}
-          {figures ? ` · ${figures}` : ""}
-        </span>
-        {app.alert && <span class="outcome">{app.alert}</span>}
-        {app.lastOutcome && app.lastOutcome.outcome !== "ok" && (
-          <span class="outcome">{app.lastOutcome.message ?? app.lastOutcome.outcome}</span>
-        )}
+    <div class="flyout" ref={root} tabIndex={-1} role="dialog" aria-labelledby="title" onKeyDown={onKey}>
+      {head}
+      <div class={`flyout-body${clipped ? " clipped" : ""}`}>
+        <div ref={inner}>{body}</div>
       </div>
-      <div class="buttons">
-        {buttons.map((a) => (
-          <button key={a.id} disabled={!a.enabled} onClick={() => moduleAction(app.id, a.id)}>
-            {a.label}
-          </button>
-        ))}
-        {app.open
-          .filter((o) => o.key === "logs")
-          .map((o) => (
-            <button key={o.key} disabled={!o.exists} onClick={() => openItem(app.id, "open", o.key)}>
-              Log
-            </button>
-          ))}
-      </div>
-    </li>
+      {isHub && <HubFoot snapshot={snapshot} go={go} />}
+    </div>
   );
 }
 
-render(<App />, document.getElementById("app")!);
+/**
+ * A view that fails to draw shows what went wrong, and the window still
+ * appears (it reports its height), instead of waiting forever.
+ */
+class Guard extends Component<{ children: ComponentChildren }, { error: string | null }> {
+  state = { error: null as string | null };
+
+  componentDidCatch(error: unknown) {
+    this.setState({ error: error instanceof Error ? error.message : String(error) });
+    requestAnimationFrame(() => fitWindow(160).catch(() => {}));
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div class="flyout" role="alert">
+        <p class="empty">
+          N8 Tray's window could not draw: {this.state.error}. The tray and its apps keep working; the tray log has more.
+        </p>
+      </div>
+    );
+  }
+}
+
+render(
+  <Guard>
+    <App />
+  </Guard>,
+  document.getElementById("app")!,
+);

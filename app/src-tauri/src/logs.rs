@@ -15,11 +15,14 @@ pub fn init(dir: &Path) -> Option<WorkerGuard> {
         .build(dir)
         .ok()?;
     let (writer, guard) = tracing_appender::non_blocking(appender);
-    tracing_subscriber::fmt()
+    use tracing_subscriber::prelude::*;
+    let file = tracing_subscriber::fmt::layer()
         .with_writer(writer)
         .with_ansi(false)
-        .with_target(false)
-        .with_max_level(tracing::Level::INFO)
+        .with_target(false);
+    tracing_subscriber::registry()
+        .with(file.with_filter(tracing_subscriber::filter::LevelFilter::INFO))
+        .with(crate::recent::RecentLayer)
         .init();
     Some(guard)
 }

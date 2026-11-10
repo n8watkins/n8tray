@@ -8,6 +8,8 @@ mod commands;
 mod hub;
 mod logs;
 mod open;
+mod recent;
+mod report;
 mod state;
 mod tray;
 
@@ -30,6 +32,8 @@ struct Args {
     autostart: bool,
     /// Close the running N8 Tray's window.
     hide: bool,
+    /// Open the window once started (WebDriver tests start N8 Tray this way).
+    show: bool,
     /// Wait for this process to exit first (Restart N8 Tray).
     restart_after: Option<u32>,
     /// Import the PowerShell N8 Tray's settings file, then exit.
@@ -44,6 +48,7 @@ fn parse_args() -> Args {
             "--exit" | "-Exit" => args.exit = true,
             "--autostart" => args.autostart = true,
             "--hide" => args.hide = true,
+            "--show" => args.show = true,
             "--restart-after" => args.restart_after = it.next().and_then(|p| p.parse().ok()),
             "--import-settings" => args.import_settings = it.next(),
             _ => {}
@@ -99,7 +104,7 @@ fn main() {
             } else if argv.iter().any(|a| a == "--hide") {
                 hub::hide(app);
             } else {
-                hub::show(app, None);
+                hub::show(app, None, None);
             }
         }))
         .plugin(tauri_plugin_notification::init())
@@ -108,6 +113,16 @@ fn main() {
             commands::module_action,
             commands::open_item,
             commands::hide_window,
+            commands::app_icon,
+            commands::set_setting,
+            commands::host_command,
+            commands::open_host,
+            commands::open_update,
+            commands::history,
+            commands::recent_warnings,
+            commands::status_text,
+            commands::fit_window,
+            commands::initial_view,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -151,6 +166,9 @@ fn main() {
                         std::thread::sleep(Duration::from_secs(30));
                         n8tray_platform::memory::trim_own_working_set();
                     });
+                    if args.show {
+                        hub::show(&handle, None, None);
+                    }
                     info!(
                         "N8 Tray {} started{}",
                         n8tray_core::VERSION,

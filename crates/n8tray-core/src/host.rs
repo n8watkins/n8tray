@@ -1603,10 +1603,19 @@ impl Host {
             .filter_map(|&pid| self.table.get(pid))
             .map(|p| mib(p.rss_bytes))
             .sum();
+        let window_private_mb: Option<f64> = tree
+            .iter()
+            .filter(|&&pid| pid != self.pid)
+            .filter_map(|&pid| self.table.get(pid))
+            .map(|p| p.private_bytes.map(mib))
+            .sum::<Option<f64>>()
+            .filter(|_| tree.len() > 1)
+            .map(round1);
         let tray = TrayUsage {
             pid: self.pid,
             rss_mb: round1(own.map(|p| mib(p.rss_bytes)).unwrap_or(0.0)),
             window_mb: round1(window_mb),
+            window_private_mb,
             private_mb: own.and_then(|p| p.private_bytes).map(|b| round1(mib(b))),
             cpu_percent: tree
                 .iter()
@@ -1747,6 +1756,7 @@ impl Host {
             total_gb: total.map(|t| (t * 10.0).round() / 10.0),
             level,
             n8_mb: round1(n8_mb),
+            system: os.to_string(),
             text,
         }
     }

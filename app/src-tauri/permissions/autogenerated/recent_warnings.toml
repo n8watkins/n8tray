@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-recent-warnings"
+description = "Enables the recent_warnings command without any pre-configured scope."
+commands.allow = ["recent_warnings"]
+
+[[permission]]
+identifier = "deny-recent-warnings"
+description = "Denies the recent_warnings command without any pre-configured scope."
+commands.deny = ["recent_warnings"]

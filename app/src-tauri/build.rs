@@ -7,6 +7,16 @@ fn main() {
             "module_action",
             "open_item",
             "hide_window",
+            "app_icon",
+            "set_setting",
+            "host_command",
+            "open_host",
+            "open_update",
+            "history",
+            "recent_warnings",
+            "status_text",
+            "fit_window",
+            "initial_view",
         ]),
     ))
     .expect("the Tauri build step runs");

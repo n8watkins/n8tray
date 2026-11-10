@@ -9,4 +9,12 @@ rssMb: number,
 /**
  * Its window's processes (the WebView), while there is a window.
  */
-windowMb: number, privateMb: number | null, cpuPercent: number | null, history: HistoryView | null, };
+windowMb: number, 
+/**
+ * The tray process's private memory: what it alone costs the system.
+ */
+privateMb: number | null, 
+/**
+ * The window's processes' private memory (the window's budget metric).
+ */
+windowPrivateMb: number | null, cpuPercent: number | null, history: HistoryView | null, };
