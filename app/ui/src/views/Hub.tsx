@@ -152,7 +152,7 @@ function Row({ app, index, go }: { app: AppView; index: number; go: Go }) {
         <span class="text">
           <span class="name" style={{ display: "block" }}>
             {app.name}
-            <span class="sr-only">, {app.pending ?? app.words},</span>
+            {(app.pending ?? app.words) !== line.text && <span class="sr-only">, {app.pending ?? app.words},</span>}
           </span>
           <span class={`line ${line.tone}`} style={{ display: "block" }}>
             {line.text}

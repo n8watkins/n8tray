@@ -95,8 +95,9 @@ export function statusCard(s: HostSnapshot): { big: string; small: string } {
   const n8 = `N8 ${memory(s.memory.n8Mb)} in all`;
   if (s.total === 0) return { big: s.reason ?? "No apps installed yet", small: n8 };
   const running = `${s.running} of ${s.total} running`;
-  const big = s.reason ?? (s.running === s.total ? "Everything is running" : running);
-  return { big, small: `${running} · ${n8}` };
+  if (s.reason) return { big: s.reason, small: `${running} · ${n8}` };
+  if (s.running === s.total) return { big: "Everything is running", small: `${running} · ${n8}` };
+  return { big: running, small: n8 };
 }
 
 /** The memory meter: used share of the system's memory, and its words. */
@@ -111,14 +112,28 @@ export function memoryMeter(s: HostSnapshot): { label: string; text: string; use
   };
 }
 
-/** Points of a sparkline or chart: values scaled into a w x h box. */
-export function points(values: number[], w: number, h: number, max?: number, pad = 2): string {
-  if (values.length === 0) return "";
+/**
+ * Points of a sparkline or chart: values scaled into a w x h box, from
+ * index `from` on (earlier steps keep their place on the time axis).
+ */
+export function points(values: number[], w: number, h: number, max?: number, pad = 2, from = 0): string {
+  if (values.length === 0 || from >= values.length) return "";
   const top = (max ?? Math.max(...values)) * 1.15 || 1;
   const step = values.length > 1 ? w / (values.length - 1) : 0;
   return values
-    .map((v, i) => `${(i * step).toFixed(1)},${(h - 1 - (Math.min(v, top) / top) * (h - pad - 1)).toFixed(1)}`)
+    .slice(from)
+    .map((v, i) => `${((i + from) * step).toFixed(1)},${(h - 1 - (Math.min(v, top) / top) * (h - pad - 1)).toFixed(1)}`)
     .join(" ");
+}
+
+/**
+ * Where the latest run starts: steps before it are zero because the app was
+ * not running, and a line through them would read as a drop to nothing.
+ */
+export function runStart(values: number[]): number {
+  let i = values.length;
+  while (i > 0 && values[i - 1] > 0) i--;
+  return i;
 }
 
 /** Whether a history has anything to draw. */

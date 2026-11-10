@@ -11,6 +11,7 @@ import {
   restartAction,
   rowAction,
   rowFigures,
+  runStart,
   rowLine,
   statusCard,
 } from "../../src/model";
@@ -73,6 +74,14 @@ describe("drawing and words", () => {
   it("scale points into the box from zero", () => {
     expect(points([0, 10], 10, 10)).toBe("0.0,9.0 10.0,2.9");
     expect(points([], 10, 10)).toBe("");
+    expect(points([0, 0, 10], 10, 10, undefined, 2, 2)).toBe("10.0,2.9");
+  });
+
+  it("start a sparkline where the latest run starts", () => {
+    expect(runStart([0, 0, 5, 6])).toBe(2);
+    expect(runStart([3, 0, 5])).toBe(2);
+    expect(runStart([1, 2])).toBe(0);
+    expect(runStart([0, 0])).toBe(2);
   });
 
   it("format memory and CPU", () => {

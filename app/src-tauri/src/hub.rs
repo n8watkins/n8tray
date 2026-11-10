@@ -212,6 +212,14 @@ pub fn hide(app: &AppHandle) {
         return;
     };
     let _ = window.hide();
+    // Shown without activation (N8TRAY_NO_ACTIVATE), the toolkit does not
+    // know the window is shown and leaves it: hide it natively.
+    #[cfg(windows)]
+    if window.is_visible().unwrap_or(false)
+        && let Ok(hwnd) = window.hwnd()
+    {
+        n8tray_platform::window::hide(hwnd.0 as isize);
+    }
     let state = app.state::<AppState>();
     let generation = {
         let mut hub = state.hub.lock().unwrap();

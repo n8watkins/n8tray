@@ -5,10 +5,9 @@
 # by simulated ones on the other edges, auto-hidden and from the overflow
 # flyout (N8TRAY_ANCHOR). No keys and no clipboard; every wait is bounded.
 #
-# Writes to -Out: hub-<theme>-bottom.png and hub-edge-<edge>.png (the window
-# where it really is on a plain canvas with the work area, taskbar band and
-# icon drawn from the real rectangles), the window alone (*-window.png), and
-# report.json: placement gaps, first-frame checks, memory open and closed
+# Writes to -Out: hub-<theme>-bottom.png and hub-edge-<edge>.png (the window),
+# and report.json: where each one is and its gaps to the icon and the work
+# area, first-frame checks, memory open and closed
 # (the host's figures and the process list's), window style and the names the
 # accessibility tree gives screen readers.
 #
@@ -135,6 +134,13 @@ function Capture($h) {
   $bmp = New-Object Drawing.Bitmap $w, $hh
   $g = [Drawing.Graphics]::FromImage($bmp); $dc = $g.GetHdc()
   [void][W]::PrintWindow($h, $dc, 2); $g.ReleaseHdc($dc); $g.Dispose()
+  if (Blank $bmp) {
+    # WebView2 composites on the GPU, which PrintWindow often misses: copy
+    # the window's own rectangle from the screen instead (it is topmost).
+    $g = [Drawing.Graphics]::FromImage($bmp)
+    $g.CopyFromScreen($r.L, $r.T, 0, 0, (New-Object Drawing.Size $w, $hh))
+    $g.Dispose()
+  }
   return $bmp
 }
 
@@ -147,29 +153,19 @@ function Blank($bmp) {
 
 function Placement-Line { (Get-ChildItem (Join-Path $home8 "logs") -Filter "n8tray*.log" | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content | Select-String "The window opens at" | Select-Object -Last 1).ToString() }
 
-# A picture of the window where it really is, on a plain canvas: the
-# monitor's work area, the taskbar band and the tray icon drawn from the
-# real rectangles, so the 2 px gap shows without capturing the desktop.
-function Composite($name, $h, $bmp, $anchor, $work, $monitor) {
+# The window's picture, and where it is against the icon and the work area.
+function Save-Window($name, $h, $anchor, $area) {
   $r = Bounds $h
-  $pad = 40
-  $L = [Math]::Min($r.L, $anchor[0]) - $pad; $T = [Math]::Min($r.T, $anchor[1]) - $pad
-  $R = [Math]::Max($r.R, $anchor[0] + $anchor[2]) + $pad; $B = [Math]::Max($r.B, $anchor[1] + $anchor[3]) + $pad
-  $L = [Math]::Max($L, $monitor.X); $T = [Math]::Max($T, $monitor.Y); $R = [Math]::Min($R, $monitor.Right); $B = [Math]::Min($B, $monitor.Bottom)
-  $c = New-Object Drawing.Bitmap ($R - $L), ($B - $T)
-  $g = [Drawing.Graphics]::FromImage($c)
-  $g.Clear([Drawing.Color]::FromArgb(255, 58, 64, 74))
-  $tb = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(255, 28, 30, 34))
-  # Everything outside the work area is the taskbar band.
-  $outside = New-Object Drawing.Region (New-Object Drawing.Rectangle 0, 0, ($R - $L), ($B - $T))
-  $outside.Exclude((New-Object Drawing.Rectangle ($work[0] - $L), ($work[1] - $T), $work[2], $work[3]))
-  $g.FillRegion($tb, $outside)
-  $g.FillRectangle((New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(255, 96, 205, 255))), ($anchor[0] - $L), ($anchor[1] - $T), $anchor[2], $anchor[3])
-  $g.DrawImage($bmp, ($r.L - $L), ($r.T - $T), $bmp.Width, $bmp.Height)
-  $g.Dispose()
-  $c.Save((Join-Path $out "$name.png"), [Drawing.Imaging.ImageFormat]::Png)
-  $bmp.Save((Join-Path $out "$name-window.png"), [Drawing.Imaging.ImageFormat]::Png)
-  $c.Dispose()
+  $bmp = Capture $h
+  $bmp.Save((Join-Path $out "$name.png"), [Drawing.Imaging.ImageFormat]::Png)
+  $bmp.Dispose()
+  return [ordered]@{
+    window = "$($r.L),$($r.T) to $($r.R),$($r.B)"; icon = ($anchor -join ","); workArea = ($area -join ",")
+    # Gaps between the visible frame and the icon and work area (2 expected
+    # on the sides that face them).
+    gapLeftOfIcon = ($anchor[0] - $r.R); gapAboveIcon = ($anchor[1] - $r.B); gapRightOfIcon = ($r.L - ($anchor[0] + $anchor[2])); gapBelowIcon = ($r.T - ($anchor[1] + $anchor[3]))
+    gapLeft = ($r.L - $area[0]); gapTop = ($r.T - $area[1]); gapRight = (($area[0] + $area[2]) - $r.R); gapBottom = (($area[1] + $area[3]) - $r.B)
+  }
 }
 
 function Process-Memory($trayPid) {
@@ -224,10 +220,9 @@ try {
     $line = Placement-Line
     Log $line
     if ($line -match "opens at (-?\d+),(-?\d+) \((\d+)x(\d+), scale ([\d.]+)\) by the (\w+) taskbar; icon at (-?\d+),(-?\d+) \((\d+)x(\d+)\), work area (-?\d+),(-?\d+) \((\d+)x(\d+)\)") {
-      $anchor = @([int]$Matches[7], [int]$Matches[8], [int]$Matches[9], [int]$Matches[10]); $work = @([int]$Matches[11], [int]$Matches[12], [int]$Matches[13], [int]$Matches[14])
-      $r = Bounds $shown.hwnd
-      $report["real_$theme"] = [ordered]@{ edge = $Matches[6]; scale = $Matches[5]; window = "$($r.L),$($r.T) to $($r.R),$($r.B)"; icon = ($anchor -join ","); gapRightToIcon = ($anchor[0] - $r.R); gapBottomToWorkArea = (($work[1] + $work[3]) - $r.B) }
-      Composite "hub-$theme-bottom" $shown.hwnd (Capture $shown.hwnd) $anchor $work $mon
+      $anchor = @([int]$Matches[7], [int]$Matches[8], [int]$Matches[9], [int]$Matches[10]); $workArea = @([int]$Matches[11], [int]$Matches[12], [int]$Matches[13], [int]$Matches[14])
+      $report["real_$theme"] = Save-Window "hub-$theme-bottom" $shown.hwnd $anchor $workArea
+      $report["real_$theme"].edge = $Matches[6]; $report["real_$theme"].scale = $Matches[5]
     }
     if ($theme -eq "dark") {
       Start-Sleep 10
@@ -272,9 +267,7 @@ try {
     Wait-Until "the stand-ins" { $s = Status; $s -and (@($s.apps | Where-Object running).Count -ge 4) } 60 | Out-Null
     $shown = Show-Hub $trayProc
     Start-Sleep 2
-    $r = Bounds $shown.hwnd
-    $report["edge_$k"] = [ordered]@{ line = (Placement-Line); window = "$($r.L),$($r.T) to $($r.R),$($r.B)" }
-    Composite "hub-edge-$k" $shown.hwnd (Capture $shown.hwnd) $a $wk $mon
+    $report["edge_$k"] = Save-Window "hub-edge-$k" $shown.hwnd $a $wk
     Stop-Tray $trayProc; $trayProc = $null
   }
   Log "END"

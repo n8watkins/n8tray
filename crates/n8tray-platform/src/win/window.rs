@@ -7,7 +7,7 @@ use windows_sys::Win32::Graphics::Dwm::{
 };
 use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWL_EXSTYLE, GetClientRect, GetWindowLongPtrW, GetWindowRect, SW_SHOWNOACTIVATE,
+    GWL_EXSTYLE, GetClientRect, GetWindowLongPtrW, GetWindowRect, SW_HIDE, SW_SHOWNOACTIVATE,
     SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowLongPtrW,
     SetWindowPos, ShowWindow, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
@@ -99,4 +99,15 @@ pub fn frame_insets(handle: isize) -> Option<(i32, i32, i32, i32)> {
         outer.right - visible.right,
         outer.bottom - visible.bottom,
     ))
+}
+
+pub fn hide(handle: isize) -> bool {
+    let hwnd = handle as HWND;
+    if hwnd.is_null() {
+        return false;
+    }
+    unsafe {
+        ShowWindow(hwnd, SW_HIDE);
+    }
+    true
 }

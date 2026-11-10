@@ -48,3 +48,17 @@ pub fn frame_insets(handle: isize) -> Option<(i32, i32, i32, i32)> {
         None
     }
 }
+
+/// Hides the window (Windows: `SW_HIDE`), for a window shown with
+/// [`show_inactive`], which the window toolkit does not know is shown.
+pub fn hide(handle: isize) -> bool {
+    #[cfg(windows)]
+    {
+        crate::win::window::hide(handle)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = handle;
+        false
+    }
+}
