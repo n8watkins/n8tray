@@ -81,16 +81,27 @@ execFileSync(
   { stdio: "inherit" },
 );
 
-// N8 Tray runs in its own folders and reads the local feed. The installer
-// N8 Tray starts, and the N8 Tray it starts again, inherit both.
+// N8 Tray runs in its own folders and reads the local feed; the installer it
+// starts inherits both, the N8 Tray the installer starts again does not.
 const home = mkdtempSync(join(tmpdir(), "n8tray-update-"));
 const env = { ...process.env, N8TRAY_HOME: home, N8TRAY_UPDATE_FEED: `${base}/latest.json` };
 const installed = join(process.env.LOCALAPPDATA, "N8 Tray", "n8tray.exe");
-const status = () => {
+const readJson = (file) => {
   try {
-    return JSON.parse(readFileSync(join(home, "status.json"), "utf8"));
+    return JSON.parse(readFileSync(file, "utf8"));
   } catch {
     return null;
+  }
+};
+const status = () => readJson(join(home, "status.json"));
+// Where an N8 Tray without N8TRAY_HOME keeps its status (D16). This test runs
+// on a fresh CI runner, where nothing else uses that folder.
+const defaultStatus = () => readJson(join(process.env.LOCALAPPDATA, "N8Tray", "status.json"));
+const fileVersion = () => {
+  try {
+    return execFileSync("powershell", ["-NoProfile", "-Command", `(Get-Item '${installed}').VersionInfo.ProductVersion`], { encoding: "utf8" }).trim();
+  } catch {
+    return "";
   }
 };
 
@@ -139,27 +150,35 @@ try {
     writeFileSync(join(out, "update-available.png"), Buffer.from(png, "base64"));
   });
 
-  await step("Install downloads and verifies it, and N8 Tray starts again on the new version", async () => {
+  await step("Install downloads and verifies it, and the installer puts the new version in place", async () => {
     await js("[...document.querySelectorAll('.banner.update button')].find((b) => b.textContent.trim() === 'Install').click();");
-    await until(`N8 Tray ${newVersion} in the status file`, () => status()?.version === newVersion, 240000);
+    await until(`n8tray.exe ${newVersion}`, () => fileVersion().startsWith(newVersion), 240000);
   });
 
-  await step("the installed program is the new version", async () => {
-    const fileVersion = execFileSync("powershell", ["-NoProfile", "-Command", `(Get-Item '${installed}').VersionInfo.ProductVersion`], { encoding: "utf8" }).trim();
-    if (!fileVersion.startsWith(newVersion)) throw new Error(`n8tray.exe is ${fileVersion}`);
+  // The installer starts N8 Tray again through the shell, as the signed-in
+  // user (nsis_tauri_utils::RunAsUser), so the new copy gets the user's own
+  // environment, not this test's: it runs in the default folders.
+  await step(`N8 Tray starts again by itself, on ${newVersion}`, async () => {
+    await until(`N8 Tray ${newVersion} in a status file`, () => status()?.version === newVersion || defaultStatus()?.version === newVersion, 120000);
   });
 } catch (e) {
   failed = true;
   if (!String(e.message).startsWith("Timed out")) console.error(e);
   // The tray's own log says how far the update got.
-  for (const name of existsSync(join(home, "logs")) ? readdirSync(join(home, "logs")) : []) {
-    console.log(`--- ${name}\n${readFileSync(join(home, "logs", name), "utf8").split("\n").slice(-60).join("\n")}`);
+  for (const logs of [join(home, "logs"), join(process.env.LOCALAPPDATA, "N8Tray", "logs")]) {
+    for (const name of existsSync(logs) ? readdirSync(logs) : []) {
+      console.log(`--- ${join(logs, name)}\n${readFileSync(join(logs, name), "utf8").split("\n").slice(-60).join("\n")}`);
+    }
   }
 } finally {
   if (session) await wd("DELETE", `/session/${session}`).catch(() => {});
   driver?.kill();
   // End whichever N8 Tray runs now, the one the installer started included.
-  if (existsSync(installed)) spawn(installed, ["--exit"], { env, stdio: "ignore" });
+  if (existsSync(installed)) {
+    spawn(installed, ["--exit"], { env, stdio: "ignore" });
+    const { N8TRAY_HOME, N8TRAY_UPDATE_FEED, ...own } = env;
+    spawn(installed, ["--exit"], { env: own, stdio: "ignore" });
+  }
   await sleep(2000);
   server.close();
 }
