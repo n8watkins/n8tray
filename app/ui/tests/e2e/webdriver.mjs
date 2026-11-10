@@ -111,8 +111,6 @@ let session;
 let failed = false;
 
 const css = async (selector) => (await wd("POST", `/session/${session}/elements`, { using: "css selector", value: selector })).map(idOf);
-const text = async (id) => wd("GET", `/session/${session}/element/${id}/text`);
-const attr = async (id, name) => wd("GET", `/session/${session}/element/${id}/attribute/${name}`);
 const click = async (id) => wd("POST", `/session/${session}/element/${id}/click`, {});
 const keys = async (value) => wd("POST", `/session/${session}/actions`, { actions: [{ type: "key", id: "k", actions: [{ type: "keyDown", value }, { type: "keyUp", value }] }] });
 const shot = async (name) => {
@@ -120,14 +118,19 @@ const shot = async (name) => {
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, `webdriver-${process.platform}-${name}.png`), Buffer.from(png, "base64"));
 };
+// Found in the page itself, so every driver matches text the same way.
+async function find(script, ...args) {
+  const found = await wd("POST", `/session/${session}/execute/sync`, { script, args });
+  return found ? idOf(found) : null;
+}
+const asElement = (id) => ({ [ELEMENT]: id, ELEMENT: id });
+const js = (script, ...args) => wd("POST", `/session/${session}/execute/sync`, { script, args });
+const heading = () => js("return document.querySelector('h1')?.textContent.trim() ?? null;");
 async function rowFor(name) {
-  for (const id of await css(".app")) if ((await text(id)).includes(name)) return id;
-  return null;
+  return find("return [...document.querySelectorAll('.app')].find((e) => e.textContent.includes(arguments[0])) || null;", name);
 }
 async function buttonIn(row, label) {
-  const ids = (await wd("POST", `/session/${session}/element/${row}/elements`, { using: "css selector", value: "button" })).map(idOf);
-  for (const id of ids) if ((await attr(id, "aria-label")) === label) return id;
-  return null;
+  return find("return [...arguments[0].querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === arguments[1]) || null;", asElement(row), label);
 }
 
 async function step(name, fn) {
@@ -173,7 +176,7 @@ try {
     await click(await until("Start Fake two", () => buttonIn(row, "Start Fake two")));
     row = await rowFor("Fake two");
     const stop = await until("Fake two to run", async () => buttonIn((await rowFor("Fake two")), "Stop Fake two"), 45000);
-    await until("Stop enabled", async () => (await attr(stop, "disabled")) === null);
+    await until("Stop enabled", async () => (await js("return arguments[0].disabled;", asElement(stop))) === false);
     await click(stop);
     await until("Fake two to stop", async () => buttonIn((await rowFor("Fake two")), "Start Fake two"), 45000);
   });
@@ -182,16 +185,16 @@ try {
     const row = await rowFor("Fake one");
     const main = idOf(await wd("POST", `/session/${session}/element/${row}/element`, { using: "css selector", value: ".app-main" }));
     await click(main);
-    await until("the panel", async () => (await text((await css("h1"))[0])) === "Fake one");
+    await until("the panel", async () => (await heading()) === "Fake one");
     await until("its processes", async () => (await css("table")).length > 0, 20000);
     await shot("panel");
     await keys(""); // Escape
-    await until("the hub", async () => (await text((await css("h1"))[0])) === "N8 Tray");
+    await until("the hub", async () => (await heading()) === "N8 Tray");
   });
 
   await step("status details open from the status card", async () => {
     await click((await css(".status"))[0]);
-    await until("the details", async () => (await text((await css("h1"))[0])) === "Status details");
+    await until("the details", async () => (await heading()) === "Status details");
     await shot("details");
     await keys("");
   });
