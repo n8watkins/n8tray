@@ -231,3 +231,31 @@ fn every_rule_in_the_spec_has_a_fixture_and_every_fixture_code_is_in_the_spec() 
         );
     }
 }
+
+/// Every example app has the icon spec section 3.11 describes, drawn as an
+/// image only: a 32 x 32 SVG with no scripts, links or external references.
+#[test]
+fn examples_have_icons_that_follow_the_rules() {
+    for path in json_files(&spec_dir().join("examples")) {
+        let id = path.file_stem().unwrap().to_str().unwrap();
+        let icon = spec_dir().join("examples/icons").join(format!("{id}.svg"));
+        let svg = fs::read_to_string(&icon)
+            .unwrap_or_else(|e| panic!("spec/examples/icons/{id}.svg: {e}"));
+        assert!(svg.len() <= 256 * 1024, "{id}.svg is over 256 KB");
+        assert!(
+            svg.trim_start().starts_with("<svg") && svg.contains(r#"viewBox="0 0 32 32""#),
+            "{id}.svg should be one <svg> element with a 32 x 32 viewBox"
+        );
+        let lower = svg.to_lowercase();
+        for banned in ["<script", "href", "url(http", "<foreignobject", " on"] {
+            let found = if banned == " on" {
+                lower
+                    .split_whitespace()
+                    .any(|w| w.starts_with("on") && w.contains('='))
+            } else {
+                lower.contains(banned)
+            };
+            assert!(!found, "{id}.svg contains {banned:?}");
+        }
+    }
+}

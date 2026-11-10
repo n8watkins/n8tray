@@ -5,6 +5,7 @@
   "version": "1.0.0",
   "group": "Watchers",
   "description": "Runs a headless scrape daemon inside WSL and reports it.",
+  "icon": "icon.svg",
   "installDir": "%USERPROFILE%\\Scripts\\n8leadscraper",
   "platforms": ["windows"],
   "status": { "type": "file", "intervalSeconds": 5 },

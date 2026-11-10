@@ -74,7 +74,7 @@ Examples: [`examples/`](examples).
 | `version` | yes | The app's version, SemVer. |
 | `installDir` | yes, except built-ins | Absolute path of the installed app, after placeholders (3.2). Every relative path in the manifest resolves inside it. |
 | `status` | yes | How the host reads status: `http`, `file` or `builtin` (3.3). |
-| `group`, `description`, `icon` | no | Hub grouping (up to 32 characters), one line (up to 200) and a relative path to a `.png` or `.ico`. |
+| `group`, `description`, `icon` | no | Hub grouping (up to 32 characters), one line (up to 200) and a relative path to the app's icon, a `.svg`, `.png` or `.ico` (3.11). |
 | `platforms` | no | Any of `windows`, `macos`, `linux`; default all three. On another OS the host shows "Not available on this computer" and never starts the app. |
 | `run` | no | How the host starts and stops the app (3.4). Without it the host only shows the app and never starts or stops it. |
 | `actions` | no | The only operations the host may invoke besides start and stop (3.5). |
@@ -222,6 +222,20 @@ A manifest can only name a check, never a command, so it can never make the host
 Program globs (`*` within a folder, `**` across folders) inside `installDir` or behind `%N8TRAY_TOOLS%`, with an optional substring the command line must contain.
 `owns` is one input to ownership verification (section 7): it lets the host recognize a process whose parent already exited.
 It is never a list of things to kill.
+
+### 3.11 `icon`
+
+```json
+"icon": "icon.svg"
+```
+
+The picture that tells users which app a hub row is: a relative path inside `installDir` to a `.svg`, `.png` or `.ico` file of at most 256 KB.
+SVG is preferred, since it stays sharp at every display scale.
+Draw it as a complete, square app icon at 32 x 32 units (a tile with its own background and a glyph on it) that reads on light and dark backgrounds; the host shows it at 18 to 32 px and puts the app's status dot on its corner.
+The examples in [`examples/icons/`](examples/icons/) follow these rules.
+
+- The host shows the icon only as an image: an SVG's scripts, links and external references never run or load.
+- A missing, unreadable, oversized or unknown icon is not an error: the host shows its generic app glyph instead.
 
 ## 4. The status document
 
@@ -423,6 +437,7 @@ An app with `trayIcon: "hide-when-hosted"` reads the lease at start and every 5 
   The only substitution is `{component}`, an id the app itself listed, matching the id rule.
   Dependency checks are the host's own code; a manifest only names one.
 - **Ownership before force.** The host force-stops only verified processes (section 7).
+- **Icons are images.** The host reads an app's icon itself and shows it only as an image (3.11).
 - **Not covered:** malware running as the same user can write a manifest; that is the trust level of the Startup folder.
 
 ## 10. Versioning
