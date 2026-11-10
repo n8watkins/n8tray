@@ -123,14 +123,14 @@ async function find(script, ...args) {
   const found = await wd("POST", `/session/${session}/execute/sync`, { script, args });
   return found ? idOf(found) : null;
 }
-const asElement = (id) => ({ [ELEMENT]: id, ELEMENT: id });
 const js = (script, ...args) => wd("POST", `/session/${session}/execute/sync`, { script, args });
 const heading = () => js("return document.querySelector('h1')?.textContent.trim() ?? null;");
 async function rowFor(name) {
   return find("return [...document.querySelectorAll('.app')].find((e) => e.textContent.includes(arguments[0])) || null;", name);
 }
-async function buttonIn(row, label) {
-  return find("return [...arguments[0].querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === arguments[1]) || null;", asElement(row), label);
+// Action labels name their app ("Stop Fake one"), so they are unique.
+async function button(label) {
+  return find("return [...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === arguments[0]) || null;", label);
 }
 
 async function step(name, fn) {
@@ -167,18 +167,15 @@ try {
   });
 
   await step("an app that starts with N8 Tray runs and offers Stop", async () => {
-    const row = await rowFor("Fake one");
-    await until("Fake one to run", async () => buttonIn(row, "Stop Fake one"), 45000);
+    await until("Fake one to run", async () => button("Stop Fake one"), 45000);
   });
 
   await step("Start in a row starts the app; Stop stops it", async () => {
-    let row = await rowFor("Fake two");
-    await click(await until("Start Fake two", () => buttonIn(row, "Start Fake two")));
-    row = await rowFor("Fake two");
-    const stop = await until("Fake two to run", async () => buttonIn((await rowFor("Fake two")), "Stop Fake two"), 45000);
-    await until("Stop enabled", async () => (await js("return arguments[0].disabled;", asElement(stop))) === false);
-    await click(stop);
-    await until("Fake two to stop", async () => buttonIn((await rowFor("Fake two")), "Start Fake two"), 45000);
+    await click(await until("Start Fake two", () => button("Start Fake two")));
+    await until("Fake two to run", async () => button("Stop Fake two"), 45000);
+    await until("Stop enabled", async () => (await js("return [...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Stop Fake two')?.disabled ?? null;")) === false);
+    await click(await button("Stop Fake two"));
+    await until("Fake two to stop", async () => button("Start Fake two"), 45000);
   });
 
   await step("a row opens its panel; Escape comes back", async () => {
