@@ -3,7 +3,7 @@ name = "n8tray"
 description = "N8 Tray: one tray for local apps that follow the N8 Tray contract."
 version.workspace = true
 edition.workspace = true
-rust-version = "1.89"
+rust-version = "1.90"
 license.workspace = true
 repository.workspace = true
 default-run = "n8tray"
@@ -31,7 +31,7 @@ serde_json = "1.0.154"
 tauri = { version = "2.11.6", features = ["tray-icon", "image-png"] }
 tauri-plugin-notification = "2.4.0"
 tauri-plugin-single-instance = "2.4.5"
-tauri-plugin-updater = "2.14.0"
+tauri-plugin-updater = "2.14.1"
 tracing = "0.1.44"
 tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "ansi", "registry"] }
