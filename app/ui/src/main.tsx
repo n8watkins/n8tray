@@ -1,6 +1,6 @@
 // N8 Tray's window: a view of the host's snapshot. It keeps only the
 // latest snapshot and which view it shows; every decision is Rust's.
-import { render } from "preact";
+import { Component, render, type ComponentChildren } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { HostSnapshot } from "./bindings/HostSnapshot";
 import { fitWindow, getSnapshot, hideWindow, initialView, onFit, onNavigate, onSnapshot, type ViewName } from "./api";
@@ -70,23 +70,29 @@ function App() {
     if (!el || !body || !snapshot) return;
     let frame = 0;
     let last = -1;
+    // Measured during layout, not in an animation frame: a hidden window
+    // runs no frames, and it is shown only once it has reported.
+    const measure = () => {
+      const head = el.querySelector<HTMLElement>(".head")?.offsetHeight ?? 0;
+      const foot = el.querySelector<HTMLElement>(".foot")?.offsetHeight ?? 0;
+      const height = Math.ceil(head + body.scrollHeight + foot);
+      if (height !== last) {
+        last = height;
+        fitWindow(height);
+      }
+    };
     const report = () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const head = el.querySelector<HTMLElement>(".head")?.offsetHeight ?? 0;
-        const foot = el.querySelector<HTMLElement>(".foot")?.offsetHeight ?? 0;
-        const height = Math.ceil(head + body.scrollHeight + foot);
-        if (height !== last) {
-          last = height;
-          fitWindow(height);
-        }
-      });
+      frame = requestAnimationFrame(measure);
     };
     const observer = new ResizeObserver(report);
     observer.observe(body);
-    report();
+    measure();
+    // Icons and fonts can change the height after the first layout.
+    const settle = setTimeout(measure, 150);
     return () => {
       observer.disconnect();
+      clearTimeout(settle);
       cancelAnimationFrame(frame);
     };
   }, [snapshot !== null, view]);
@@ -157,4 +163,33 @@ function App() {
   );
 }
 
-render(<App />, document.getElementById("app")!);
+/**
+ * A view that fails to draw shows what went wrong, and the window still
+ * appears (it reports its height), instead of waiting forever.
+ */
+class Guard extends Component<{ children: ComponentChildren }, { error: string | null }> {
+  state = { error: null as string | null };
+
+  componentDidCatch(error: unknown) {
+    this.setState({ error: error instanceof Error ? error.message : String(error) });
+    requestAnimationFrame(() => fitWindow(160).catch(() => {}));
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div class="flyout" role="alert">
+        <p class="empty">
+          N8 Tray's window could not draw: {this.state.error}. The tray and its apps keep working; the tray log has more.
+        </p>
+      </div>
+    );
+  }
+}
+
+render(
+  <Guard>
+    <App />
+  </Guard>,
+  document.getElementById("app")!,
+);

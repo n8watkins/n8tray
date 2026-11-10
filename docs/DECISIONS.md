@@ -181,8 +181,16 @@ Its height follows its content and it grows away from the taskbar; a window tall
 It is created hidden and shown only once it has drawn itself and reported its height (`fit_window`), so it appears in one piece; if it does not draw within 2.5 s it is shown anyway.
 On Windows it is a tool window (no Alt-Tab or taskbar entry) with Windows 11's rounded corners.
 A frameless Tauri window on Windows keeps invisible resize borders (7 px left and right, 7 px below on the owner's PC), so the placement positions the visible frame that DWM reports (`DWMWA_EXTENDED_FRAME_BOUNDS`), not the window rectangle; measured on the owner's PC, the visible edge sits exactly 2 px from the icon and the taskbar.
+The window measures its content during layout, not in an animation frame, since a hidden WebView runs no frames; the native window gets the page's background color, so the first frame shown already matches.
 Focus loss hides only a window that is shown: a window still being created can lose a focus it never had, and must still appear.
 Keyboard: Tab and Shift+Tab through every control, arrows between rows and within a row, Enter and Space, Escape back to the hub and then closed.
 High Contrast uses the system's colors through `forced-colors`, and each level stays a distinct dot.
 
 The pictures for review come from Playwright against recorded snapshots (`app/ui/preview/`), the replacement for the PowerShell tray's `-Render`; the real window is tested through WebDriver on Windows and Linux.
+
+## D26. No frozen prototypes in the window (2026-11-09)
+
+`app.security.freezePrototype` was on since Phase 2, and the window never drew: Preact assigns `constructor` on every component it creates, which throws once `Object.prototype` is frozen, so the window stayed at "Starting".
+It is off.
+The window loads only N8 Tray's own bundled code under a strict CSP (`default-src 'self'`), with no remote content and no app code, so freezing the prototype guarded against little.
+The WebDriver tests run the real window in CI, so a runtime failure like this one fails a pull request now.

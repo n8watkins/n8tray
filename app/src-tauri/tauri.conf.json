@@ -13,7 +13,7 @@
     "withGlobalTauri": false,
     "security": {
       "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost",
-      "freezePrototype": true
+      "freezePrototype": false
     }
   },
   "bundle": {

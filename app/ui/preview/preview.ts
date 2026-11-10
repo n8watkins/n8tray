@@ -3,13 +3,16 @@
 // ?fixture=busy|healthy|trouble|empty&view=hub|details|settings|history|panel:<id>
 import { mockIPC } from "@tauri-apps/api/mocks";
 
+import type { HostSnapshot } from "../src/bindings/HostSnapshot";
 import { fixtures, series } from "./fixtures";
 import { busy } from "./fixtures";
 
 const icons = import.meta.glob("../../../spec/examples/icons/*.svg", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
 const params = new URLSearchParams(location.search);
-const snapshot = fixtures[params.get("fixture") ?? "busy"] ?? busy;
+// A host's status file (the snapshot, D16) can be given instead, through
+// window.__snapshot set before the page loads.
+const snapshot: HostSnapshot = (window as { __snapshot?: HostSnapshot }).__snapshot ?? fixtures[params.get("fixture") ?? "busy"] ?? busy;
 const view = params.get("view") ?? "hub";
 
 declare global {

@@ -285,6 +285,14 @@ fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Ok(hwnd) = window.hwnd() {
         n8tray_platform::window::style_flyout(hwnd.0 as isize);
     }
+    // The page's own background, so the first frame after showing matches
+    // what the page then draws (style.css: --bg).
+    let dark = window.theme().is_ok_and(|t| t == tauri::Theme::Dark);
+    let _ = window.set_background_color(Some(if dark {
+        tauri::window::Color(0x20, 0x20, 0x20, 0xff)
+    } else {
+        tauri::window::Color(0xf9, 0xf9, 0xf9, 0xff)
+    }));
     let handle = app.clone();
     window.on_window_event(move |event| match event {
         // Only a shown window hides on focus loss: a window still being
