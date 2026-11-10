@@ -11,6 +11,13 @@ default-run = "n8tray"
 [lints]
 workspace = true
 
+# The window is served from the files embedded in the binary. Without this
+# feature Tauri loads the dev server (devUrl) instead, which is what
+# `cargo run --no-default-features` is for, next to `npm run dev` in app/ui.
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 

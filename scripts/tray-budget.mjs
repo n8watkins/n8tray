@@ -58,7 +58,12 @@ async function samples(count, gapMs) {
   return out;
 }
 
-const max = (xs) => Math.max(...xs.filter((x) => x !== null && x !== undefined));
+const max = (xs) => {
+  const v = xs.filter((x) => x !== null && x !== undefined);
+  return v.length ? Math.max(...v) : null;
+};
+// Private memory is measured on Windows; elsewhere only the working set is.
+const hasPrivate = process.platform === "win32";
 const avg = (xs) => {
   const v = xs.filter((x) => x !== null && x !== undefined);
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
@@ -80,13 +85,17 @@ try {
 
   run("--show");
   const opened = Date.now();
-  await until("the window's processes", (s) => s.tray.windowMb > 0, 60);
+  // macOS runs WKWebView in system XPC processes, not children of the tray:
+  // the window's own processes are not seen there.
+  await until("the window's processes", (s) => s.tray.windowMb > 0, process.platform === "darwin" ? 15 : 60).catch((e) =>
+    process.platform === "darwin" ? null : Promise.reject(e),
+  );
   result.open.secondsToWindow = Math.round((Date.now() - opened) / 100) / 10;
   await sleep(12_000);
   const open = await samples(2, 10_000);
   result.open.trayPrivateMb = max(open.map((t) => t.privateMb));
   result.open.windowPrivateMb = max(open.map((t) => t.windowPrivateMb ?? 0));
-  result.open.privateMb = max(open.map((t) => (t.privateMb ?? 0) + (t.windowPrivateMb ?? 0)));
+  result.open.privateMb = hasPrivate ? max(open.map((t) => (t.privateMb ?? 0) + (t.windowPrivateMb ?? 0))) : null;
   result.open.workingSetMb = max(open.map((t) => t.rssMb + t.windowMb));
   result.open.cpuPercent = avg(open.map((t) => t.cpuPercent));
 
@@ -94,7 +103,7 @@ try {
   const hidden = Date.now();
   const closed = await until(
     `the tray back under ${BUDGET.closedPrivateMb} MB private`,
-    (s) => s.tray.windowMb === 0 && (s.tray.privateMb ?? s.tray.rssMb) <= BUDGET.closedPrivateMb && Date.now() - hidden > 62_000,
+    (s) => s.tray.windowMb === 0 && (!hasPrivate || s.tray.privateMb <= BUDGET.closedPrivateMb) && Date.now() - hidden > 62_000,
     BUDGET.closedWithinSeconds + 20,
   ).catch((e) => {
     result.failures.push(e.message);

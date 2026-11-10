@@ -235,7 +235,12 @@ fn webview_args() -> String {
     if let Ok(args) = std::env::var("N8TRAY_WEBVIEW_ARGS") {
         return args;
     }
-    WEBVIEW_ARGS.to_string()
+    // Arguments set for every WebView2 (msedgedriver's remote debugging
+    // port, for WebDriver tests) would be replaced by ours: keep them.
+    match std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") {
+        Ok(given) if !given.trim().is_empty() => format!("{given} {WEBVIEW_ARGS}"),
+        _ => WEBVIEW_ARGS.to_string(),
+    }
 }
 
 #[cfg(windows)]
