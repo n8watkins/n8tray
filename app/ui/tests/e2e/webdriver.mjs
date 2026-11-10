@@ -24,6 +24,12 @@ const fake = resolve(opts.fake);
 const out = resolve(opts.out ?? join(here, "../../screens"));
 const DRIVER = "http://127.0.0.1:4444";
 const ELEMENT = "element-6066-11e4-a52f-4a5d6dc9c3b2";
+// W3C drivers key an element by ELEMENT; older ones by "ELEMENT".
+const idOf = (e) => {
+  const id = e?.[ELEMENT] ?? e?.ELEMENT ?? Object.values(e ?? {})[0];
+  if (typeof id !== "string") throw new Error(`no element id in ${JSON.stringify(e)}`);
+  return id;
+};
 
 function freePort() {
   return new Promise((ok) => {
@@ -104,7 +110,7 @@ const driver = spawn(opts.driver ?? "tauri-driver", driverArgs, {
 let session;
 let failed = false;
 
-const css = async (selector) => (await wd("POST", `/session/${session}/elements`, { using: "css selector", value: selector })).map((e) => e[ELEMENT]);
+const css = async (selector) => (await wd("POST", `/session/${session}/elements`, { using: "css selector", value: selector })).map(idOf);
 const text = async (id) => wd("GET", `/session/${session}/element/${id}/text`);
 const attr = async (id, name) => wd("GET", `/session/${session}/element/${id}/attribute/${name}`);
 const click = async (id) => wd("POST", `/session/${session}/element/${id}/click`, {});
@@ -119,7 +125,7 @@ async function rowFor(name) {
   return null;
 }
 async function buttonIn(row, label) {
-  const ids = (await wd("POST", `/session/${session}/element/${row}/elements`, { using: "css selector", value: "button" })).map((e) => e[ELEMENT]);
+  const ids = (await wd("POST", `/session/${session}/element/${row}/elements`, { using: "css selector", value: "button" })).map(idOf);
   for (const id of ids) if ((await attr(id, "aria-label")) === label) return id;
   return null;
 }
@@ -174,7 +180,7 @@ try {
 
   await step("a row opens its panel; Escape comes back", async () => {
     const row = await rowFor("Fake one");
-    const main = (await wd("POST", `/session/${session}/element/${row}/element`, { using: "css selector", value: ".app-main" }))[ELEMENT];
+    const main = idOf(await wd("POST", `/session/${session}/element/${row}/element`, { using: "css selector", value: ".app-main" }));
     await click(main);
     await until("the panel", async () => (await text((await css("h1"))[0])) === "Fake one");
     await until("its processes", async () => (await css("table")).length > 0, 20000);
