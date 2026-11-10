@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { busy, empty, healthy, trouble } from "../../preview/fixtures";
+import { busy, empty, healthy, trouble, updateFailed, updating } from "../../preview/fixtures";
 import { cpu, memory, percent } from "../../src/format";
 import { nextIndex } from "../../src/keyboard";
 import {
@@ -14,6 +14,7 @@ import {
   runStart,
   rowLine,
   statusCard,
+  updateLine,
 } from "../../src/model";
 
 const app = (id: string, s = busy) => s.apps.find((a) => a.id === id)!;
@@ -100,5 +101,23 @@ describe("drawing and words", () => {
     expect(nextIndex("End", 0, 3)).toBe(2);
     expect(nextIndex("Home", 2, 3)).toBe(0);
     expect(nextIndex("a", 1, 3)).toBeNull();
+  });
+});
+
+describe("updates", () => {
+  it("say nothing without one", () => {
+    expect(updateLine(busy.update)).toBeNull();
+  });
+
+  it("offer Install, then show the download, then Try again after a failure", () => {
+    expect(updateLine(trouble.update)).toEqual({ text: "N8 Tray 0.3.0 is available", detail: null, action: "install", progress: null, problem: false });
+    expect(updateLine(updating.update)).toEqual({ text: "Downloading N8 Tray 0.3.0: 42%", detail: null, action: null, progress: 0.42, problem: false });
+    expect(updateLine({ ...updating.update, progress: null })?.progress).toBeNull();
+    expect(updateLine({ ...trouble.update, install: "installing" })?.action).toBeNull();
+    const failed = updateLine(updateFailed.update);
+    expect(failed?.action).toBe("retry");
+    expect(failed?.problem).toBe(true);
+    expect(failed?.text).toBe("Update to 0.3.0 failed");
+    expect(failed?.detail).toContain("signature");
   });
 });

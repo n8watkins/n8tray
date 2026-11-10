@@ -17,6 +17,7 @@
     "allow-host-command",
     "allow-open-host",
     "allow-open-update",
+    "allow-install-update",
     "allow-history",
     "allow-recent-warnings",
     "allow-status-text",

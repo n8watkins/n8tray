@@ -12,6 +12,7 @@ fn main() {
             "host_command",
             "open_host",
             "open_update",
+            "install_update",
             "history",
             "recent_warnings",
             "status_text",

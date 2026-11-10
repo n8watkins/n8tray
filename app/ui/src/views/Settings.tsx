@@ -2,7 +2,8 @@
 // change to the host, which saves it; the next snapshot shows the result.
 import type { JSX } from "preact";
 import type { HostSnapshot } from "../bindings/HostSnapshot";
-import { hostCommand, openHost, openUpdate, setSetting } from "../api";
+import { hostCommand, openHost, setSetting } from "../api";
+import { UpdateBanner } from "../components/UpdateBanner";
 import { AppIcon } from "../components/AppIcon";
 import { Glyph } from "../components/Glyph";
 
@@ -71,7 +72,15 @@ export function Settings({ snapshot }: { snapshot: HostSnapshot }) {
         />
         <Toggle
           label="Check for updates"
-          hint={u.available ? `N8 Tray ${u.available} is available` : u.error ? `Last check: ${u.error}` : "At start and once a day; nothing installs without a click"}
+          hint={
+            u.available
+              ? `N8 Tray ${u.available} is available`
+              : u.error
+                ? `Last check: ${u.error}`
+                : u.checkedAt
+                  ? "Up to date. Checked at start and once a day; nothing installs without a click"
+                  : "At start and once a day; nothing installs without a click"
+          }
           on={s.checkUpdates}
           disabled={s.error !== null}
           onChange={(on) => setSetting("checkUpdates", on)}
@@ -83,14 +92,15 @@ export function Settings({ snapshot }: { snapshot: HostSnapshot }) {
           disabled={s.error !== null || !s.checkUpdates}
           onChange={(on) => setSetting("betaUpdates", on)}
         />
-        {u.available && (
+        {!u.available && (
           <div class="actions-row">
-            <button class="small-btn primary" onClick={() => openUpdate()}>
-              Get N8 Tray {u.available}
+            <button class="small-btn" disabled={s.error !== null || !s.checkUpdates} onClick={() => hostCommand("checkUpdates")}>
+              Check now
             </button>
           </div>
         )}
       </section>
+      <UpdateBanner update={u} />
 
       {snapshot.apps.length > 0 && (
         <section class="section" aria-labelledby="g-apps">

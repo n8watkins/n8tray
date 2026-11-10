@@ -247,12 +247,96 @@ jobs:
             hub-shots/
           if-no-files-found: ignore
 
+  # The release path with a throwaway key: two NSIS installers built and signed
+  # the way the App release workflow does it (this version and the next patch),
+  # then an update end to end, as a user gets it. The older one is installed,
+  # finds the newer in a feed served from the runner, and Install in its
+  # window downloads it, verifies it, installs it and starts it again. The
+  # test builds trust the throwaway key and allow the plain-HTTP local feed
+  # (--config); the real key never reaches a pull request.
+  update:
+    name: Update (Windows)
+    needs: changes
+    if: needs.changes.outputs.checks == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - run: npm ci --prefix app/ui
+      - run: rustup toolchain install # the version in rust-toolchain.toml
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: installer
+      - name: A throwaway updater key, trusted by the test builds only
+        shell: bash
+        run: |
+          app/ui/node_modules/.bin/tauri signer generate --ci -w "$RUNNER_TEMP/throwaway.key"
+          node -e '
+            const fs = require("fs");
+            const pubkey = fs.readFileSync(process.argv[1], "utf8").trim();
+            fs.writeFileSync(process.argv[2], JSON.stringify({ plugins: { updater: { pubkey, dangerousInsecureTransportProtocol: true } } }));
+          ' "$RUNNER_TEMP/throwaway.key.pub" "$RUNNER_TEMP/test-config.json"
+      - name: This version's installer
+        working-directory: app/src-tauri
+        shell: bash
+        run: |
+          export TAURI_SIGNING_PRIVATE_KEY="$(cat "$RUNNER_TEMP/throwaway.key")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+          ../ui/node_modules/.bin/tauri build --ci --bundles nsis --config "$RUNNER_TEMP/test-config.json"
+          mkdir -p "$RUNNER_TEMP/old" && cp ../../target/release/bundle/nsis/*-setup.exe* "$RUNNER_TEMP/old/" && ls -la "$RUNNER_TEMP/old"
+      - name: The next patch's installer
+        working-directory: app/src-tauri
+        shell: bash
+        run: |
+          next="$(node -e '
+            const fs = require("fs");
+            const text = fs.readFileSync("../../Cargo.toml", "utf8");
+            const [, v] = text.match(/^version = "(\d+\.\d+\.\d+)"$/m);
+            const [a, b, c] = v.split(".").map(Number);
+            const next = `${a}.${b}.${c + 1}`;
+            fs.writeFileSync("../../Cargo.toml", text.replace(`version = "${v}"`, `version = "${next}"`));
+            console.log(next);
+          ')"
+          echo "NEXT=$next" >> "$GITHUB_ENV"
+          rm -rf ../../target/release/bundle/nsis
+          export TAURI_SIGNING_PRIVATE_KEY="$(cat "$RUNNER_TEMP/throwaway.key")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+          ../ui/node_modules/.bin/tauri build --ci --bundles nsis --config "$RUNNER_TEMP/test-config.json"
+          mkdir -p "$RUNNER_TEMP/new" && cp ../../target/release/bundle/nsis/*-setup.exe* "$RUNNER_TEMP/new/" && ls -la "$RUNNER_TEMP/new"
+      - name: WebDriver tools
+        shell: pwsh
+        run: |
+          cargo install tauri-driver --locked --version 2.1.0
+          # msedgedriver must match the WebView2 runtime exactly.
+          $key = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $version = (Get-ItemProperty $key).pv
+          Write-Host "WebView2 $version"
+          Invoke-WebRequest "https://msedgedriver.microsoft.com/$version/edgedriver_win64.zip" -OutFile edgedriver.zip
+          Expand-Archive edgedriver.zip -DestinationPath edgedriver
+          "NATIVE_DRIVER=$PWD\edgedriver\msedgedriver.exe" | Out-File -Append $env:GITHUB_ENV
+      - name: An update, end to end
+        shell: bash
+        run: |
+          old="$(ls "$RUNNER_TEMP"/old/*-setup.exe)"; new="$(ls "$RUNNER_TEMP"/new/*-setup.exe)"
+          node app/ui/tests/e2e/update.mjs --old "$old" --new "$new" --new-version "$NEXT" --native-driver "$NATIVE_DRIVER" --out update-shots
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: update-windows
+          path: update-shots/
+          if-no-files-found: ignore
+
   # The only required check: passes when every job above passed or was
   # skipped on purpose by its lane.
   result:
     name: CI result
     if: always()
-    needs: [changes, kit, lint, lint-windows, test, ui, app]
+    needs: [changes, kit, lint, lint-windows, test, ui, app, update]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

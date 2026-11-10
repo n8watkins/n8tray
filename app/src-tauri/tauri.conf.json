@@ -5,8 +5,8 @@
   "build": {
     "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm --prefix ../ui run dev",
-    "beforeBuildCommand": "npm --prefix ../ui run build"
+    "beforeDevCommand": "npm --prefix ui run dev",
+    "beforeBuildCommand": "npm --prefix ui run build"
   },
   "app": {
     "windows": [],
@@ -26,9 +26,16 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
+    "createUpdaterArtifacts": true,
     "windows": {
       "webviewInstallMode": { "type": "skip" },
       "nsis": { "installMode": "currentUser" }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk1MDJBNjY4NzRFRTE2QTMKUldTakZ1NTBhS1lDbFVEVDJzR0s3d2hUWEFEaHpuNnZLNENUQ3F0OXQzSVRqOUhDc3lJTWdJS1UK",
+      "windows": { "installMode": "passive" }
     }
   }
 }

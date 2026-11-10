@@ -16,7 +16,7 @@ This repository is new and is being built in phases.
 | 2 | The host core and tray on Windows: discovery, supervision in Job Objects, status, lease, menu, window | Done |
 | 3 | Measurement: CPU, memory, GPU, history, alerts, memory pressure, demand rules | Done |
 | 4 | The hub: every app with its own icon, panels, status details, settings, resource history; placed at the icon on every taskbar edge; keyboard, screen readers, High Contrast | Done |
-| 5 | Checks and opt-in setup, self-update | Next |
+| 5 | Checks and opt-in setup, self-update | Self-update done; checks and setup next |
 | 11, 12 | macOS and Linux | Later |
 
 The PowerShell N8 Tray that runs on the owner's PC today lives in a private repo until the Tauri app replaces it.
