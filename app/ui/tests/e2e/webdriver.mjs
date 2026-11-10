@@ -142,7 +142,15 @@ try {
   session = (await wd("POST", "/session", { capabilities: { alwaysMatch: { "tauri:options": { application: app, args: ["--show"] } } } })).sessionId;
 
   await step("the window shows a row per app, the app's own icon and N8 Tray itself", async () => {
-    await until("both rows", async () => (await rowFor("Fake one")) && (await rowFor("Fake two")));
+    await until("both rows", async () => (await rowFor("Fake one")) && (await rowFor("Fake two"))).catch(async (e) => {
+      // Why not: ask the host through the window's own IPC.
+      const probe = await wd("POST", `/session/${session}/execute/async`, {
+        script:
+          "const done = arguments[arguments.length - 1]; window.__TAURI_INTERNALS__.invoke('get_snapshot').then((s) => done(s ? 'snapshot: ' + s.apps.length + ' apps, ' + s.headline : 'no snapshot yet'), (err) => done('invoke failed: ' + err));",
+        args: [],
+      }).catch((err) => `probe failed: ${err.message}`);
+      throw new Error(`${e.message} (${probe})`);
+    });
     const icons = await css(".app img");
     if (icons.length < 2) throw new Error(`expected the app's icon and N8 Tray's, found ${icons.length} images`);
     if (!(await rowFor("N8 Tray"))) throw new Error("no row for N8 Tray itself");

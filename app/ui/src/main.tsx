@@ -33,9 +33,30 @@ function App() {
 
   useEffect(() => {
     const stops: (() => void)[] = [];
-    getSnapshot().then((s) => s && setSnapshot(s));
+    // The host may not have published yet when a new window asks: ask again
+    // until it has (events then carry every change).
+    let first = true;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const ask = () =>
+      getSnapshot()
+        .then((s) => {
+          if (!first) return;
+          if (s) {
+            first = false;
+            setSnapshot(s);
+          } else retry = setTimeout(ask, 300);
+        })
+        .catch(() => first && (retry = setTimeout(ask, 1000)));
+    ask();
+    stops.push(() => {
+      first = false;
+      clearTimeout(retry);
+    });
     initialView().then((v) => setView({ name: v }));
-    onSnapshot(setSnapshot).then((u) => stops.push(u));
+    onSnapshot((s) => {
+      first = false;
+      setSnapshot(s);
+    }).then((u) => stops.push(u));
     onNavigate((v) => go({ name: v })).then((u) => stops.push(u));
     onFit(setClipped).then((u) => stops.push(u));
     return () => stops.forEach((s) => s());

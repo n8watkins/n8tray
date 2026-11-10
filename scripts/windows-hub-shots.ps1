@@ -17,7 +17,7 @@
 param(
   [Parameter(Mandatory)] [string]$Tray,
   [Parameter(Mandatory)] [string]$Fake,
-  [string]$Icons = (Join-Path $PSScriptRoot "..\spec\examples\icons"),
+  [string]$Icons = "",
   [string]$Out = "hub-shots",
   [string]$Work = (Join-Path ([IO.Path]::GetTempPath()) "n8tray-hub-shots"),
   [int]$LimitSeconds = 900
@@ -25,6 +25,7 @@ param(
 $ErrorActionPreference = "Stop"
 $tray = (Resolve-Path $Tray).Path
 $fakeExe = (Resolve-Path $Fake).Path
+if (-not $Icons) { $Icons = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "..\spec\examples\icons" }
 $icons = (Resolve-Path $Icons).Path
 $root = $Work
 $out = $Out

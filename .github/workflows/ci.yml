@@ -209,10 +209,6 @@ jobs:
           run=""; [ "$RUNNER_OS" = Linux ] && run="xvfb-run -a"
           enforce=""; [ "$RUNNER_OS" = Windows ] && enforce="--enforce"
           $run node scripts/tray-budget.mjs --app "$app" $enforce --out "budget-${RUNNER_OS}.json"
-      - name: The real window, pictured and measured (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows-hub-shots.ps1 -Tray target\release\n8tray.exe -Fake target\release\n8tray-fake-module.exe -Out hub-shots
       - name: WebDriver tools (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -237,6 +233,10 @@ jobs:
           else
             xvfb-run -a node app/ui/tests/e2e/webdriver.mjs --app target/release/n8tray --fake target/release/n8tray-fake-module --out screens
           fi
+      - name: The real window, pictured and measured (Windows)
+        if: always() && runner.os == 'Windows'
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows-hub-shots.ps1 -Tray target\release\n8tray.exe -Fake target\release\n8tray-fake-module.exe -Out hub-shots
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
