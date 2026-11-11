@@ -2,6 +2,7 @@
 // itself. Every figure is the host's; this only lays them out.
 import type { AppView } from "../bindings/AppView";
 import type { HostSnapshot } from "../bindings/HostSnapshot";
+import { useState } from "preact/hooks";
 import { hideWindow, openHost, setSetting } from "../api";
 import { UpdateBanner } from "../components/UpdateBanner";
 import { AppIcon, GenericIcon } from "../components/AppIcon";
@@ -10,7 +11,6 @@ import { Glyph } from "../components/Glyph";
 import { ActionButton } from "../components/ActionButton";
 import { memory } from "../format";
 import {
-  groups,
   hasHistory,
   hubApps,
   levelWords,
@@ -18,6 +18,7 @@ import {
   rowAction,
   rowFigures,
   rowLine,
+  sections,
   statusCard,
 } from "../model";
 import type { Go } from "../main";
@@ -54,12 +55,7 @@ export function Hub({ snapshot, go }: { snapshot: HostSnapshot; go: Go }) {
   let row = 0;
   return (
     <div class="flyout-inner">
-      {snapshot.legacyTray && (
-        <div class="banner info" role="note">
-          <Glyph name="info" />
-          <span class="grow">The PowerShell N8 Tray is running, so this one only watches.</span>
-        </div>
-      )}
+      {snapshot.legacyTray && <WatchNote />}
       <UpdateBanner update={snapshot.update} />
       <button class="status" onClick={() => go({ name: "details" })}>
         <span>
@@ -87,7 +83,7 @@ export function Hub({ snapshot, go }: { snapshot: HostSnapshot; go: Go }) {
       </button>
       <div class="list" role="group" aria-label="Apps">
         {apps.length === 0 && <p class="empty">No apps yet. An app appears here once it installs its manifest.</p>}
-        {groups(apps).map((g) => (
+        {sections(apps).map((g) => (
           <div key={g.name ?? "-"}>
             {g.name && (
               <div class="group" aria-hidden="true">
@@ -95,7 +91,7 @@ export function Hub({ snapshot, go }: { snapshot: HostSnapshot; go: Go }) {
               </div>
             )}
             {g.apps.map((app) => (
-              <Row key={app.id} app={app} index={row++} go={go} />
+              <Row key={app.id} app={app} index={row++} go={go} watching={snapshot.legacyTray} />
             ))}
           </div>
         ))}
@@ -118,17 +114,42 @@ export function Hub({ snapshot, go }: { snapshot: HostSnapshot; go: Go }) {
             </div>
           </div>
         ))}
-        <div class="group" aria-hidden="true">
-          This app
-        </div>
+        <div class="divider" aria-hidden="true" />
         <TrayRow snapshot={snapshot} index={row++} go={go} />
       </div>
     </div>
   );
 }
 
-function Row({ app, index, go }: { app: AppView; index: number; go: Go }) {
-  const action = rowAction(app);
+/**
+ * The one line shown while the PowerShell N8 Tray runs: who manages the
+ * apps, and that nothing here starts or stops them. "Learn more" opens the
+ * why in place.
+ */
+function WatchNote() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div class="banner info watch" role="note">
+      <Glyph name="info" />
+      <span class="grow">
+        Your PowerShell N8 Tray is managing these apps. This app is watching only; nothing here starts or stops apps.{" "}
+        <button class="inline-link" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "Show less" : "Learn more"}
+        </button>
+        {open && (
+          <span class="more-text">
+            Both trays read the same apps. Until this one replaces the PowerShell tray, it only shows their state and memory, so the two never fight over
+            an app. Exit the PowerShell N8 Tray and this one manages them.
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+function Row({ app, index, go, watching }: { app: AppView; index: number; go: Go; watching: boolean }) {
+  // While watching, nothing here starts or stops apps: no dimmed buttons.
+  const action = watching ? null : rowAction(app);
   const line = rowLine(app);
   const figures = rowFigures(app);
   const history = app.history?.memoryMb;
@@ -192,11 +213,11 @@ function TrayRow({ snapshot, index, go }: { snapshot: HostSnapshot; index: numbe
         <span class="right">
           {hasHistory(t.history?.memoryMb) && <Spark values={t.history!.memoryMb} />}
           <span class="fig">
-            <b>{memory(t.rssMb)}</b>
+            <b>{memory(t.privateMb ?? t.rssMb)}</b>
             {t.windowMb > 0 && (
               <>
                 <br />
-                window {memory(t.windowMb)}
+                window {memory(t.windowPrivateMb ?? t.windowMb)}
               </>
             )}
           </span>

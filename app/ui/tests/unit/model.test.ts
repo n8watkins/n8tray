@@ -4,7 +4,7 @@ import { cpu, memory, percent } from "../../src/format";
 import { nextIndex } from "../../src/keyboard";
 import {
   componentActions,
-  groups,
+  sections,
   hubApps,
   memoryMeter,
   points,
@@ -44,10 +44,10 @@ describe("rows", () => {
     expect(rowLine(app("n8hotkeys")).text).toBe("6 hotkeys registered");
   });
 
-  it("are grouped in the snapshot's order, hidden and own-icon apps left out", () => {
+  it("are one list in the snapshot's order, hidden and own-icon apps left out", () => {
     const shown = hubApps({ ...busy, apps: [...busy.apps, { ...app("voicedock"), id: "x", hosted: false }] });
     expect(shown.map((a) => a.id)).not.toContain("x");
-    expect(groups(hubApps(busy)).map((g) => g.name)).toEqual(["Audio", "Hotkeys", "Streaming", "System", "Work"]);
+    expect(sections(hubApps(busy)).map((g) => g.name)).toEqual([null]);
   });
 
   it("name the component in per-component actions", () => {
