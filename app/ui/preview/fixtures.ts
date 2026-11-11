@@ -249,7 +249,7 @@ export const trouble: HostSnapshot = {
     { ...commentary, actions: commentary.actions.map((a) => (a.kind === "start" ? { ...a, confirm: true } : a)) },
   ],
   problems: [{ file: "broken.json", id: "broken", message: "Manifest invalid: /status: \"type\" is required" }],
-  legacyTray: true,
+  legacyTray: false,
   update: { channel: "stable", available: "0.3.0", url: "https://github.com/n8watkins/n8tray/releases/tag/v0.3.0", checkedAt: null, error: null, install: "idle", progress: null, installError: null },
 };
 

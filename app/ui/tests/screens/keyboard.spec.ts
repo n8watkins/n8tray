@@ -13,14 +13,14 @@ test("arrows move between rows and within a row; Enter opens the panel; Escape g
   await page.keyboard.press("ArrowRight");
   await expect(page.getByRole("button", { name: "Stop N8 Hotkeys" })).toBeFocused();
   await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("button", { name: "Start N8 Commentary" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Stop VoiceDock" })).toBeFocused();
   await page.keyboard.press("End");
   await expect(page.locator("[data-row]").last()).toBeFocused();
   await page.keyboard.press("Home");
   await expect(rows.first()).toBeFocused();
 
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("VoiceDock");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Lead Scraper");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("N8 Tray");
   await page.keyboard.press("Escape");
@@ -34,8 +34,8 @@ test("Tab reaches every control in order, Space works the start-at-sign-in switc
     /^Settings$/,
     /^Hide N8 Tray$/,
     /^Lead Scraper is over its 1 GB warning\s*3 of 4 running · N8 1.9 GB in all\s*Details$/,
-    /^VoiceDock\s*, Ready,\s*Kokoro ready · Piper idle\s*643 MB\s*12% CPU$/,
-    /^Stop VoiceDock$/,
+    /^Lead Scraper\s*, Ready,\s*Over its 1 GB warning\s*1.2 GB\s*in WSL$/,
+    /^Stop Lead Scraper$/,
   ];
   for (const name of expected) {
     await page.keyboard.press("Tab");
@@ -75,4 +75,14 @@ test("an action that asks for confirmation takes a second click", async ({ page 
 test("impossible and pending actions are dimmed", async ({ page }) => {
   await open(page, "trouble");
   await expect(page.getByRole("button", { name: "Stop N8 Hotkeys" })).toBeDisabled();
+});
+
+test("while the PowerShell tray manages the apps, rows offer no action and Learn more opens in place", async ({ page }) => {
+  await open(page, "watching");
+  await expect(page.locator(".app > button:not(.app-main)")).toHaveCount(0);
+  const more = page.getByRole("button", { name: "Learn more" });
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await more.click();
+  await expect(page.getByRole("button", { name: "Show less" })).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("note").first()).toContainText("Exit the PowerShell N8 Tray");
 });
