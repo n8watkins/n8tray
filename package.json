@@ -1,6 +1,6 @@
 {
   "name": "n8tray",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "N8 Tray: one tray for Windows, macOS and Linux that hosts independent local apps through an open contract.",
   "license": "MIT",
