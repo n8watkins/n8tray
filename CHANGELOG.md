@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 - 2026-11-10
+
+### New
+
+- The hub lists running apps first and says once that the PowerShell tray manages them ([#16](https://github.com/n8watkins/n8tray/pull/16))
+
+### Faster
+
+- The closed window hands its memory back after 10 s instead of 60 s ([#17](https://github.com/n8watkins/n8tray/pull/17))
+
 ## 0.2.1 - 2026-11-10
 
 First published release: ships everything listed under 0.2.0 (host core, tray, resource tracking, app icons, the hub and signed one-click updates), whose release failed its checks.
