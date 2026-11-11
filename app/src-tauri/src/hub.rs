@@ -1,8 +1,8 @@
 //! The window: created hidden when it first opens and shown only once it has
 //! drawn itself (so it appears in one piece), placed 2 px from the tray icon
 //! (`n8tray_core::placement`), hidden when it closes or loses focus, and
-//! destroyed 60 s after it was hidden, so the WebView's memory goes back to
-//! the system while nobody looks (plan 3.6 and 9.2).
+//! destroyed 10 s after it was hidden, so the WebView's memory goes back to
+//! the system while nobody looks (plan 3.6 and 9.2, D17).
 
 use std::time::{Duration, Instant};
 
@@ -17,8 +17,11 @@ use tracing::{info, warn};
 use crate::state::AppState;
 
 pub const LABEL: &str = "hub";
-/// How long a hidden window is kept before it is destroyed.
-pub const KEEP_HIDDEN: Duration = Duration::from_secs(60);
+/// How long a hidden window is kept before it is destroyed: long enough
+/// that clicking away and back reopens it at once, short enough that its
+/// WebView (about 90 MB private) is not kept around for nothing. A new
+/// window takes about 0.3 s to create and draw (D17).
+pub const KEEP_HIDDEN: Duration = Duration::from_secs(10);
 /// The window's width in CSS pixels; its height follows its content.
 const WIDTH: f64 = 380.0;
 const START_HEIGHT: f64 = 420.0;
