@@ -4,6 +4,42 @@
   "repository": "n8watkins/n8tray",
   "releases": [
     {
+      "version": "0.3.0",
+      "tag": "v0.3.0",
+      "date": "2026-11-10",
+      "time": "2026-11-11T04:22:52Z",
+      "url": "https://github.com/n8watkins/n8tray/releases/tag/v0.3.0",
+      "previous": "v0.2.1",
+      "summary": null,
+      "breaking": false,
+      "notes": [
+        {
+          "section": "new",
+          "type": "feat",
+          "scope": null,
+          "text": "The hub lists running apps first and says once that the PowerShell tray manages them",
+          "breaking": false,
+          "pr": 16,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/16",
+          "commit": "7a62f98437fc29dc1bfe1657747489e231098383",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/7a62f98437fc29dc1bfe1657747489e231098383"
+        },
+        {
+          "section": "faster",
+          "type": "perf",
+          "scope": null,
+          "text": "The closed window hands its memory back after 10 s instead of 60 s",
+          "breaking": false,
+          "pr": 17,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/17",
+          "commit": "b0597f33bacf89c8677868a13a956d50762f8caa",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/b0597f33bacf89c8677868a13a956d50762f8caa"
+        }
+      ],
+      "source": "release",
+      "unattributed": 0
+    },
+    {
       "version": "0.2.1",
       "tag": "v0.2.1",
       "date": "2026-11-10",
