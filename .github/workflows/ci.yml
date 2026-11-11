@@ -247,6 +247,32 @@ jobs:
             hub-shots/
           if-no-files-found: ignore
 
+  # npm run release:check exactly as release-kit's Release workflow runs it:
+  # on a bare Ubuntu runner, without the GTK and WebKit packages the app
+  # needs (D28). A tag is only published when this passes, so a pull request
+  # that would break it fails here instead of at release time.
+  release-check:
+    name: Release check (bare Linux)
+    needs: changes
+    if: needs.changes.outputs.checks == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # release-kit check reads the tags
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: rustup toolchain install # the version in rust-toolchain.toml
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release-check
+      - run: npm run release:check
+
   # The release path with a throwaway key: two NSIS installers built and signed
   # the way the App release workflow does it (this version and the next patch),
   # then an update end to end, as a user gets it. The older one is installed,
@@ -336,7 +362,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, kit, lint, lint-windows, test, ui, app, update]
+    needs: [changes, kit, lint, lint-windows, test, ui, app, update, release-check]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

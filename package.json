@@ -13,7 +13,8 @@
     "test": "cargo test --workspace --locked",
     "build": "cargo build --workspace --locked",
     "release": "release-kit release",
-    "release:check": "release-kit check && npm run lint && npm test && npm run build",
+    "check:no-app": "cargo fmt --all --check && node scripts/check-text.mjs && cargo clippy --workspace --exclude n8tray --all-targets --locked -- -D warnings && cargo test --workspace --exclude n8tray --locked && cargo build --workspace --exclude n8tray --locked",
+    "release:check": "release-kit check && npm run check:no-app",
     "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
