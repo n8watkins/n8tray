@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/n8watkins/release-kit/main/schema/releases.v1.json",
+  "schemaVersion": 1,
+  "repository": "n8watkins/n8tray",
+  "releases": [
+    {
+      "version": "0.2.1",
+      "tag": "v0.2.1",
+      "date": "2026-11-10",
+      "time": "2026-11-11T02:29:17Z",
+      "url": "https://github.com/n8watkins/n8tray/releases/tag/v0.2.1",
+      "previous": "v0.2.0",
+      "summary": "First published release: ships everything listed under 0.2.0 (host core, tray, resource tracking, app icons, the hub and signed one-click updates), whose release failed its checks.",
+      "breaking": false,
+      "notes": [],
+      "source": "release",
+      "unattributed": 0
+    }
+  ]
+}
