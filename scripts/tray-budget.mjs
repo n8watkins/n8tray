@@ -9,7 +9,7 @@
 // Without --enforce it reports and exits 0; with it, a figure over budget
 // fails the run.
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -29,6 +29,15 @@ const home = mkdtempSync(join(tmpdir(), "n8tray-budget-"));
 const env = { ...process.env, N8TRAY_HOME: home };
 const statusFile = join(home, "status.json");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** When the host last wrote its status file, in ms since the epoch. */
+function writtenAt() {
+  try {
+    return statSync(statusFile).mtimeMs;
+  } catch {
+    return Date.now();
+  }
+}
 
 function read() {
   try {
@@ -99,18 +108,30 @@ try {
   result.open.workingSetMb = max(open.map((t) => t.rssMb + t.windowMb));
   result.open.cpuPercent = avg(open.map((t) => t.cpuPercent));
 
+  // The status file is rewritten every 10 s, so a file can show the tray
+  // back under budget up to 10 s after it was. The budget therefore fails
+  // only on a sample written more than closedWithinSeconds after closing that
+  // still shows the tray over it; each sample is timed by when it was
+  // written, not when this script read it.
   run("--hide");
   const hidden = Date.now();
+  const underBudget = (s) => s.tray.windowMb === 0 && (!hasPrivate || s.tray.privateMb <= BUDGET.closedPrivateMb);
+  let lastOverSeconds = null;
   const closed = await until(
     `the tray back under ${BUDGET.closedPrivateMb} MB private`,
-    (s) => s.tray.windowMb === 0 && (!hasPrivate || s.tray.privateMb <= BUDGET.closedPrivateMb) && Date.now() - hidden > 62_000,
+    (s) => {
+      const seconds = (writtenAt() - hidden) / 1000;
+      if (!underBudget(s)) lastOverSeconds = seconds;
+      return underBudget(s) && Date.now() - hidden > 62_000;
+    },
     BUDGET.closedWithinSeconds + 20,
   ).catch((e) => {
     result.failures.push(e.message);
     return read();
   });
   result.closed = {
-    seconds: Math.round((Date.now() - hidden) / 1000),
+    seconds: Math.round((writtenAt() - hidden) / 100) / 10,
+    lastOverSeconds: lastOverSeconds === null ? null : Math.round(lastOverSeconds * 10) / 10,
     privateMb: closed.tray.privateMb,
     workingSetMb: closed.tray.rssMb,
     windowMb: closed.tray.windowMb,
@@ -123,7 +144,7 @@ try {
   over("idle CPU %", result.idle.cpuPercent, BUDGET.idleCpuPercent);
   over("window open private MB", result.open.privateMb, BUDGET.openPrivateMb);
   over("closed private MB", result.closed.privateMb, BUDGET.closedPrivateMb);
-  over("seconds back under budget", result.closed.seconds, BUDGET.closedWithinSeconds);
+  over("seconds still over budget after closing", result.closed.lastOverSeconds, BUDGET.closedWithinSeconds);
 } catch (e) {
   result.failures.push(e.message);
 } finally {
@@ -136,7 +157,7 @@ const f = (v) => (v === null || v === undefined ? "-" : typeof v === "number" ? 
 console.log(`N8 Tray budget on ${result.platform}`);
 console.log(`  idle         private ${f(result.idle.privateMb)} MB (<= ${BUDGET.idlePrivateMb}), working set ${f(result.idle.workingSetMb)} MB, CPU ${f(result.idle.cpuPercent)}% (<= ${BUDGET.idleCpuPercent})`);
 console.log(`  window open  private ${f(result.open.privateMb)} MB (<= ${BUDGET.openPrivateMb}; tray ${f(result.open.trayPrivateMb)}, window ${f(result.open.windowPrivateMb)}), working set ${f(result.open.workingSetMb)} MB, CPU ${f(result.open.cpuPercent)}%, window in ${f(result.open.secondsToWindow)} s`);
-console.log(`  closed       private ${f(result.closed.privateMb)} MB (<= ${BUDGET.closedPrivateMb}) after ${f(result.closed.seconds)} s, working set ${f(result.closed.workingSetMb)} MB`);
+console.log(`  closed       private ${f(result.closed.privateMb)} MB (<= ${BUDGET.closedPrivateMb}) in the sample written ${f(result.closed.seconds)} s after closing; last over budget at ${f(result.closed.lastOverSeconds)} s (<= ${BUDGET.closedWithinSeconds}); working set ${f(result.closed.workingSetMb)} MB`);
 for (const failure of result.failures) console.log(`  OVER: ${failure}`);
 if (opts.out && opts.out !== true) writeFileSync(opts.out, JSON.stringify(result, null, 2));
 if (!existsSync(statusFile)) console.log("  (no status file was written)");

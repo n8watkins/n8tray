@@ -210,3 +210,12 @@ Only Windows is built until the macOS and Linux phases.
 CI builds two installers signed with a throwaway key (this version and the next patch) and updates one to the other end to end on Windows, through the real window.
 `N8TRAY_UPDATE_FEED` points every channel at another feed for that test; the test builds trust the throwaway key and allow a plain-HTTP feed through `--config`, so the shipped app still accepts only HTTPS and only the real key.
 The beta channel keeps its feed address but has no feed yet, because release-kit cuts only plain `vX.Y.Z` releases.
+
+## D28. The release check leaves the app crate to CI and App release (2026-11-10)
+
+release-kit's Release workflow verifies a tag by running `npm run release:check` on a bare Ubuntu runner, and offers no way to install system packages first.
+The Tauri app (`n8tray`) needs the GTK, GLib and WebKit development packages to compile on Linux, so v0.2.0's Release run failed and nothing was published; the tag stays as it is and the next release carries its notes.
+`release:check` now runs the format and text checks on everything and clippy, the tests and the build on every crate but the app (`npm run check:no-app`).
+The app is still checked on every pull request (lint, tests and the real window on all three OSes, CI result being required), and App release builds it for real on Windows before anything is signed.
+A CI job runs `npm run release:check` on a bare runner too, so a change that would break a release fails its pull request.
+If release-kit gains a way to install system packages before its checks, this can go back to the full `lint`, `test` and `build`.
