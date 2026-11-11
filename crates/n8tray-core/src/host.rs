@@ -37,7 +37,7 @@ use crate::pressure::Hysteresis;
 use crate::resolve;
 use crate::settings::{self, Channel};
 use crate::status_io::{self, ActionError, Http, Observation};
-use crate::supervisor::{AppRuntime, Context, Root, Stopping, level_of, mib, round1};
+use crate::supervisor::{AppRuntime, Context, Root, Stopping, level_of, list_order, mib, round1};
 use crate::update;
 use crate::verify::{self, ProcessTable, Reported};
 
@@ -1601,10 +1601,7 @@ impl Host {
             };
             apps.push(app.view(&ctx));
         }
-        apps.sort_by(|a, b| {
-            (a.group.as_deref().unwrap_or("~"), a.name.to_lowercase())
-                .cmp(&(b.group.as_deref().unwrap_or("~"), b.name.to_lowercase()))
-        });
+        apps.sort_by(list_order);
 
         // The tray itself: its process, and its window's processes (the
         // WebView runs as its children).
@@ -1642,8 +1639,11 @@ impl Host {
             .iter()
             .filter(|a| a.hosted && a.level != LevelName::Hidden)
             .collect();
-        let n8_mb =
-            tray.rss_mb + tray.window_mb + hosted.iter().filter_map(|a| a.memory_mb).sum::<f64>();
+        // The tray and its window count what they cost the system (private
+        // memory, D24), not the WebView2 runtime code they share with Edge.
+        let n8_mb = tray.private_mb.unwrap_or(tray.rss_mb)
+            + tray.window_private_mb.unwrap_or(tray.window_mb)
+            + hosted.iter().filter_map(|a| a.memory_mb).sum::<f64>();
         let memory = self.memory_view(n8_mb);
 
         let mut level = hosted
@@ -1666,12 +1666,12 @@ impl Host {
             .map(|a| format!("{}: {}", a.name, a.summary))
             .or_else(|| {
                 (memory.level == level && level >= LevelName::Attention)
-                    .then(|| format!("Low memory: {}", memory.text))
+                    // The window's meter and the tooltip carry the figures.
+                    .then(|| "Low memory".to_string())
             });
-        if self.legacy {
-            level = level.max(LevelName::Attention);
-            reason = Some("The PowerShell N8 Tray runs; this one only watches".into());
-        }
+        // Watching while the PowerShell tray manages the apps is how the two
+        // trays share the PC, not a fault: the window says so in one line
+        // (`legacy_tray`), and the level stays the apps' and memory's.
         if !self.problems.is_empty() && level < LevelName::Attention {
             level = LevelName::Attention;
             reason = Some(format!(
@@ -1692,11 +1692,12 @@ impl Host {
             .filter(|a| a.running)
             .map(|a| a.name.clone())
             .collect();
-        let tooltip = crate::tooltip::format(
-            &format!("N8 Tray: {headline}"),
-            &running_names,
-            std::slice::from_ref(&memory.text),
-        );
+        let mut notes = vec![memory.text.clone()];
+        if self.legacy {
+            notes.push("Watching only: the PowerShell N8 Tray manages apps".into());
+        }
+        let tooltip =
+            crate::tooltip::format(&format!("N8 Tray: {headline}"), &running_names, &notes);
         let settings = &self.settings.settings;
         let update = UpdateView {
             channel: channel_name(settings.updates.channel).into(),

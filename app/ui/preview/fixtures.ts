@@ -201,7 +201,8 @@ export const busy: HostSnapshot = {
   total: 4,
   memory: { freeGb: 4.2, totalGb: 31.1, level: "ok", n8Mb: 1950, system: "Windows", text: "Windows 4.2/31.1 GB free · N8 1.9 GB" },
   pressure: "ok",
-  apps: [voicedock, hotkeys, commentary, wslmemory, leadscraper],
+  // The host's order: what runs first, then what is stopped; by name within.
+  apps: [leadscraper, hotkeys, voicedock, wslmemory, commentary],
   problems: [],
   tray: tray(true),
   tooltip: "N8 Tray: Needs attention",
@@ -218,7 +219,7 @@ export const healthy: HostSnapshot = {
   running: 2,
   total: 3,
   memory: { ...busy.memory, n8Mb: 780, text: "Windows 12.6/31.1 GB free · N8 0.8 GB", freeGb: 12.6 },
-  apps: [voicedock, hotkeys, commentary],
+  apps: [hotkeys, voicedock, commentary],
 };
 
 export const trouble: HostSnapshot = {
@@ -230,6 +231,7 @@ export const trouble: HostSnapshot = {
   total: 3,
   memory: { ...busy.memory, freeGb: 1.3, level: "problem", text: "Windows 1.3/31.1 GB free · N8 0.1 GB" },
   apps: [
+    { ...hotkeys, pending: "Restarting" },
     {
       ...voicedock,
       ...stopped,
@@ -244,7 +246,6 @@ export const trouble: HostSnapshot = {
       processes: [],
       lastOutcome: { action: "start", outcome: "failed", message: "Start failed: bin/voicedock-hub.exe is missing" },
     },
-    { ...hotkeys, pending: "Restarting" },
     { ...commentary, actions: commentary.actions.map((a) => (a.kind === "start" ? { ...a, confirm: true } : a)) },
   ],
   problems: [{ file: "broken.json", id: "broken", message: "Manifest invalid: /status: \"type\" is required" }],
@@ -275,4 +276,27 @@ export const updateFailed: HostSnapshot = {
   update: { ...trouble.update, install: "failed", installError: "the signature does not match N8 Tray's key" },
 };
 
-export const fixtures: Record<string, HostSnapshot> = { busy, healthy, trouble, empty, updating, updateFailed };
+/**
+ * The owner's PC while the PowerShell N8 Tray runs: this one watches, one
+ * app runs, three are stopped, memory is low.
+ */
+const watched = (app: AppView): AppView => ({ ...app, actions: app.actions.map((a) => ({ ...a, enabled: false })) });
+export const watching: HostSnapshot = {
+  ...busy,
+  level: "problem",
+  headline: "Problem",
+  reason: "Low memory",
+  running: 1,
+  total: 4,
+  memory: { freeGb: 1.4, totalGb: 31.1, level: "problem", n8Mb: 117, system: "Windows", text: "Windows 1.4/31.1 GB free · N8 0.1 GB" },
+  apps: [
+    watched({ ...hotkeys, summary: "6 of 6 hotkeys registered", memoryMb: 2.3, history: null }),
+    watched({ ...leadscraper, ...stopped, group: "Watchers", level: "off", alert: null, summary: "Installed but not running", namespacedMb: null, memoryMb: null, history: null, processes: [] }),
+    watched({ ...commentary, group: "Commentary" }),
+    watched({ ...voicedock, ...stopped, summary: "Installed but not running", memoryMb: null, cpuPercent: null, history: null, processes: [] }),
+  ],
+  tray: { ...tray(true), rssMb: 18.2, privateMb: 17.4, windowMb: 287.9, windowPrivateMb: 98.0 },
+  legacyTray: true,
+};
+
+export const fixtures: Record<string, HostSnapshot> = { busy, healthy, trouble, empty, updating, updateFailed, watching };

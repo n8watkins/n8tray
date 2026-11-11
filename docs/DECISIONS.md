@@ -219,3 +219,19 @@ The Tauri app (`n8tray`) needs the GTK, GLib and WebKit development packages to 
 The app is still checked on every pull request (lint, tests and the real window on all three OSes, CI result being required), and App release builds it for real on Windows before anything is signed.
 A CI job runs `npm run release:check` on a bare runner too, so a change that would break a release fails its pull request.
 If release-kit gains a way to install system packages before its checks, this can go back to the full `lint`, `test` and `build`.
+
+## D29. One list by state, one watch line, the tray's cost in private memory (2026-11-10)
+
+The owner's first look at 0.2.1 found the hub's categories pointless and its watch notice confusing.
+With four or five apps, the manifests' groups (Audio, Commentary, Hotkeys, Watchers) put one app under each heading: the headings said nothing a user acts on.
+The hub is now one list in the host's order: what runs or is starting first, then what wants to run and does not (it needs a look), then what is stopped, then what is not installed or cannot run here, by name within each (`supervisor::list_order`).
+The order is the host's, so the tray menu follows it too; the manifest's `group` stays in the contract and the snapshot and is no longer shown.
+A pending action counts as running, so an app moves up as soon as it starts and down only once it has stopped.
+
+While the PowerShell N8 Tray runs (D13), the window says so once: "Your PowerShell N8 Tray is managing these apps. This app is watching only; nothing here starts or stops apps.", with "Learn more" opening the why in place.
+That state is how the two trays share the PC during the switch-over, not a fault: it no longer raises the level to "Needs attention" or replaces the status reason, so the pill and the tray icon keep showing the apps' and memory's health, and the tooltip carries a "Watching only" line.
+While watching, rows show no Start or Stop button, since none would do anything.
+A low-memory reason reads "Low memory"; the meter under it shows the figures.
+
+The hub showed the tray's window as its working set (about 290 MB on the owner's PC), most of which is WebView2 runtime code shared with Edge (D19, D24).
+The N8 Tray row and the status card's "N8 ... in all" now count the tray and its window by private memory, what they cost the system (about 115 MB with the window open); the status details still show both figures.

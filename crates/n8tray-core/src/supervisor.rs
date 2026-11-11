@@ -802,9 +802,49 @@ pub fn level_of(view: &AppView) -> Level {
     }
 }
 
+/// Where an app sits in the list: what runs or is starting first, then what
+/// wants to run but does not (it needs a look), then what is stopped, then
+/// what is not installed or cannot run here. Name order within each.
+pub fn list_rank(running: bool, state: &str, pending: bool) -> u8 {
+    match state {
+        _ if running || pending => 0,
+        "starting" => 0,
+        "failed" => 1,
+        "not-installed" | "needs-setup" | "unsupported" => 3,
+        _ => 2,
+    }
+}
+
+/// The order of the apps in the snapshot (the hub and the tray menu).
+pub fn list_order(a: &AppView, b: &AppView) -> std::cmp::Ordering {
+    let rank = |v: &AppView| list_rank(v.running, &v.state, v.pending.is_some());
+    (rank(a), a.name.to_lowercase()).cmp(&(rank(b), b.name.to_lowercase()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn running_apps_come_first() {
+        let mut rows = [
+            ("Zed", list_rank(false, "not-installed", false)),
+            ("Alpha", list_rank(false, "stopped", false)),
+            ("Hotkeys", list_rank(true, "ready", false)),
+            ("Busy", list_rank(true, "degraded", false)),
+            ("Crashed", list_rank(false, "failed", false)),
+            ("Coming", list_rank(false, "stopped", true)),
+            ("Setup", list_rank(false, "needs-setup", false)),
+        ];
+        rows.sort_by(|a, b| (a.1, a.0).cmp(&(b.1, b.0)));
+        let names: Vec<_> = rows.iter().map(|r| r.0).collect();
+        assert_eq!(
+            names,
+            [
+                "Busy", "Coming", "Hotkeys", "Crashed", "Alpha", "Setup", "Zed"
+            ]
+        );
+    }
 
     fn runtime() -> AppRuntime {
         let manifest: Manifest = serde_json::from_str(

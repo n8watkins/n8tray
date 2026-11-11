@@ -14,15 +14,28 @@ export function hubApps(snapshot: HostSnapshot): AppView[] {
   return snapshot.apps.filter((a) => a.hosted && a.level !== "hidden");
 }
 
-/** Consecutive apps of one group; the snapshot is sorted by group already. */
-export function groups(apps: AppView[]): { name: string | null; apps: AppView[] }[] {
+/**
+ * The hub's list: one list in the snapshot's order (what runs first, then
+ * what needs a look, what is stopped and what is not installed), with no
+ * headings. `byState` instead puts a heading over each of those parts.
+ */
+export function sections(apps: AppView[], byState = false): { name: string | null; apps: AppView[] }[] {
+  if (!byState) return apps.length ? [{ name: null, apps }] : [];
   const out: { name: string | null; apps: AppView[] }[] = [];
   for (const app of apps) {
+    const name = sectionName(app);
     const last = out[out.length - 1];
-    if (last && last.name === app.group) last.apps.push(app);
-    else out.push({ name: app.group, apps: [app] });
+    if (last && last.name === name) last.apps.push(app);
+    else out.push({ name, apps: [app] });
   }
   return out;
+}
+
+function sectionName(app: AppView): string {
+  if (app.running || app.pending || app.state === "starting") return "Running";
+  if (app.state === "failed") return "Needs a look";
+  if (app.state === "not-installed" || app.state === "needs-setup" || app.state === "unsupported") return "Not set up";
+  return "Stopped";
 }
 
 /** The row's one action: Stop while running, Start while not. */

@@ -20,6 +20,7 @@ const views: [string, string][] = [
   ["trouble", "settings"],
   ["updating", "hub"],
   ["updateFailed", "hub"],
+  ["watching", "hub"],
 ];
 
 for (const scheme of ["light", "dark"] as const) {
