@@ -103,7 +103,9 @@ The status file is the snapshot the window shows, rewritten every 10 s and on ev
 ## D17. The window exists only while it is used (2026-11-09)
 
 The tray icon and its menu are native and need no WebView.
-The window (and its WebView2 processes) is created when it opens, hidden when it closes or loses focus, and destroyed 60 s after it was hidden, so its memory goes back to the system; reopening within 60 s is instant, later it takes a moment to create.
+The window (and its WebView2 processes) is created when it opens, hidden when it closes or loses focus, and destroyed 10 s after it was hidden, so its memory goes back to the system; reopening within 10 s is instant, later it takes about 0.3 s to create and draw.
+It was 60 s until 0.2.1; measured on the owner's PC on 2026-11-10, the hidden window kept about 100 MB private (six processes, 280 MB working set) for that whole minute, while creating it again took 270 to 350 ms plus about 60 ms to draw.
+The owner reopens it within seconds when he does at all, so 10 s keeps that instant and frees the memory 50 s sooner.
 The menu is rebuilt only when its shape changes (an app or an action appears or goes); otherwise only the texts and states that changed are updated, so an open menu does not flicker.
 
 ## D18. The window gets four commands and no plugins (2026-11-09)

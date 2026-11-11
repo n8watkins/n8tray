@@ -239,13 +239,13 @@ try {
       $s = Wait-Until "the window destroyed and memory back" { $s = Status; if ($s -and $s.tray.windowMb -eq 0 -and ((Get-Date) - $hid).TotalSeconds -gt 63) { $s } } 90
       $report.closed = [ordered]@{ seconds = [int]((Get-Date) - $hid).TotalSeconds; host = [ordered]@{ privateMb = $s.tray.privateMb; workingSetMb = $s.tray.rssMb }; measured = (Process-Memory $trayProc.Id) }
       Log ("closed after {0} s: private {1} MB" -f $report.closed.seconds, $s.tray.privateMb)
-      # Reopening after 60 s creates the window again.
+      # Reopening after it was destroyed creates the window again.
       $again = Show-Hub $trayProc
       $report.reopenAfterDestroy = @{ ms = $again.ms; blank = (Blank $again.first) }
       Start-Sleep 2
       Start-Process $tray -ArgumentList "--hide" -Wait
       $quick = Show-Hub $trayProc
-      $report.reopenWithin60s = @{ ms = $quick.ms; blank = (Blank $quick.first) }
+      $report.reopenWhileHidden = @{ ms = $quick.ms; blank = (Blank $quick.first) }
     }
     Stop-Tray $trayProc; $trayProc = $null
   }
