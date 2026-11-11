@@ -12,7 +12,7 @@ name: Auto-merge
 on:
   pull_request:
   workflow_run:
-    workflows: ["Commit messages", "Security scan"]
+    workflows: ["CI", "Commit messages", "Security scan"]
     types: [completed]
 
 permissions:
