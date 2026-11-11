@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 - 2026-11-10
+
+First published release: ships everything listed under 0.2.0 (host core, tray, resource tracking, app icons, the hub and signed one-click updates), whose release failed its checks.
+
 ## 0.2.0 - 2026-11-10
 
 ### New
