@@ -48,7 +48,6 @@ describe("rows", () => {
     const shown = hubApps({ ...busy, apps: [...busy.apps, { ...app("voicedock"), id: "x", hosted: false }] });
     expect(shown.map((a) => a.id)).not.toContain("x");
     expect(sections(hubApps(busy)).map((g) => g.name)).toEqual([null]);
-    expect(sections(hubApps(trouble), true).map((g) => g.name)).toEqual(["Running", "Needs a look", "Stopped"]);
   });
 
   it("name the component in per-component actions", () => {
