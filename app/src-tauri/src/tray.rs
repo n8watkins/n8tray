@@ -200,12 +200,21 @@ fn model(snapshot: &HostSnapshot) -> Vec<Line> {
         ));
     }
     lines.push(Line::Separator);
-    if let (Some(version), Some(_)) = (&snapshot.update.available, &snapshot.update.url) {
-        lines.push(Line::item(
-            "update",
-            format!("Update available: {version}"),
-            true,
-        ));
+    if let Some(version) = &snapshot.update.available {
+        let u = &snapshot.update;
+        let (text, enabled) = match u.install.as_str() {
+            "downloading" => (
+                match u.progress {
+                    Some(p) => format!("Downloading N8 Tray {version}: {p}%"),
+                    None => format!("Downloading N8 Tray {version}"),
+                },
+                false,
+            ),
+            "installing" => (format!("Installing N8 Tray {version}"), false),
+            "failed" => (format!("Update to {version} failed: try again"), true),
+            _ => (format!("Install update {version}"), true),
+        };
+        lines.push(Line::item("update", text, enabled));
     }
     lines.push(Line::Check {
         id: "signin".into(),
@@ -390,8 +399,11 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
             }
         }
         "update" => {
-            if let Some(url) = snapshot.as_ref().and_then(|s| s.update.url.clone()) {
-                crate::open::open(&url);
+            if snapshot
+                .as_ref()
+                .is_some_and(|s| s.update.available.is_some())
+            {
+                crate::updater::install(app);
             }
         }
         "restart" => restart(app),

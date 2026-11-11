@@ -17,6 +17,9 @@ const views: [string, string][] = [
   ["trouble", "panel:voicedock"],
   ["healthy", "hub"],
   ["empty", "hub"],
+  ["trouble", "settings"],
+  ["updating", "hub"],
+  ["updateFailed", "hub"],
 ];
 
 for (const scheme of ["light", "dark"] as const) {

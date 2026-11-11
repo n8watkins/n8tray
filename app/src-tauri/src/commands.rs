@@ -159,7 +159,19 @@ pub fn open_host(target: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Opens the release page of an available update.
+/// Installs the available update: downloads it, verifies its signature and
+/// restarts N8 Tray on the new version. Progress comes in the snapshot.
+#[tauri::command]
+pub fn install_update(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    let available = state.latest().is_some_and(|s| s.update.available.is_some());
+    if !available {
+        return Err("no update".into());
+    }
+    crate::updater::install(&app);
+    Ok(())
+}
+
+/// Opens the release page of an available update (what changed in it).
 #[tauri::command]
 pub fn open_update(state: State<AppState>) -> Result<(), String> {
     let url = state

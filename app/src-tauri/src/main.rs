@@ -12,6 +12,7 @@ mod recent;
 mod report;
 mod state;
 mod tray;
+mod updater;
 
 use std::time::{Duration, Instant};
 
@@ -108,6 +109,8 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_notification::init())
+        // Used from Rust only (updater.rs); the window has no updater permission.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::get_snapshot,
             commands::module_action,
@@ -118,6 +121,7 @@ fn main() {
             commands::host_command,
             commands::open_host,
             commands::open_update,
+            commands::install_update,
             commands::history,
             commands::recent_warnings,
             commands::status_text,

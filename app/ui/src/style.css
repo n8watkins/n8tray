@@ -96,6 +96,10 @@ button { font: inherit; color: inherit; }
 .banner.attention { background: var(--attention-bg); color: var(--fg); }
 .banner.problem { background: var(--problem-bg); color: var(--fg); }
 .banner .grow { min-width: 0; }
+.banner.update { flex-wrap: wrap; }
+.banner.update .grow { flex: 1 1 170px; }
+.banner.update .bar { margin-top: 5px; }
+.banner-actions { display: flex; gap: 6px; margin-left: auto; }
 
 /* Status card */
 .status {

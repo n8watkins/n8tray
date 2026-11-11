@@ -207,7 +207,7 @@ export const busy: HostSnapshot = {
   tooltip: "N8 Tray: Needs attention",
   legacyTray: false,
   settings,
-  update: { channel: "stable", available: null, url: null, checkedAt: null, error: null },
+  update: { channel: "stable", available: null, url: null, checkedAt: null, error: null, install: "idle", progress: null, installError: null },
 };
 
 export const healthy: HostSnapshot = {
@@ -249,7 +249,7 @@ export const trouble: HostSnapshot = {
   ],
   problems: [{ file: "broken.json", id: "broken", message: "Manifest invalid: /status: \"type\" is required" }],
   legacyTray: true,
-  update: { channel: "stable", available: "0.3.0", url: "https://github.com/n8watkins/n8tray/releases/tag/v0.3.0", checkedAt: null, error: null },
+  update: { channel: "stable", available: "0.3.0", url: "https://github.com/n8watkins/n8tray/releases/tag/v0.3.0", checkedAt: null, error: null, install: "idle", progress: null, installError: null },
 };
 
 export const empty: HostSnapshot = {
@@ -263,4 +263,16 @@ export const empty: HostSnapshot = {
   memory: { ...busy.memory, n8Mb: 15, text: "Windows 12.6/31.1 GB free · N8 0.0 GB", freeGb: 12.6 },
 };
 
-export const fixtures: Record<string, HostSnapshot> = { busy, healthy, trouble, empty };
+/** Healthy, while an update downloads. */
+export const updating: HostSnapshot = {
+  ...healthy,
+  update: { ...trouble.update, install: "downloading", progress: 42 },
+};
+
+/** Healthy, after an update failed to install. */
+export const updateFailed: HostSnapshot = {
+  ...healthy,
+  update: { ...trouble.update, install: "failed", installError: "the signature does not match N8 Tray's key" },
+};
+
+export const fixtures: Record<string, HostSnapshot> = { busy, healthy, trouble, empty, updating, updateFailed };

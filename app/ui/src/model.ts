@@ -6,6 +6,7 @@ import type { AppView } from "./bindings/AppView";
 import type { ComponentView } from "./bindings/ComponentView";
 import type { HostSnapshot } from "./bindings/HostSnapshot";
 import type { LevelName } from "./bindings/LevelName";
+import type { UpdateView } from "./bindings/UpdateView";
 import { cpu, memory } from "./format";
 
 /** The apps the hub shows: hosted and not hidden, in the snapshot's order. */
@@ -147,4 +148,37 @@ export function since(startedAt: string | undefined): string {
   const d = new Date(startedAt);
   if (Number.isNaN(d.getTime())) return "-";
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** What the window says about an update, and which button it offers. */
+export type UpdateLine = {
+  text: string;
+  /** A second, smaller line: why it failed. */
+  detail: string | null;
+  /** `install` to start, `retry` after a failure, none while it runs. */
+  action: "install" | "retry" | null;
+  /** The download's share (0 to 1), while it is known. */
+  progress: number | null;
+  problem: boolean;
+};
+
+export function updateLine(u: UpdateView): UpdateLine | null {
+  const v = u.available;
+  if (!v) return null;
+  switch (u.install) {
+    case "downloading":
+      return {
+        text: u.progress === null ? `Downloading N8 Tray ${v}` : `Downloading N8 Tray ${v}: ${u.progress}%`,
+        detail: null,
+        action: null,
+        progress: u.progress === null ? null : u.progress / 100,
+        problem: false,
+      };
+    case "installing":
+      return { text: `Installing N8 Tray ${v}`, detail: "N8 Tray starts again by itself", action: null, progress: 1, problem: false };
+    case "failed":
+      return { text: `Update to ${v} failed`, detail: u.installError, action: "retry", progress: null, problem: true };
+    default:
+      return { text: `N8 Tray ${v} is available`, detail: null, action: "install", progress: null, problem: false };
+  }
 }

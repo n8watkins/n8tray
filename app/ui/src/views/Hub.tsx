@@ -2,7 +2,8 @@
 // itself. Every figure is the host's; this only lays them out.
 import type { AppView } from "../bindings/AppView";
 import type { HostSnapshot } from "../bindings/HostSnapshot";
-import { hideWindow, openHost, openUpdate, setSetting } from "../api";
+import { hideWindow, openHost, setSetting } from "../api";
+import { UpdateBanner } from "../components/UpdateBanner";
 import { AppIcon, GenericIcon } from "../components/AppIcon";
 import { Spark } from "../components/Charts";
 import { Glyph } from "../components/Glyph";
@@ -59,15 +60,7 @@ export function Hub({ snapshot, go }: { snapshot: HostSnapshot; go: Go }) {
           <span class="grow">The PowerShell N8 Tray is running, so this one only watches.</span>
         </div>
       )}
-      {snapshot.update.available && (
-        <div class="banner info" role="note">
-          <Glyph name="update" />
-          <span class="grow">N8 Tray {snapshot.update.available} is available.</span>
-          <button class="small-btn" onClick={() => openUpdate()}>
-            Get it
-          </button>
-        </div>
-      )}
+      <UpdateBanner update={snapshot.update} />
       <button class="status" onClick={() => go({ name: "details" })}>
         <span>
           <span class="big" style={{ display: "block" }}>

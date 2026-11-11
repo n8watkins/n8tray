@@ -279,9 +279,17 @@ pub struct SettingsView {
 pub struct UpdateView {
     pub channel: String,
     pub available: Option<String>,
+    /// The release page of the available version.
     pub url: Option<String>,
     pub checked_at: Option<String>,
+    /// Why the last check failed.
     pub error: Option<String>,
+    /// Installing it: `idle`, `downloading`, `installing` or `failed`.
+    pub install: String,
+    /// The download's percentage, once its size is known.
+    pub progress: Option<u8>,
+    /// Why the last install failed.
+    pub install_error: Option<String>,
 }
 
 /// A warning or error from the tray log, for the status details.

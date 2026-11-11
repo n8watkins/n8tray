@@ -110,6 +110,8 @@ pub enum Command {
     SetCheckUpdates(bool),
     ReloadSettings,
     CheckUpdates,
+    /// How installing an update goes (the app installs it).
+    UpdateInstall(update::Install),
     /// The window opened or closed: sampling is faster while it is open.
     WindowOpen(bool),
     Shutdown,
@@ -272,6 +274,7 @@ struct UpdateState {
     outcome: Option<update::Outcome>,
     error: Option<String>,
     in_flight: bool,
+    install: update::Install,
 }
 
 struct Host {
@@ -1433,6 +1436,16 @@ impl Host {
                 self.apply_sign_in();
             }
             Command::CheckUpdates => self.start_update_check(),
+            Command::UpdateInstall(install) => {
+                match &install {
+                    update::Install::Failed(e) => warn!("Update install failed: {e}"),
+                    update::Install::Installing => {
+                        info!("Update downloaded and verified; installing")
+                    }
+                    _ => {}
+                }
+                self.update.install = install;
+            }
             Command::WindowOpen(open) => self.window_open = open,
             Command::Shutdown => {}
         }
@@ -1505,7 +1518,7 @@ impl Host {
             .name("n8tray-update".into())
             .spawn(move || {
                 let result = Http::new()
-                    .fetch(update::feed_url(channel), StdDuration::from_secs(15))
+                    .fetch(&update::feed_url(channel), StdDuration::from_secs(15))
                     .and_then(|(status, body)| update::compare(status, &body, crate::VERSION));
                 let _ = tx.send(Done::Update(result));
             });
@@ -1697,6 +1710,15 @@ impl Host {
             },
             checked_at: self.update.checked_at.map(crate::util::timestamp),
             error: self.update.error.clone(),
+            install: self.update.install.name().into(),
+            progress: match &self.update.install {
+                update::Install::Downloading(p) => *p,
+                _ => None,
+            },
+            install_error: match &self.update.install {
+                update::Install::Failed(e) => Some(e.clone()),
+                _ => None,
+            },
         };
         HostSnapshot {
             version: crate::VERSION.into(),

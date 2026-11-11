@@ -89,3 +89,8 @@ export function fitWindow(height: number): Promise<void> {
 export function initialView(): Promise<ViewName> {
   return invoke<ViewName>("initial_view");
 }
+
+/** Installs the available update; progress comes in the snapshot. */
+export function installUpdate(): Promise<void> {
+  return invoke("install_update");
+}

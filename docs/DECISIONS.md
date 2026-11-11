@@ -194,3 +194,19 @@ The pictures for review come from Playwright against recorded snapshots (`app/ui
 It is off.
 The window loads only N8 Tray's own bundled code under a strict CSP (`default-src 'self'`), with no remote content and no app code, so freezing the prototype guarded against little.
 The WebDriver tests run the real window in CI, so a runtime failure like this one fails a pull request now.
+
+## D27. Updates install on a click, signed with N8 Tray's own key (2026-11-10)
+
+The host looks for an update at start (after a minute) and once a day, as before; Install in the window or the tray menu now installs it in place instead of opening the release page.
+Tauri's updater plugin downloads it from the channel's feed and verifies its minisign signature against the public key in `tauri.conf.json` before anything runs; the window has no updater permission, only the `install_update` command, and the host shows the progress in the snapshot.
+On Windows the per-user NSIS installer runs passively and starts N8 Tray again with the same arguments; the host stops first, so the lock and the lease are released.
+The private key and its password are GitHub Actions secrets (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) and live in the owner's password store with an offline backup; losing the key means installed copies can never take another in-app update.
+
+The installer is built and signed by `app-release.yml`, which runs after release-kit's Release workflow has published a release: release-kit verifies and publishes on Linux, and an NSIS installer needs Windows.
+Its build job holds the key with read access only; a separate publish job, without the key, uploads the installer as `N8Tray_<version>_x64-setup.exe`, its `.sig`, a checksum file and `latest.json`, and never replaces a file already on the release.
+Re-running release-kit's Release workflow after that fails, since it sees files it did not build; retry the app's part with "Run workflow" on App release instead.
+Only Windows is built until the macOS and Linux phases.
+
+CI builds two installers signed with a throwaway key (this version and the next patch) and updates one to the other end to end on Windows, through the real window.
+`N8TRAY_UPDATE_FEED` points every channel at another feed for that test; the test builds trust the throwaway key and allow a plain-HTTP feed through `--config`, so the shipped app still accepts only HTTPS and only the real key.
+The beta channel keeps its feed address but has no feed yet, because release-kit cuts only plain `vX.Y.Z` releases.
