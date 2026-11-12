@@ -6,7 +6,7 @@ Newest last; an entry is never rewritten, only superseded by a later one that sa
 ## D1. A public repo for the host and the contract (2026-11-09)
 
 The rebuilt N8 Tray (Tauri 2, Windows, macOS and Linux) and its contract live in this public repo, `n8watkins/n8tray`, under the MIT license.
-The PowerShell tray and the private modules (N8 Commentary, N8 Hotkeys) moved to the private repo `n8watkins/n8tray-modules`, which held the `n8tray` name until this repo took it.
+The PowerShell tray and the private modules (N8 Commentary, N8 Hotkeys) moved to the private repo `n8watkins/n8tray-modules` (renamed `n8watkins/n8tray-v1` and archived on 2026-11-11), which held the `n8tray` name until this repo took it.
 Lead Scraper stays private in its own repo.
 Public, because apps such as VoiceDock that anyone can install must be able to read the contract and run its conformance kit.
 
