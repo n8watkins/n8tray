@@ -22,7 +22,7 @@ custom-protocol = ["tauri/custom-protocol"]
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
-base64 = "0.22.1"
+base64 = "0.23.1"
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 n8tray-core = { path = "../../crates/n8tray-core" }
 n8tray-platform = { path = "../../crates/n8tray-platform" }
