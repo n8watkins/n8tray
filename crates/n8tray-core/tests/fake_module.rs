@@ -224,8 +224,36 @@ struct External {
 
 impl External {
     fn start(run_dir: &Path, args: &[&str]) -> External {
-        let mut child = Command::new(fake_module())
-            .args(args)
+        let mut command = Command::new(fake_module());
+        command.args(args);
+        External::spawn(command, run_dir)
+    }
+
+    /// Like [`External::start`], ignoring the polite stop request (SIGTERM;
+    /// on Windows a windowless fake ignores the close request anyway).
+    fn start_stubborn(run_dir: &Path, args: &[&str]) -> External {
+        #[cfg(unix)]
+        let command = {
+            // An ignored signal stays ignored across exec.
+            let mut command = Command::new("sh");
+            command
+                .arg("-c")
+                .arg("trap '' TERM; exec \"$0\" \"$@\"")
+                .arg(fake_module())
+                .args(args);
+            command
+        };
+        #[cfg(windows)]
+        let command = {
+            let mut command = Command::new(fake_module());
+            command.args(args);
+            command
+        };
+        External::spawn(command, run_dir)
+    }
+
+    fn spawn(mut command: Command, run_dir: &Path) -> External {
+        let mut child = command
             .args(["--exit-after-seconds", "300"])
             .env("N8TRAY_RUN_DIR", run_dir)
             .stdin(Stdio::null())
@@ -551,6 +579,58 @@ fn forces_a_stop_only_after_the_grace_period() {
         assert!(Instant::now() < end, "still running: {alive:?}");
         std::thread::sleep(Duration::from_millis(200));
     }
+}
+
+#[test]
+fn an_app_found_running_is_asked_to_stop_but_never_forced() {
+    let tray = Tray::start();
+    // Started outside the host (by hand, or by another tray), and it ignores
+    // the polite request.
+    let mut found = External::start_stubborn(
+        &tray.run_dir(),
+        &[
+            "--id",
+            "found",
+            "--status",
+            "file",
+            "--interval-seconds",
+            "1",
+        ],
+    );
+    let pid = found.child.id();
+    tray.write_manifest(
+        "found",
+        fake_manifest(
+            "found",
+            json!({ "type": "file", "intervalSeconds": 1 }),
+            &["--status", "file", "--interval-seconds", "1"],
+            json!({ "run": { "stop": { "type": "terminate", "graceSeconds": 2 } } }),
+        ),
+    );
+    tray.wait_app("found", "the running app to be adopted", |a| {
+        a.state == "ready"
+            && a.processes
+                .iter()
+                .any(|p| p.pid == pid && p.verdict == "verified")
+    });
+    tray.action("found", "stop", None);
+    let app = tray.wait_app("found", "the stop to give up", |a| {
+        a.last_outcome.as_ref().is_some_and(|o| o.action == "stop")
+    });
+    let outcome = app.last_outcome.unwrap();
+    assert_eq!(outcome.outcome, "failed", "{outcome:?}");
+    assert!(
+        outcome
+            .message
+            .as_deref()
+            .is_some_and(|m| m.contains("force-stops only apps it started")),
+        "{outcome:?}"
+    );
+    std::thread::sleep(Duration::from_secs(1));
+    assert!(
+        matches!(found.child.try_wait(), Ok(None)),
+        "the app N8 Tray did not start is still running"
+    );
 }
 
 #[test]
