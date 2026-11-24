@@ -141,13 +141,5 @@ mod tests {
         assert!(lease.is_fresh(start + chrono::Duration::seconds(10)));
     }
 
-    #[test]
-    fn one_host_at_a_time() {
-        let dir = tempfile::tempdir().unwrap();
-        let first = HostLock::acquire(dir.path()).unwrap();
-        assert!(first.is_some());
-        assert!(HostLock::acquire(dir.path()).unwrap().is_none());
-        drop(first);
-        assert!(HostLock::acquire(dir.path()).unwrap().is_some());
-    }
+    // `HostLock` is tested in tests/host_lock.rs, a test binary of its own.
 }
