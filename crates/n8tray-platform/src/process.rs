@@ -161,6 +161,16 @@ pub fn arguments_and_cwd(pid: u32) -> Option<(Vec<String>, Option<PathBuf>)> {
     )
 }
 
+/// A process's creation time now (whole seconds), to check right before
+/// acting on a pid that it is still the same process.
+pub fn started_at(pid: u32) -> Option<DateTime<Utc>> {
+    use chrono::TimeZone;
+    with_process(pid, sysinfo::ProcessRefreshKind::nothing(), |p| {
+        Utc.timestamp_opt(p.start_time() as i64, 0).single()
+    })
+    .flatten()
+}
+
 fn with_process<T>(
     pid: u32,
     kind: sysinfo::ProcessRefreshKind,
@@ -210,6 +220,24 @@ mod tests {
             Some(std::env::current_dir().unwrap().canonicalize().unwrap())
         );
         assert!(logical_cpus() >= 1);
+    }
+
+    #[test]
+    fn start_time_of_one_process_matches_the_snapshot() {
+        let me = std::process::id();
+        let snapshot = Processes::new().snapshot().unwrap();
+        let listed = snapshot
+            .processes
+            .iter()
+            .find(|p| p.pid == me)
+            .unwrap()
+            .started_at;
+        let now = started_at(me).expect("this process's start time is known");
+        assert!(
+            (now - listed).num_milliseconds().abs() <= 1001,
+            "{now} vs {listed}"
+        );
+        assert!(started_at(u32::MAX - 7).is_none());
     }
 
     #[test]

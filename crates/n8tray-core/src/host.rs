@@ -972,7 +972,7 @@ impl Host {
                         );
                         warn!("{id}: did not stop, even by force");
                     } else {
-                        let forced = force_stop(app);
+                        let forced = force_stop(app, &self.table);
                         match forced {
                             Ok(count) => {
                                 warn!(
@@ -1817,14 +1817,15 @@ fn channel_name(channel: Channel) -> &'static str {
 }
 
 /// Forces a stop: the whole Job Object on Windows, the verified tree on Unix.
-/// Returns how many processes it ended.
-fn force_stop(app: &mut AppRuntime) -> Result<usize, String> {
-    let owned = app.owned_pids();
+/// Only an app the host started is ever forced (D12): one found running is
+/// only asked to stop. Returns how many processes it ended.
+fn force_stop(app: &mut AppRuntime, table: &ProcessTable) -> Result<usize, String> {
+    const NOT_OURS: &str = "it did not stop in time, and N8 Tray force-stops only apps it started";
     if Container::SUPPORTED {
+        // The Job Object exists only for an app this host started, and
+        // ending it reaches nothing outside it.
         let Some(container) = app.container.as_ref() else {
-            return Err(
-                "it did not stop in time, and N8 Tray force-stops only apps it started".into(),
-            );
+            return Err(NOT_OURS.into());
         };
         let members = container.pids();
         if members.is_empty() {
@@ -1835,9 +1836,19 @@ fn force_stop(app: &mut AppRuntime) -> Result<usize, String> {
         container.terminate().map_err(|e| e.to_string())?;
         return Ok(members.len());
     }
+    // No container here: only the tree of a root the host started itself
+    // (it holds the handle) is forced.
+    if !app.root.as_ref().is_some_and(Root::ours) {
+        return Err(NOT_OURS.into());
+    }
     let mut ended = 0;
-    for pid in owned {
-        if signal::force_stop(pid).is_ok() {
+    for pid in app.owned_pids() {
+        // The table can be seconds old: end the pid only while it is still
+        // the process that was verified.
+        let verified = table.get(pid).map(|p| p.started_at);
+        let now = n8tray_platform::process::started_at(pid);
+        let same = matches!((verified, now), (Some(a), Some(b)) if crate::util::same_start(a, b));
+        if same && signal::force_stop(pid).is_ok() {
             ended += 1;
         }
     }
