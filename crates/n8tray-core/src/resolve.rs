@@ -68,6 +68,11 @@ fn native(path: &str) -> String {
 
 /// Resolves a relative path inside `install_dir`, following symlinks, and
 /// rejects anything that ends up outside it.
+///
+/// The result is written the plain way (`C:\...`), not as the verbatim
+/// `\\?\C:\...` that canonicalizing gives on Windows: it becomes a program,
+/// a script argument or a working folder, and PowerShell's `$PSScriptRoot`,
+/// cmd.exe and many other programs fail on the verbatim form.
 pub fn inside(install_dir: &Path, relative: &str) -> Result<PathBuf, String> {
     paths::check_relative(relative).map_err(|e| format!("{relative}: {e}"))?;
     let root = install_dir
@@ -80,7 +85,13 @@ pub fn inside(install_dir: &Path, relative: &str) -> Result<PathBuf, String> {
     if !resolved.starts_with(&root) {
         return Err(format!("{relative} leaves the install folder"));
     }
-    Ok(resolved)
+    Ok(plain(resolved))
+}
+
+/// A canonical path without the verbatim prefix where it can be written
+/// without it (a no-op off Windows).
+fn plain(path: PathBuf) -> PathBuf {
+    dunce::simplified(&path).to_path_buf()
 }
 
 /// Like [`inside`], for a path that need not exist yet: the existing part is
@@ -250,9 +261,7 @@ pub fn launch(
     };
     let cwd = match &run.cwd {
         Some(cwd) => inside(&dir, cwd)?,
-        None => dir
-            .canonicalize()
-            .map_err(|e| format!("{}: {e}", dir.display()))?,
+        None => dunce::canonicalize(&dir).map_err(|e| format!("{}: {e}", dir.display()))?,
     };
     Ok(Launch {
         program,
@@ -326,6 +335,24 @@ mod tests {
 
         let missing = manifest(dir.path(), r#"{ "program": "bin/missing" }"#);
         assert!(super::launch(&missing, &folders, None).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn script_and_working_folder_are_plain_windows_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("app.ps1"), "").unwrap();
+        let folders = Folders::under(dir.path());
+        let m = manifest(
+            dir.path(),
+            r#"{ "interpreter": "powershell", "script": "app.ps1" }"#,
+        );
+        let launch = launch(&m, &folders, None).unwrap();
+        let script = launch.args.last().unwrap();
+        assert!(!script.starts_with(r"\\?\"), "{script}");
+        assert!(script.ends_with("app.ps1"), "{script}");
+        let cwd = launch.cwd.display().to_string();
+        assert!(!cwd.starts_with(r"\\?\"), "{cwd}");
     }
 
     #[cfg(unix)]
