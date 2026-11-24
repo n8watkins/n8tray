@@ -264,6 +264,7 @@ enum Done {
     Update(Result<update::Outcome, String>),
     Pressure {
         app: String,
+        level: LevelName,
         accepted: bool,
     },
 }
@@ -804,12 +805,12 @@ impl Host {
 
             // Memory pressure, to apps that take it, on every change and when they start.
             if app.manifest().has_feature(LifecycleFeature::Pressure) && app.status().is_some() {
-                if app.pressure_sent != Some(push) && !self.legacy {
-                    app.pressure_sent = Some(push);
+                if app.pressure_due(push, now) && !self.legacy {
+                    app.pressure_pushed(push);
                     pushes.push((id.clone(), push));
                 }
             } else {
-                app.pressure_sent = None;
+                app.pressure_reset();
             }
 
             // Demand rules, for apps that should run.
@@ -905,15 +906,14 @@ impl Host {
                         .pressure(&origin, &token, pressure, StdDuration::from_secs(2))
                         .is_ok()
                 });
-                info!(
-                    "{app}: memory pressure {pressure:?} {}",
-                    if accepted {
-                        "sent"
-                    } else {
-                        "not accepted; sent again later"
-                    }
-                );
-                let _ = tx.send(Done::Pressure { app, accepted });
+                if accepted {
+                    info!("{app}: memory pressure {pressure:?} sent");
+                }
+                let _ = tx.send(Done::Pressure {
+                    app,
+                    level,
+                    accepted,
+                });
             });
     }
 
@@ -1366,9 +1366,25 @@ impl Host {
                     }
                 }
             }
-            Done::Pressure { app, accepted } => {
-                if !accepted && let Some(runtime) = self.apps.get_mut(&app) {
-                    runtime.pressure_sent = None;
+            Done::Pressure {
+                app,
+                level,
+                accepted,
+            } => {
+                if let Some(runtime) = self.apps.get_mut(&app) {
+                    if accepted {
+                        runtime.pressure_accepted();
+                        self.limiter.clear(&format!("pressure:{app}"));
+                    } else {
+                        let wait = runtime.pressure_refused(level, now);
+                        // Logged once per 5 minutes while it keeps refusing.
+                        if self.limiter.due(&format!("pressure:{app}"), "refused", now) {
+                            warn!(
+                                "{app}: memory pressure {level:?} not accepted; trying again in {} s",
+                                wait.num_seconds()
+                            );
+                        }
+                    }
                 }
             }
             Done::Update(result) => {
@@ -1773,7 +1789,13 @@ impl Host {
             (Some(f), Some(t)) => format!("{os} {f:.1}/{t:.1} GB free"),
             _ => format!("{os} memory unknown"),
         };
-        text.push_str(&format!(" · N8 {:.1} GB", n8_mb / 1024.0));
+        // As the window and the menu write memory: MB below 1000, GB from there.
+        let n8 = if n8_mb >= 1000.0 {
+            format!("{:.1} GB", n8_mb / 1024.0)
+        } else {
+            format!("{n8_mb:.0} MB")
+        };
+        text.push_str(&format!(" · N8 {n8}"));
         MemoryView {
             free_gb: free.map(|f| (f * 10.0).round() / 10.0),
             total_gb: total.map(|t| (t * 10.0).round() / 10.0),
