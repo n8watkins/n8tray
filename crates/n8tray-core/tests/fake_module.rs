@@ -634,24 +634,27 @@ fn forces_a_stop_only_after_the_grace_period() {
     }
 }
 
-fn tray_with_a_running_app() -> Tray {
+/// A tray hosting one running fake app. Each test needs its own `id`: tests
+/// run in parallel, and on Windows the app's Job Object is named after its
+/// id (`Local\N8Tray.App.<id>`), so two tests with one id share a job.
+fn tray_with_a_running_app(id: &str) -> Tray {
     let tray = Tray::start();
     tray.write_manifest(
-        "steady",
+        id,
         fake_manifest(
-            "steady",
+            id,
             json!({ "type": "file", "intervalSeconds": 1 }),
             &["--status", "file", "--interval-seconds", "1"],
             json!({ "autoStartDefault": true }),
         ),
     );
-    tray.wait_app("steady", "the app to be ready", |a| a.state == "ready");
+    tray.wait_app(id, "the app to be ready", |a| a.state == "ready");
     tray
 }
 
 #[test]
 fn a_failure_in_the_host_is_shown_and_the_host_starts_again() {
-    let tray = tray_with_a_running_app();
+    let tray = tray_with_a_running_app("steady");
     tray.send(HostCommand::FailForTest);
     let snapshot = tray.wait("the failure to be shown", |s| {
         s.level == LevelName::Problem
@@ -679,6 +682,11 @@ fn a_failure_in_the_host_is_shown_and_the_host_starts_again() {
         a.state == "ready" && a.processes.iter().any(|p| p.verdict == "verified")
     });
     tray.action("steady", "stop", None);
+    let app = tray.wait_app("steady", "the stop's outcome", |a| {
+        a.last_outcome.as_ref().is_some_and(|o| o.action == "stop")
+    });
+    let outcome = app.last_outcome.unwrap();
+    assert_eq!(outcome.outcome, "ok", "{outcome:?}");
     tray.wait_app("steady", "the app to stop", |a| {
         a.state == "stopped" && !a.running
     });
@@ -713,7 +721,7 @@ fn a_failure_in_the_host_is_shown_and_the_host_starts_again() {
 
 #[test]
 fn a_host_that_keeps_failing_says_it_stopped() {
-    let tray = tray_with_a_running_app();
+    let tray = tray_with_a_running_app("failing");
     for _ in 0..3 {
         // Each failure waits for the restarted host before the next.
         tray.send(HostCommand::FailForTest);
