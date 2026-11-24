@@ -294,13 +294,13 @@ pub fn substitute(
         .collect())
 }
 
-/// The id rule for components: `[a-z0-9-]{1,32}` (plan, section 12).
+/// The contract's id rule, for app and component ids: `[a-z0-9]` followed by
+/// up to 47 of `[a-z0-9-]` (spec section 1; `$defs/id` in the schemas).
 pub fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 48
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.')
+    let alnum = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
+    id.len() <= 48
+        && id.bytes().next().is_some_and(alnum)
+        && id.bytes().all(|b| alnum(b) || b == b'-')
 }
 
 #[cfg(test)]
@@ -378,6 +378,33 @@ mod tests {
         assert!(expand("%NOPE%/x", &folders).is_err());
         if !cfg!(windows) {
             assert!(expand("%LOCALAPPDATA%\\x", &folders).is_err());
+        }
+    }
+
+    #[test]
+    fn the_id_rule_is_the_contracts() {
+        // The installed apps' ids and the spec's examples pass.
+        let mut ids: Vec<String> = ["leadscraper", "n8commentary", "n8hotkeys", "voicedock"]
+            .map(String::from)
+            .to_vec();
+        let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../spec/examples");
+        for entry in std::fs::read_dir(examples).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|e| e != "json") {
+                continue;
+            }
+            let text = std::fs::read_to_string(path).unwrap();
+            let manifest: serde_json::Value = serde_json::from_str(&text).unwrap();
+            ids.push(manifest["id"].as_str().unwrap().to_string());
+        }
+        ids.extend(["kokoro", "piper", "engine", "a", "0", "a-b"].map(String::from));
+        ids.push(format!("a{}", "-".repeat(47)));
+        for id in &ids {
+            assert!(valid_id(id), "{id} is valid");
+        }
+        // What the schema's `^[a-z0-9][a-z0-9-]{0,47}$` refuses.
+        for id in ["", "-a", "a.b", "A", "a_b", "a b", "é", &"a".repeat(49)] {
+            assert!(!valid_id(id), "{id:?} is not valid");
         }
     }
 

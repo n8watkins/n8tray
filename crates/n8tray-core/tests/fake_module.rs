@@ -635,6 +635,24 @@ fn forces_a_stop_only_after_the_grace_period() {
 }
 
 #[test]
+fn small_figures_read_right() {
+    let tray = Tray::start();
+    let snapshot = tray.wait("a sampled snapshot", |s| s.tray.rss_mb > 0.0);
+    let json = serde_json::to_string(&*snapshot).unwrap();
+    assert!(!json.contains("-0.0"), "no negative zeros: {json}");
+    // The tray alone is tens of MB: said in MB, not as "0.0 GB".
+    let n8 = snapshot.memory.n8_mb;
+    assert!(n8 > 0.0 && n8 < 1000.0, "{n8}");
+    let text = &snapshot.memory.text;
+    let said: f64 = text
+        .strip_suffix(" MB")
+        .and_then(|t| t.rsplit_once("· N8 "))
+        .and_then(|(_, n)| n.parse().ok())
+        .unwrap_or_else(|| panic!("the N8 figure in MB: {text}"));
+    assert!((said - n8).abs() <= 1.0, "{text} for {n8} MB");
+}
+
+#[test]
 fn an_app_found_running_is_asked_to_stop_but_never_forced() {
     let tray = Tray::start();
     // Started outside the host (by hand, or by another tray), and it ignores
