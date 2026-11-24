@@ -141,6 +141,26 @@ pub fn command_line(pid: u32) -> Option<String> {
     )
 }
 
+/// A process's arguments as the OS parsed them (the program first) and its
+/// working folder, where the OS tells.
+pub fn arguments_and_cwd(pid: u32) -> Option<(Vec<String>, Option<PathBuf>)> {
+    with_process(
+        pid,
+        sysinfo::ProcessRefreshKind::nothing()
+            .with_cmd(sysinfo::UpdateKind::Always)
+            .with_cwd(sysinfo::UpdateKind::Always),
+        |p| {
+            (
+                p.cmd()
+                    .iter()
+                    .map(|a| a.to_string_lossy().into_owned())
+                    .collect(),
+                p.cwd().map(|c| c.to_path_buf()),
+            )
+        },
+    )
+}
+
 fn with_process<T>(
     pid: u32,
     kind: sysinfo::ProcessRefreshKind,
@@ -183,6 +203,12 @@ mod tests {
             std::env::current_exe().unwrap().file_name()
         );
         assert!(command_line(me).is_some());
+        let (args, cwd) = arguments_and_cwd(me).expect("this process's arguments");
+        assert!(!args.is_empty());
+        assert_eq!(
+            cwd.map(|c| c.canonicalize().unwrap()),
+            Some(std::env::current_dir().unwrap().canonicalize().unwrap())
+        );
         assert!(logical_cpus() >= 1);
     }
 

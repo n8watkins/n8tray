@@ -149,6 +149,80 @@ fn interpreter(kind: Interpreter) -> Result<(PathBuf, Vec<String>), String> {
     }
 }
 
+/// Whether `exe` is the interpreter `kind`: Windows PowerShell is exactly
+/// the system's `powershell.exe` (the one the host starts); `pwsh` and `node`
+/// are any executable of that name, since people install them in many
+/// places. The script it runs is what makes the process the app's.
+pub fn is_interpreter(kind: Interpreter, exe: &Path) -> bool {
+    let name = exe
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(crate::verify::program_name);
+    match kind {
+        Interpreter::Powershell => {
+            let Ok((system, _)) = interpreter(kind) else {
+                return false;
+            };
+            matches!(
+                (std::fs::canonicalize(exe), std::fs::canonicalize(system)),
+                (Ok(a), Ok(b)) if a == b
+            )
+        }
+        Interpreter::Pwsh => name.is_some_and(|n| n.eq_ignore_ascii_case("pwsh")),
+        Interpreter::Node => name.is_some_and(|n| n.eq_ignore_ascii_case("node")),
+    }
+}
+
+/// The script an interpreter process runs, from its arguments (the program
+/// first): for PowerShell the argument after `-File`, for node the first
+/// argument that is not an option. `None` when it runs no script file (node
+/// `-e`, PowerShell `-Command`).
+pub fn script_argument(kind: Interpreter, args: &[String]) -> Option<&str> {
+    let rest = args.get(1..)?;
+    match kind {
+        Interpreter::Powershell | Interpreter::Pwsh => {
+            // PowerShell takes parameter names in any case, with `-` or `/`,
+            // shortened while unambiguous (`-f`, `-fi`, `-File`).
+            let is_file = |a: &str| {
+                let name = a.strip_prefix('-').or_else(|| a.strip_prefix('/'));
+                name.is_some_and(|n| {
+                    !n.is_empty() && "file".starts_with(n.to_ascii_lowercase().as_str())
+                })
+            };
+            let at = rest.iter().position(|a| is_file(a))?;
+            rest.get(at + 1).map(String::as_str)
+        }
+        Interpreter::Node => {
+            // Options that take the next argument as their value.
+            const WITH_VALUE: &[&str] = &[
+                "-r",
+                "--require",
+                "--import",
+                "--loader",
+                "--experimental-loader",
+                "-C",
+                "--conditions",
+                "--title",
+                "--input-type",
+                "--env-file",
+                "--inspect-port",
+            ];
+            let mut i = 0;
+            while i < rest.len() {
+                let a = rest[i].as_str();
+                match a {
+                    "--" => return rest.get(i + 1).map(String::as_str),
+                    "-e" | "--eval" | "-p" | "--print" | "-" => return None,
+                    _ if WITH_VALUE.contains(&a) => i += 2,
+                    _ if a.starts_with('-') => i += 1,
+                    _ => return Some(a),
+                }
+            }
+            None
+        }
+    }
+}
+
 /// The command line for the app's `run`, with `extra` arguments instead of
 /// `run.args` when given (a stop or an `exec` action).
 pub fn launch(

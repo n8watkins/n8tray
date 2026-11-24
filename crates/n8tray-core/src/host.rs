@@ -1932,42 +1932,45 @@ fn owns_matcher(app: &AppRuntime, folders: &Folders) -> Owns {
 }
 
 /// For an app run through an interpreter (spec 3.4): the process is that
-/// interpreter, and its command line names the app's script.
+/// interpreter, and the script it runs is the app's script file.
 fn runs_script(
     pid: u32,
     kind: n8tray_contract::manifest::Interpreter,
     install: &std::path::Path,
     script: &str,
 ) -> bool {
-    use n8tray_contract::manifest::Interpreter;
-    let wanted = match kind {
-        Interpreter::Powershell => "powershell",
-        Interpreter::Pwsh => "pwsh",
-        Interpreter::Node => "node",
+    let Some(exe) = n8tray_platform::process::exe_path(pid) else {
+        return false;
     };
-    let is_interpreter = n8tray_platform::process::exe_path(pid)
-        .as_deref()
-        .and_then(std::path::Path::file_name)
-        .and_then(|n| n.to_str())
-        .is_some_and(|n| verify::program_name(n).eq_ignore_ascii_case(wanted));
-    if !is_interpreter {
+    if !resolve::is_interpreter(kind, &exe) {
         return false;
     }
-    let Ok(script) = resolve::inside(install, script) else {
+    let Some((args, cwd)) = n8tray_platform::process::arguments_and_cwd(pid) else {
         return false;
     };
-    // The same path however it was written: either separator, with or
-    // without the verbatim prefix, and in any case on Windows.
-    let plain = |text: &str| {
-        let text = text.replace('\\', "/").replace("//?/", "");
-        if cfg!(windows) {
-            text.to_lowercase()
-        } else {
-            text
+    let Some(argument) = resolve::script_argument(kind, &args) else {
+        return false;
+    };
+    // A relative script is relative to the process's working folder (an app
+    // that starts itself as `node server.js` from its folder).
+    let argument = std::path::Path::new(argument);
+    let running = if argument.is_absolute() {
+        argument.to_path_buf()
+    } else {
+        match cwd {
+            Some(cwd) => cwd.join(argument),
+            None => return false,
         }
     };
-    n8tray_platform::process::command_line(pid)
-        .is_some_and(|line| plain(&line).contains(&plain(&script.display().to_string())))
+    // The same file: both canonical, compared whole.
+    match (
+        std::fs::canonicalize(running),
+        resolve::inside(install, script)
+            .and_then(|s| std::fs::canonicalize(&s).map_err(|e| format!("{}: {e}", s.display()))),
+    ) {
+        (Ok(running), Ok(script)) => running == script,
+        _ => false,
+    }
 }
 
 /// Step 4 of ownership: the executable is the app's (spec 7.2).
@@ -1998,37 +2001,156 @@ mod tests {
     use super::*;
     use n8tray_contract::manifest::Interpreter;
 
+    const SLEEP: &str = "setTimeout(() => {}, 60000);";
+
+    /// A real `node` process with these arguments, started in `cwd`; killed
+    /// on drop.
+    struct Node(std::process::Child);
+
+    impl Node {
+        fn start(node: &std::path::Path, cwd: &std::path::Path, args: &[&std::ffi::OsStr]) -> Node {
+            let child = std::process::Command::new(node)
+                .args(args)
+                .current_dir(cwd)
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+            let pid = child.id();
+            // The arguments are readable once the process has started.
+            let end = Instant::now() + StdDuration::from_secs(10);
+            while n8tray_platform::process::arguments_and_cwd(pid)
+                .is_none_or(|(a, _)| a.len() < args.len() + 1)
+                && Instant::now() < end
+            {
+                std::thread::sleep(StdDuration::from_millis(50));
+            }
+            Node(child)
+        }
+
+        fn pid(&self) -> u32 {
+            self.0.id()
+        }
+    }
+
+    impl Drop for Node {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
     /// A script app's process is its interpreter running its script, so it
-    /// is adopted although the interpreter lives outside `installDir`.
+    /// is adopted although the interpreter lives outside `installDir`; any
+    /// other script, or the app's path merely somewhere on the command line,
+    /// is not.
     #[test]
     fn an_interpreter_running_the_apps_script_is_the_apps() {
         let Some(node) = resolve::which("node") else {
             eprintln!("node is not installed; skipped");
             return;
         };
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("app.js"), "setTimeout(() => {}, 60000);").unwrap();
-        std::fs::write(dir.path().join("other.js"), "").unwrap();
-        let script = resolve::inside(dir.path(), "app.js").unwrap();
-        let mut child = std::process::Command::new(node)
-            .arg(&script)
-            .spawn()
-            .unwrap();
-        let pid = child.id();
-        // The command line is readable once the process has started.
-        let end = Instant::now() + StdDuration::from_secs(10);
-        while n8tray_platform::process::command_line(pid).is_none_or(|c| !c.contains("app.js"))
-            && Instant::now() < end
-        {
-            std::thread::sleep(StdDuration::from_millis(50));
+        let install = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let dir = install.path();
+        for name in ["app.js", "app.js.bak", "other.js"] {
+            std::fs::write(dir.join(name), SLEEP).unwrap();
         }
-        let mine = runs_script(pid, Interpreter::Node, dir.path(), "app.js");
-        let other = runs_script(pid, Interpreter::Node, dir.path(), "other.js");
-        let wrong_interpreter = runs_script(pid, Interpreter::Pwsh, dir.path(), "app.js");
-        let _ = child.kill();
-        let _ = child.wait();
-        assert!(mine, "node running app.js is the app's");
-        assert!(!other, "another script is not");
-        assert!(!wrong_interpreter, "another interpreter is not");
+        std::fs::write(elsewhere.path().join("evil.js"), SLEEP).unwrap();
+        let app = resolve::inside(dir, "app.js").unwrap();
+        let bak = resolve::inside(dir, "app.js.bak").unwrap();
+        let evil = elsewhere.path().join("evil.js");
+        let is_app = |n: &Node| runs_script(n.pid(), Interpreter::Node, dir, "app.js");
+
+        // The app's script by its full path, and as `node app.js` started
+        // from the install folder (how VoiceDock starts itself).
+        let full = Node::start(&node, elsewhere.path(), &[app.as_os_str()]);
+        assert!(is_app(&full), "node running app.js is the app's");
+        assert!(!runs_script(full.pid(), Interpreter::Node, dir, "other.js"));
+        assert!(!runs_script(full.pid(), Interpreter::Pwsh, dir, "app.js"));
+        let relative = Node::start(&node, dir, &["app.js".as_ref()]);
+        assert!(is_app(&relative), "a relative script in its working folder");
+        let options = Node::start(
+            &node,
+            dir,
+            &["--no-warnings".as_ref(), "--".as_ref(), "./app.js".as_ref()],
+        );
+        assert!(is_app(&options), "options before the script");
+
+        // Another script that names the app's path in its arguments, or a
+        // file whose name only starts with it, is refused.
+        let bypass = Node::start(&node, dir, &[evil.as_os_str(), bak.as_os_str()]);
+        assert!(!is_app(&bypass), "evil.js with app.js.bak as an argument");
+        let named = Node::start(&node, dir, &[evil.as_os_str(), app.as_os_str()]);
+        assert!(!is_app(&named), "evil.js with app.js as an argument");
+        let suffix = Node::start(&node, dir, &[bak.as_os_str()]);
+        assert!(!is_app(&suffix), "app.js.bak is not app.js");
+        let relative_elsewhere = Node::start(&node, elsewhere.path(), &["evil.js".as_ref()]);
+        assert!(!is_app(&relative_elsewhere));
+    }
+
+    #[test]
+    fn the_script_an_interpreter_runs() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let ps = args(&[
+            "powershell.exe",
+            "-NoLogo",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            r"C:\Apps\x\x.ps1",
+            "-Stop",
+        ]);
+        assert_eq!(
+            resolve::script_argument(Interpreter::Powershell, &ps),
+            Some(r"C:\Apps\x\x.ps1")
+        );
+        let ps = args(&["pwsh", "/f", "x.ps1"]);
+        assert_eq!(
+            resolve::script_argument(Interpreter::Pwsh, &ps),
+            Some("x.ps1")
+        );
+        let ps = args(&["powershell", "-Command", "x.ps1"]);
+        assert_eq!(resolve::script_argument(Interpreter::Powershell, &ps), None);
+        let ps = args(&["powershell", "-NoProfile", "x.ps1"]);
+        assert_eq!(resolve::script_argument(Interpreter::Powershell, &ps), None);
+
+        let node = |list: &[&str]| {
+            resolve::script_argument(Interpreter::Node, &args(list)).map(str::to_string)
+        };
+        assert_eq!(node(&["node", "server.js"]).as_deref(), Some("server.js"));
+        assert_eq!(
+            node(&[
+                "node",
+                "--max-old-space-size=512",
+                "-r",
+                "dotenv/config",
+                "server.js",
+                "--port",
+                "1"
+            ])
+            .as_deref(),
+            Some("server.js")
+        );
+        assert_eq!(node(&["node", "--", "-odd.js"]).as_deref(), Some("-odd.js"));
+        assert_eq!(node(&["node", "-e", "x"]), None);
+        assert_eq!(node(&["node"]), None);
+    }
+
+    /// The verbatim and UNC forms of the same file compare equal once both
+    /// are canonical (the old text comparison turned `\\?\UNC\srv` into
+    /// `UNC/srv`, which never matched).
+    #[cfg(windows)]
+    #[test]
+    fn verbatim_paths_compare_as_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("app.js"), "").unwrap();
+        let verbatim = std::fs::canonicalize(dir.path().join("app.js")).unwrap();
+        let plain =
+            std::path::PathBuf::from(verbatim.to_str().unwrap().trim_start_matches(r"\\?\"));
+        assert_ne!(plain.display().to_string(), verbatim.display().to_string());
+        assert_eq!(
+            std::fs::canonicalize(&plain).unwrap(),
+            std::fs::canonicalize(&verbatim).unwrap()
+        );
     }
 }
