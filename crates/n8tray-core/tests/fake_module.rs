@@ -873,12 +873,13 @@ fn pushes_memory_pressure_and_measures_cpu_and_history() {
         a.summary.ends_with("pressure problem")
     });
     assert!(
-        tray.notices
+        !tray
+            .notices
             .lock()
             .unwrap()
             .iter()
             .any(|n| n.starts_with("Low memory")),
-        "a problem notifies"
+        "low-memory notifications are off unless turned on"
     );
     // CPU needs two samples; history fills in 10 s steps.
     let app = tray.wait_app("pressured", "CPU and history", |a| {

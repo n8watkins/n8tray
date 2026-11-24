@@ -13,6 +13,7 @@ export type HistoryRange = "day" | "week";
 export type SettingKey =
   | "launchAtSignIn"
   | "notifications"
+  | "memoryNotifications"
   | "checkUpdates"
   | "betaUpdates"
   | "enabled"

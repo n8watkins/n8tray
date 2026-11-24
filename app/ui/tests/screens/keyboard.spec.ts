@@ -47,6 +47,16 @@ test("Tab reaches every control in order, Space works the start-at-sign-in switc
   expect(await calls(page)).toContainEqual({ cmd: "set_setting", args: { key: "launchAtSignIn", on: false, app: null } });
 });
 
+test("low memory notifications are a plain switch, off until turned on", async ({ page }) => {
+  await open(page, "busy", "settings");
+  const toggle = page.getByRole("switch", { name: "Low memory notifications" });
+  await expect(toggle).not.toBeChecked();
+  await expect(toggle).toBeEnabled();
+  await toggle.focus();
+  await page.keyboard.press("Space");
+  expect(await calls(page)).toContainEqual({ cmd: "set_setting", args: { key: "memoryNotifications", on: true, app: null } });
+});
+
 test("a row's one action and the panel's Restart ask the host for exactly that", async ({ page }) => {
   await open(page, "busy");
   await page.getByRole("button", { name: "Stop VoiceDock" }).click();

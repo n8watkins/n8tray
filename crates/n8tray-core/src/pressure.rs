@@ -143,9 +143,99 @@ impl Hysteresis {
     }
 }
 
+/// When to notify about low memory: once a problem has held for 5 minutes,
+/// once per problem, and at most once an hour.
+#[derive(Debug, Clone, Default)]
+pub struct LowMemoryNotice {
+    problem_since: Option<DateTime<Utc>>,
+    sent_this_time: bool,
+    last_sent: Option<DateTime<Utc>>,
+}
+
+impl LowMemoryNotice {
+    pub const HOLD_MINUTES: i64 = 5;
+    pub const GAP_MINUTES: i64 = 60;
+
+    /// Takes the shown level; true when a notice is due now. With notices
+    /// off (`enabled` false) it still follows the level, so turning them on
+    /// in the middle of a problem does not notify at once for an old one
+    /// that was already due.
+    pub fn step(&mut self, level: LevelName, enabled: bool, now: DateTime<Utc>) -> bool {
+        if level != LevelName::Problem {
+            self.problem_since = None;
+            self.sent_this_time = false;
+            return false;
+        }
+        let since = *self.problem_since.get_or_insert(now);
+        let due = !self.sent_this_time
+            && now - since >= Duration::minutes(Self::HOLD_MINUTES)
+            && self
+                .last_sent
+                .is_none_or(|t| now - t >= Duration::minutes(Self::GAP_MINUTES));
+        if !due {
+            return false;
+        }
+        // Due once per problem whether or not it is shown.
+        self.sent_this_time = true;
+        if enabled {
+            self.last_sent = Some(now);
+        }
+        enabled
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn low_memory_notices_wait_5_minutes_and_come_at_most_hourly() {
+        let mut notice = LowMemoryNotice::default();
+        let t = |minutes: i64| at(0) + Duration::minutes(minutes);
+        let problem = LevelName::Problem;
+
+        // A problem must hold for 5 minutes.
+        assert!(!notice.step(problem, true, t(0)));
+        assert!(!notice.step(problem, true, t(4)));
+        assert!(notice.step(problem, true, t(5)));
+        assert!(!notice.step(problem, true, t(6)), "once per problem");
+        assert!(!notice.step(problem, true, t(90)), "once per problem");
+
+        // A short dip is never notified.
+        assert!(!notice.step(LevelName::Attention, true, t(91)));
+        assert!(!notice.step(problem, true, t(92)));
+        assert!(!notice.step(LevelName::Ok, true, t(95)));
+
+        // A new problem within the hour after the last notice: quiet.
+        let mut notice = LowMemoryNotice::default();
+        notice.step(problem, true, t(0));
+        assert!(notice.step(problem, true, t(5)));
+        notice.step(LevelName::Ok, true, t(10));
+        notice.step(problem, true, t(20));
+        assert!(!notice.step(problem, true, t(25)), "within the hour");
+        assert!(!notice.step(problem, true, t(64)));
+        assert!(notice.step(problem, true, t(65)), "an hour after the last");
+
+        // Flapping all day sends at most one an hour (it was 20 to 30 a day).
+        let mut notice = LowMemoryNotice::default();
+        let mut sent = 0;
+        for minute in 0..24 * 60 {
+            let level = if minute % 12 < 7 {
+                problem
+            } else {
+                LevelName::Ok
+            };
+            sent += notice.step(level, true, t(minute)) as u32;
+        }
+        assert!(sent <= 24, "{sent} in a day");
+        assert!(sent > 0);
+
+        // Off: never, and switching on later does not fire for an old problem.
+        let mut notice = LowMemoryNotice::default();
+        assert!(!notice.step(problem, false, t(0)));
+        assert!(!notice.step(problem, false, t(10)));
+        assert!(!notice.step(problem, true, t(11)));
+    }
 
     fn at(s: i64) -> DateTime<Utc> {
         DateTime::from_timestamp(1_800_000_000 + s, 0).unwrap()
