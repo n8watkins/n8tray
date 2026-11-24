@@ -2650,6 +2650,7 @@ name = "n8tray-core"
 version = "0.3.0"
 dependencies = [
  "chrono",
+ "dunce",
  "globset",
  "n8tray-contract",
  "n8tray-platform",
