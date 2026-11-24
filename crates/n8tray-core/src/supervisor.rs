@@ -321,7 +321,13 @@ impl AppRuntime {
     /// The app did not take `level`: try again after 30 s, doubling up to
     /// 10 minutes. Returns the wait.
     pub fn pressure_refused(&mut self, level: LevelName, now: DateTime<Utc>) -> Duration {
-        let failures = self.pressure_retry.as_ref().map_or(0, |r| r.failures) + 1;
+        // The backoff counts refusals of this level; a new level starts over.
+        let failures = self
+            .pressure_retry
+            .as_ref()
+            .filter(|r| r.level == level)
+            .map_or(0, |r| r.failures)
+            + 1;
         let wait = Duration::seconds((30i64 << (failures - 1).min(5)).min(600));
         self.pressure_retry = Some(PressureRetry {
             level,
@@ -335,6 +341,13 @@ impl AppRuntime {
     }
 
     pub fn pressure_accepted(&mut self) {
+        self.pressure_retry = None;
+    }
+
+    /// The app has no live status (stopped, restarting, not yet up): forget
+    /// what was sent and refused, so it hears the level as soon as it is back.
+    pub fn pressure_reset(&mut self) {
+        self.pressure_sent = None;
         self.pressure_retry = None;
     }
 
@@ -930,6 +943,33 @@ mod tests {
         assert_eq!(serde_json::to_string(&round1(none)).unwrap(), "0.0");
         assert_eq!(serde_json::to_string(&round1(-0.04)).unwrap(), "0.0");
         assert_eq!(round1(41.96), 42.0);
+    }
+
+    #[test]
+    fn a_restarted_app_or_a_new_level_is_not_held_back_by_old_refusals() {
+        let mut app = runtime();
+        let now = Utc::now();
+        let at = |s: i64| now + Duration::seconds(s);
+        for _ in 0..6 {
+            app.pressure_pushed(LevelName::Problem);
+            app.pressure_refused(LevelName::Problem, now);
+        }
+        assert!(!app.pressure_due(LevelName::Problem, at(60)), "backing off");
+
+        // The app's status went away (it stopped or restarted): when it is
+        // back it hears the level at once.
+        app.pressure_reset();
+        assert!(app.pressure_due(LevelName::Problem, at(61)));
+
+        // A refusal of a new level starts the backoff over at 30 s.
+        for _ in 0..6 {
+            app.pressure_pushed(LevelName::Problem);
+            app.pressure_refused(LevelName::Problem, now);
+        }
+        app.pressure_pushed(LevelName::Attention);
+        let wait = app.pressure_refused(LevelName::Attention, at(100));
+        assert_eq!(wait, Duration::seconds(30));
+        assert!(app.pressure_due(LevelName::Attention, at(130)));
     }
 
     #[test]

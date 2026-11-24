@@ -810,7 +810,7 @@ impl Host {
                     pushes.push((id.clone(), push));
                 }
             } else {
-                app.pressure_sent = None;
+                app.pressure_reset();
             }
 
             // Demand rules, for apps that should run.
