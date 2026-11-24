@@ -101,6 +101,8 @@ pub struct AppRuntime {
     pub pressure_sent: Option<LevelName>,
     /// Since when the app's own figures differ from the host's by over 25%.
     pub mismatch_since: Option<DateTime<Utc>>,
+    /// The last process a status named that was not the app's (logged once).
+    pub refused_root: Option<u32>,
 }
 
 /// What the app needs from the host for one decision.
@@ -153,6 +155,7 @@ impl AppRuntime {
             demand: None,
             pressure_sent: None,
             mismatch_since: None,
+            refused_root: None,
         }
     }
 
@@ -225,7 +228,11 @@ impl AppRuntime {
     /// Follows the root process: notes its start time, reaps it when it
     /// exits, and adopts the process a live status names. Returns true when
     /// the root went away without being asked to (a crash).
-    pub fn follow_root(&mut self, table: &ProcessTable) -> bool {
+    ///
+    /// `is_the_apps` decides whether the process a status names is the app's
+    /// at all (in its container, or its program by location): a status file
+    /// is only a claim, and the root's tree is counted and asked to stop.
+    pub fn follow_root(&mut self, table: &ProcessTable, is_the_apps: impl Fn(u32) -> bool) -> bool {
         // Adopt an app found running: its status names its main process.
         if self.root.is_none()
             && let Some(status) = self.status()
@@ -233,6 +240,17 @@ impl AppRuntime {
         {
             let pid = status.pid;
             let started = status.pid_started_at;
+            if !is_the_apps(pid) {
+                if self.refused_root != Some(pid) {
+                    tracing::warn!(
+                        "{}: its status names process {pid}, which is not the app's program; not adopted",
+                        self.id()
+                    );
+                    self.refused_root = Some(pid);
+                }
+                return false;
+            }
+            self.refused_root = None;
             self.root = Some(Root {
                 pid,
                 started_at: Some(table.get(pid).map(|p| p.started_at).unwrap_or(started)),

@@ -455,6 +455,59 @@ fn rejects_a_process_the_app_does_not_own() {
 }
 
 #[test]
+fn a_status_naming_a_program_from_elsewhere_is_not_adopted() {
+    let tray = Tray::start();
+    // The app is installed in a folder of its own, but a status document in
+    // its name comes from a program somewhere else (here the fake module in
+    // the build folder): it must not become the app's root process.
+    let install = tempfile::tempdir().unwrap();
+    let mut impostor = External::start(
+        &tray.run_dir(),
+        &[
+            "--id",
+            "placed",
+            "--status",
+            "file",
+            "--interval-seconds",
+            "1",
+        ],
+    );
+    let pid = impostor.child.id();
+    tray.write_manifest(
+        "placed",
+        json!({
+            "contract": 2,
+            "id": "placed",
+            "name": "Placed",
+            "version": "1.0.0",
+            "installDir": install.path().display().to_string(),
+            "status": { "type": "file", "intervalSeconds": 1 },
+            "run": { "program": "placed", "stop": { "type": "terminate", "graceSeconds": 2 } },
+        }),
+    );
+    let app = tray.wait_app("placed", "the status to be read", |a| {
+        a.state == "ready" && a.processes.iter().any(|p| p.pid == pid)
+    });
+    let shown = app.processes.iter().find(|p| p.pid == pid).unwrap();
+    assert_eq!(shown.verdict, "rejected", "{shown:?}");
+    assert!(
+        app.processes
+            .iter()
+            .all(|p| p.verdict != "verified" && p.verdict != "unreported"),
+        "nothing of the impostor is counted: {:?}",
+        app.processes
+    );
+
+    // A stop has nothing of the app's to act on, and the impostor lives on.
+    tray.action("placed", "stop", None);
+    std::thread::sleep(Duration::from_secs(4));
+    assert!(
+        matches!(impostor.child.try_wait(), Ok(None)),
+        "the impostor was not touched"
+    );
+}
+
+#[test]
 fn an_app_with_its_own_icon_hides_it_while_hosted() {
     let mut tray = Tray::start();
     let manifest = tray.folders.modules.join("iconapp.json");

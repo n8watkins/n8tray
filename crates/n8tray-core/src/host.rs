@@ -589,7 +589,34 @@ impl Host {
             }
             app.observation = observation;
 
-            let crashed = app.follow_root(table);
+            let install = resolve::install_dir(app.manifest(), &self.options.folders).ok();
+            let owns = owns_matcher(app, &self.options.folders);
+            let tools = self.options.folders.tools.clone();
+
+            // An app found running is adopted only when the process its
+            // status names is the app's: in its container (the host started
+            // it), its program by location, or its interpreter running its
+            // script.
+            if app.root.is_none() && app.container.is_none() && app.status().is_some() {
+                app.container = Container::open(id);
+            }
+            let in_container = app
+                .container
+                .as_ref()
+                .map(Container::pids)
+                .unwrap_or_default();
+            let script = app
+                .manifest()
+                .run
+                .as_ref()
+                .and_then(|r| r.interpreter.zip(r.script.clone()).zip(install.clone()));
+            let crashed = app.follow_root(table, |pid| {
+                in_container.contains(&pid)
+                    || location_ok(pid, install.as_deref(), &tools, &owns)
+                    || script
+                        .as_ref()
+                        .is_some_and(|((kind, script), dir)| runs_script(pid, *kind, dir, script))
+            });
             if crashed && app.wanted && !self.legacy {
                 app.crashed(now);
                 match (&app.gave_up, app.restart_at) {
@@ -627,9 +654,6 @@ impl Host {
                         .collect()
                 })
                 .unwrap_or_default();
-            let install = resolve::install_dir(app.manifest(), &self.options.folders).ok();
-            let owns = owns_matcher(app, &self.options.folders);
-            let tools = self.options.folders.tools.clone();
             app.attribution = verify::attribute(table, root, &contained, &reported, |pid| {
                 location_ok(pid, install.as_deref(), &tools, &owns)
             });
@@ -1907,6 +1931,45 @@ fn owns_matcher(app: &AppRuntime, folders: &Folders) -> Owns {
     Owns { globs }
 }
 
+/// For an app run through an interpreter (spec 3.4): the process is that
+/// interpreter, and its command line names the app's script.
+fn runs_script(
+    pid: u32,
+    kind: n8tray_contract::manifest::Interpreter,
+    install: &std::path::Path,
+    script: &str,
+) -> bool {
+    use n8tray_contract::manifest::Interpreter;
+    let wanted = match kind {
+        Interpreter::Powershell => "powershell",
+        Interpreter::Pwsh => "pwsh",
+        Interpreter::Node => "node",
+    };
+    let is_interpreter = n8tray_platform::process::exe_path(pid)
+        .as_deref()
+        .and_then(std::path::Path::file_name)
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| verify::program_name(n).eq_ignore_ascii_case(wanted));
+    if !is_interpreter {
+        return false;
+    }
+    let Ok(script) = resolve::inside(install, script) else {
+        return false;
+    };
+    // The same path however it was written: either separator, with or
+    // without the verbatim prefix, and in any case on Windows.
+    let plain = |text: &str| {
+        let text = text.replace('\\', "/").replace("//?/", "");
+        if cfg!(windows) {
+            text.to_lowercase()
+        } else {
+            text
+        }
+    };
+    n8tray_platform::process::command_line(pid)
+        .is_some_and(|line| plain(&line).contains(&plain(&script.display().to_string())))
+}
+
 /// Step 4 of ownership: the executable is the app's (spec 7.2).
 fn location_ok(
     pid: u32,
@@ -1928,4 +1991,44 @@ fn location_ok(
                     .is_some_and(|c| c.contains(needle.as_str()))
             })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use n8tray_contract::manifest::Interpreter;
+
+    /// A script app's process is its interpreter running its script, so it
+    /// is adopted although the interpreter lives outside `installDir`.
+    #[test]
+    fn an_interpreter_running_the_apps_script_is_the_apps() {
+        let Some(node) = resolve::which("node") else {
+            eprintln!("node is not installed; skipped");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("app.js"), "setTimeout(() => {}, 60000);").unwrap();
+        std::fs::write(dir.path().join("other.js"), "").unwrap();
+        let script = resolve::inside(dir.path(), "app.js").unwrap();
+        let mut child = std::process::Command::new(node)
+            .arg(&script)
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        // The command line is readable once the process has started.
+        let end = Instant::now() + StdDuration::from_secs(10);
+        while n8tray_platform::process::command_line(pid).is_none_or(|c| !c.contains("app.js"))
+            && Instant::now() < end
+        {
+            std::thread::sleep(StdDuration::from_millis(50));
+        }
+        let mine = runs_script(pid, Interpreter::Node, dir.path(), "app.js");
+        let other = runs_script(pid, Interpreter::Node, dir.path(), "other.js");
+        let wrong_interpreter = runs_script(pid, Interpreter::Pwsh, dir.path(), "app.js");
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(mine, "node running app.js is the app's");
+        assert!(!other, "another script is not");
+        assert!(!wrong_interpreter, "another interpreter is not");
+    }
 }
