@@ -97,10 +97,20 @@ pub struct AppRuntime {
     pub alert: Option<Alert>,
     /// The app's demand rule, when it has one.
     pub demand: Option<DemandState>,
-    /// The pressure level the app last accepted.
+    /// The pressure level last sent (or being sent) to the app.
     pub pressure_sent: Option<LevelName>,
+    /// After the app refused a level: when to send it again.
+    pressure_retry: Option<PressureRetry>,
     /// Since when the app's own figures differ from the host's by over 25%.
     pub mismatch_since: Option<DateTime<Utc>>,
+}
+
+/// A pressure level the app refused, and when to send it again.
+#[derive(Debug, Clone)]
+struct PressureRetry {
+    level: LevelName,
+    at: DateTime<Utc>,
+    failures: u32,
 }
 
 /// What the app needs from the host for one decision.
@@ -152,6 +162,7 @@ impl AppRuntime {
             alert: None,
             demand: None,
             pressure_sent: None,
+            pressure_retry: None,
             mismatch_since: None,
         }
     }
@@ -290,6 +301,41 @@ impl AppRuntime {
         } else {
             self.restart_at = Some(now + Duration::seconds(BACKOFF_SECONDS[n - 1]));
         }
+    }
+
+    /// Whether to send `level` to the app now: it is not the level last
+    /// sent, and a refused level waits for its retry time (a new level goes
+    /// at once).
+    pub fn pressure_due(&self, level: LevelName, now: DateTime<Utc>) -> bool {
+        self.pressure_sent != Some(level)
+            && self
+                .pressure_retry
+                .as_ref()
+                .is_none_or(|r| r.level != level || now >= r.at)
+    }
+
+    pub fn pressure_pushed(&mut self, level: LevelName) {
+        self.pressure_sent = Some(level);
+    }
+
+    /// The app did not take `level`: try again after 30 s, doubling up to
+    /// 10 minutes. Returns the wait.
+    pub fn pressure_refused(&mut self, level: LevelName, now: DateTime<Utc>) -> Duration {
+        let failures = self.pressure_retry.as_ref().map_or(0, |r| r.failures) + 1;
+        let wait = Duration::seconds((30i64 << (failures - 1).min(5)).min(600));
+        self.pressure_retry = Some(PressureRetry {
+            level,
+            at: now + wait,
+            failures,
+        });
+        if self.pressure_sent == Some(level) {
+            self.pressure_sent = None;
+        }
+        wait
+    }
+
+    pub fn pressure_accepted(&mut self) {
+        self.pressure_retry = None;
     }
 
     /// The pids the host may force-stop: verified ones only.
@@ -738,8 +784,10 @@ pub fn mib(bytes: u64) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
 }
 
+/// To one decimal, and never `-0.0` (the sum of no values, which would
+/// otherwise serialise as `-0.0`).
 pub fn round1(value: f64) -> f64 {
-    (value * 10.0).round() / 10.0
+    (value * 10.0).round() / 10.0 + 0.0
 }
 
 pub fn state_name(state: State) -> String {
@@ -873,6 +921,53 @@ mod tests {
         app.crashed(now + Duration::seconds(300));
         assert_eq!(app.restart_at, None);
         assert!(app.gave_up.as_deref().unwrap().contains("4 times"));
+    }
+
+    #[test]
+    fn nothing_rounds_to_zero_not_negative_zero() {
+        // The tray's window memory with no window is the sum of no values.
+        let none: f64 = std::iter::empty::<f64>().sum();
+        assert_eq!(serde_json::to_string(&round1(none)).unwrap(), "0.0");
+        assert_eq!(serde_json::to_string(&round1(-0.04)).unwrap(), "0.0");
+        assert_eq!(round1(41.96), 42.0);
+    }
+
+    #[test]
+    fn a_refused_pressure_level_is_retried_with_backoff() {
+        let mut app = runtime();
+        let now = Utc::now();
+        let at = |s: i64| now + Duration::seconds(s);
+        assert!(app.pressure_due(LevelName::Problem, now));
+        app.pressure_pushed(LevelName::Problem);
+        assert!(!app.pressure_due(LevelName::Problem, now), "sent once");
+
+        app.pressure_refused(LevelName::Problem, now);
+        assert!(
+            !app.pressure_due(LevelName::Problem, at(3)),
+            "not again on the next sample"
+        );
+        assert!(app.pressure_due(LevelName::Problem, at(30)));
+        assert!(
+            app.pressure_due(LevelName::Attention, at(3)),
+            "a new level goes at once"
+        );
+
+        app.pressure_pushed(LevelName::Problem);
+        app.pressure_refused(LevelName::Problem, at(30));
+        assert!(!app.pressure_due(LevelName::Problem, at(89)), "then 60 s");
+        assert!(app.pressure_due(LevelName::Problem, at(90)));
+        for _ in 0..10 {
+            app.pressure_refused(LevelName::Problem, at(90));
+        }
+        assert!(
+            app.pressure_due(LevelName::Problem, at(90 + 600)),
+            "at most 10 min"
+        );
+
+        app.pressure_pushed(LevelName::Problem);
+        app.pressure_accepted();
+        assert!(!app.pressure_due(LevelName::Problem, at(1000)));
+        assert!(app.pressure_due(LevelName::Ok, at(1000)));
     }
 
     #[test]
