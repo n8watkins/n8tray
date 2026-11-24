@@ -68,6 +68,11 @@ fn native(path: &str) -> String {
 
 /// Resolves a relative path inside `install_dir`, following symlinks, and
 /// rejects anything that ends up outside it.
+///
+/// The result is written the plain way (`C:\...`), not as the verbatim
+/// `\\?\C:\...` that canonicalizing gives on Windows: it becomes a program,
+/// a script argument or a working folder, and PowerShell's `$PSScriptRoot`,
+/// cmd.exe and many other programs fail on the verbatim form.
 pub fn inside(install_dir: &Path, relative: &str) -> Result<PathBuf, String> {
     paths::check_relative(relative).map_err(|e| format!("{relative}: {e}"))?;
     let root = install_dir
@@ -80,7 +85,13 @@ pub fn inside(install_dir: &Path, relative: &str) -> Result<PathBuf, String> {
     if !resolved.starts_with(&root) {
         return Err(format!("{relative} leaves the install folder"));
     }
-    Ok(resolved)
+    Ok(plain(resolved))
+}
+
+/// A canonical path without the verbatim prefix where it can be written
+/// without it (a no-op off Windows).
+fn plain(path: PathBuf) -> PathBuf {
+    dunce::simplified(&path).to_path_buf()
 }
 
 /// Like [`inside`], for a path that need not exist yet: the existing part is
@@ -176,9 +187,7 @@ pub fn launch(
     };
     let cwd = match &run.cwd {
         Some(cwd) => inside(&dir, cwd)?,
-        None => dir
-            .canonicalize()
-            .map_err(|e| format!("{}: {e}", dir.display()))?,
+        None => dunce::canonicalize(&dir).map_err(|e| format!("{}: {e}", dir.display()))?,
     };
     Ok(Launch {
         program,
@@ -211,13 +220,13 @@ pub fn substitute(
         .collect())
 }
 
-/// The id rule for components: `[a-z0-9-]{1,32}` (plan, section 12).
+/// The contract's id rule, for app and component ids: `[a-z0-9]` followed by
+/// up to 47 of `[a-z0-9-]` (spec section 1; `$defs/id` in the schemas).
 pub fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 48
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.')
+    let alnum = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
+    id.len() <= 48
+        && id.bytes().next().is_some_and(alnum)
+        && id.bytes().all(|b| alnum(b) || b == b'-')
 }
 
 #[cfg(test)]
@@ -254,6 +263,24 @@ mod tests {
         assert!(super::launch(&missing, &folders, None).is_err());
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn script_and_working_folder_are_plain_windows_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("app.ps1"), "").unwrap();
+        let folders = Folders::under(dir.path());
+        let m = manifest(
+            dir.path(),
+            r#"{ "interpreter": "powershell", "script": "app.ps1" }"#,
+        );
+        let launch = launch(&m, &folders, None).unwrap();
+        let script = launch.args.last().unwrap();
+        assert!(!script.starts_with(r"\\?\"), "{script}");
+        assert!(script.ends_with("app.ps1"), "{script}");
+        let cwd = launch.cwd.display().to_string();
+        assert!(!cwd.starts_with(r"\\?\"), "{cwd}");
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_symlink_out_of_the_install_folder_is_refused() {
@@ -277,6 +304,33 @@ mod tests {
         assert!(expand("%NOPE%/x", &folders).is_err());
         if !cfg!(windows) {
             assert!(expand("%LOCALAPPDATA%\\x", &folders).is_err());
+        }
+    }
+
+    #[test]
+    fn the_id_rule_is_the_contracts() {
+        // The installed apps' ids and the spec's examples pass.
+        let mut ids: Vec<String> = ["leadscraper", "n8commentary", "n8hotkeys", "voicedock"]
+            .map(String::from)
+            .to_vec();
+        let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../spec/examples");
+        for entry in std::fs::read_dir(examples).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|e| e != "json") {
+                continue;
+            }
+            let text = std::fs::read_to_string(path).unwrap();
+            let manifest: serde_json::Value = serde_json::from_str(&text).unwrap();
+            ids.push(manifest["id"].as_str().unwrap().to_string());
+        }
+        ids.extend(["kokoro", "piper", "engine", "a", "0", "a-b"].map(String::from));
+        ids.push(format!("a{}", "-".repeat(47)));
+        for id in &ids {
+            assert!(valid_id(id), "{id} is valid");
+        }
+        // What the schema's `^[a-z0-9][a-z0-9-]{0,47}$` refuses.
+        for id in ["", "-a", "a.b", "A", "a_b", "a b", "é", &"a".repeat(49)] {
+            assert!(!valid_id(id), "{id:?} is not valid");
         }
     }
 

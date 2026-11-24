@@ -385,6 +385,7 @@ enum Done {
     Update(Result<update::Outcome, String>),
     Pressure {
         app: String,
+        level: LevelName,
         accepted: bool,
     },
 }
@@ -939,12 +940,12 @@ impl Host {
 
             // Memory pressure, to apps that take it, on every change and when they start.
             if app.manifest().has_feature(LifecycleFeature::Pressure) && app.status().is_some() {
-                if app.pressure_sent != Some(push) && !self.legacy {
-                    app.pressure_sent = Some(push);
+                if app.pressure_due(push, now) && !self.legacy {
+                    app.pressure_pushed(push);
                     pushes.push((id.clone(), push));
                 }
             } else {
-                app.pressure_sent = None;
+                app.pressure_reset();
             }
 
             // Demand rules, for apps that should run.
@@ -1040,15 +1041,14 @@ impl Host {
                         .pressure(&origin, &token, pressure, StdDuration::from_secs(2))
                         .is_ok()
                 });
-                info!(
-                    "{app}: memory pressure {pressure:?} {}",
-                    if accepted {
-                        "sent"
-                    } else {
-                        "not accepted; sent again later"
-                    }
-                );
-                let _ = tx.send(Done::Pressure { app, accepted });
+                if accepted {
+                    info!("{app}: memory pressure {pressure:?} sent");
+                }
+                let _ = tx.send(Done::Pressure {
+                    app,
+                    level,
+                    accepted,
+                });
             });
     }
 
@@ -1083,7 +1083,7 @@ impl Host {
                         );
                         warn!("{id}: did not stop, even by force");
                     } else {
-                        let forced = force_stop(app);
+                        let forced = force_stop(app, &self.table);
                         match forced {
                             Ok(count) => {
                                 warn!(
@@ -1501,9 +1501,25 @@ impl Host {
                     }
                 }
             }
-            Done::Pressure { app, accepted } => {
-                if !accepted && let Some(runtime) = self.apps.get_mut(&app) {
-                    runtime.pressure_sent = None;
+            Done::Pressure {
+                app,
+                level,
+                accepted,
+            } => {
+                if let Some(runtime) = self.apps.get_mut(&app) {
+                    if accepted {
+                        runtime.pressure_accepted();
+                        self.limiter.clear(&format!("pressure:{app}"));
+                    } else {
+                        let wait = runtime.pressure_refused(level, now);
+                        // Logged once per 5 minutes while it keeps refusing.
+                        if self.limiter.due(&format!("pressure:{app}"), "refused", now) {
+                            warn!(
+                                "{app}: memory pressure {level:?} not accepted; trying again in {} s",
+                                wait.num_seconds()
+                            );
+                        }
+                    }
                 }
             }
             Done::Update(result) => {
@@ -1920,7 +1936,13 @@ impl Host {
             (Some(f), Some(t)) => format!("{os} {f:.1}/{t:.1} GB free"),
             _ => format!("{os} memory unknown"),
         };
-        text.push_str(&format!(" · N8 {:.1} GB", n8_mb / 1024.0));
+        // As the window and the menu write memory: MB below 1000, GB from there.
+        let n8 = if n8_mb >= 1000.0 {
+            format!("{:.1} GB", n8_mb / 1024.0)
+        } else {
+            format!("{n8_mb:.0} MB")
+        };
+        text.push_str(&format!(" · N8 {n8}"));
         MemoryView {
             free_gb: free.map(|f| (f * 10.0).round() / 10.0),
             total_gb: total.map(|t| (t * 10.0).round() / 10.0),
@@ -1940,14 +1962,15 @@ fn channel_name(channel: Channel) -> &'static str {
 }
 
 /// Forces a stop: the whole Job Object on Windows, the verified tree on Unix.
-/// Returns how many processes it ended.
-fn force_stop(app: &mut AppRuntime) -> Result<usize, String> {
-    let owned = app.owned_pids();
+/// Only an app the host started is ever forced (D12): one found running is
+/// only asked to stop. Returns how many processes it ended.
+fn force_stop(app: &mut AppRuntime, table: &ProcessTable) -> Result<usize, String> {
+    const NOT_OURS: &str = "it did not stop in time, and N8 Tray force-stops only apps it started";
     if Container::SUPPORTED {
+        // The Job Object exists only for an app this host started, and
+        // ending it reaches nothing outside it.
         let Some(container) = app.container.as_ref() else {
-            return Err(
-                "it did not stop in time, and N8 Tray force-stops only apps it started".into(),
-            );
+            return Err(NOT_OURS.into());
         };
         let members = container.pids();
         if members.is_empty() {
@@ -1958,9 +1981,19 @@ fn force_stop(app: &mut AppRuntime) -> Result<usize, String> {
         container.terminate().map_err(|e| e.to_string())?;
         return Ok(members.len());
     }
+    // No container here: only the tree of a root the host started itself
+    // (it holds the handle) is forced.
+    if !app.root.as_ref().is_some_and(Root::ours) {
+        return Err(NOT_OURS.into());
+    }
     let mut ended = 0;
-    for pid in owned {
-        if signal::force_stop(pid).is_ok() {
+    for pid in app.owned_pids() {
+        // The table can be seconds old: end the pid only while it is still
+        // the process that was verified.
+        let verified = table.get(pid).map(|p| p.started_at);
+        let now = n8tray_platform::process::started_at(pid);
+        let same = matches!((verified, now), (Some(a), Some(b)) if crate::util::same_start(a, b));
+        if same && signal::force_stop(pid).is_ok() {
             ended += 1;
         }
     }
