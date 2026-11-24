@@ -634,6 +634,100 @@ fn forces_a_stop_only_after_the_grace_period() {
     }
 }
 
+fn tray_with_a_running_app() -> Tray {
+    let tray = Tray::start();
+    tray.write_manifest(
+        "steady",
+        fake_manifest(
+            "steady",
+            json!({ "type": "file", "intervalSeconds": 1 }),
+            &["--status", "file", "--interval-seconds", "1"],
+            json!({ "autoStartDefault": true }),
+        ),
+    );
+    tray.wait_app("steady", "the app to be ready", |a| a.state == "ready");
+    tray
+}
+
+#[test]
+fn a_failure_in_the_host_is_shown_and_the_host_starts_again() {
+    let tray = tray_with_a_running_app();
+    tray.send(HostCommand::FailForTest);
+    let snapshot = tray.wait("the failure to be shown", |s| {
+        s.level == LevelName::Problem
+            && s.reason
+                .as_deref()
+                .is_some_and(|r| r.contains("app monitor") && r.contains("restarted"))
+    });
+    assert_eq!(snapshot.headline, "Problem");
+    assert!(snapshot.tooltip.contains("Problem"), "{}", snapshot.tooltip);
+    assert!(
+        tray.notices
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|n| n.contains("app monitor")),
+        "a notification says so"
+    );
+
+    // The new host finds the running app again (its own snapshots list the
+    // running apps in the tooltip) and acts on commands.
+    tray.wait("the new host's snapshot", |s| {
+        s.tooltip.contains("Running: Fake steady") && s.tooltip.contains("restarted")
+    });
+    tray.wait_app("steady", "the app to be found again", |a| {
+        a.state == "ready" && a.processes.iter().any(|p| p.verdict == "verified")
+    });
+    tray.action("steady", "stop", None);
+    tray.wait_app("steady", "the app to stop", |a| {
+        a.state == "stopped" && !a.running
+    });
+    let snapshot = tray.wait("the snapshot after the stop", |_| true);
+    assert_eq!(
+        snapshot.level,
+        LevelName::Problem,
+        "the failure stays visible for a while"
+    );
+
+    // What the user chose stands across a restart: the app they stopped is
+    // not started again by its start-with-N8-Tray setting.
+    tray.send(HostCommand::FailForTest);
+    let end = Instant::now() + DEADLINE;
+    while tray
+        .notices
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|n| n.contains("app monitor"))
+        .count()
+        < 2
+    {
+        assert!(Instant::now() < end, "the second failure is shown");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    // Long enough for an unwanted start to show (the fake reports in 1 s).
+    std::thread::sleep(Duration::from_secs(4));
+    let app = tray.wait_app("steady", "the app", |_| true);
+    assert!(!app.running && !app.should_run, "{app:?}");
+}
+
+#[test]
+fn a_host_that_keeps_failing_says_it_stopped() {
+    let tray = tray_with_a_running_app();
+    for _ in 0..3 {
+        // Each failure waits for the restarted host before the next.
+        tray.send(HostCommand::FailForTest);
+        std::thread::sleep(Duration::from_millis(1500));
+    }
+    let snapshot = tray.wait("the host to say it stopped", |s| {
+        s.level == LevelName::Problem
+            && s.reason
+                .as_deref()
+                .is_some_and(|r| r.contains("app monitor stopped"))
+    });
+    assert!(snapshot.tooltip.contains("stopped"), "{}", snapshot.tooltip);
+}
+
 #[test]
 fn small_figures_read_right() {
     let tray = Tray::start();

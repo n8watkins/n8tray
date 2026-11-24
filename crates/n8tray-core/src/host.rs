@@ -4,8 +4,11 @@
 //! actions, `exec` actions, update checks) runs on short-lived worker threads
 //! and reports back to the tick, so a hung app never stalls the tray.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::io;
+use std::panic::AssertUnwindSafe;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -21,7 +24,7 @@ use n8tray_platform::gpu::{GpuSampler, GpuUse};
 use n8tray_platform::process::Processes;
 use n8tray_platform::spawn::{SpawnSpec, spawn};
 use n8tray_platform::{folders as pfolders, legacy, memory, signal};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::alerts::Budget;
 use crate::demand::{self, DemandState};
@@ -42,6 +45,7 @@ use crate::update;
 use crate::verify::{self, ProcessTable, Reported};
 
 /// How the host runs.
+#[derive(Clone)]
 pub struct Options {
     pub folders: Folders,
     /// The command line the sign-in entry starts; `None` leaves sign-in alone.
@@ -115,6 +119,9 @@ pub enum Command {
     /// The window opened or closed: sampling is faster while it is open.
     WindowOpen(bool),
     Shutdown,
+    /// Tests only: the host thread panics, as a bug in it would.
+    #[doc(hidden)]
+    FailForTest,
 }
 
 #[derive(Debug)]
@@ -185,14 +192,128 @@ pub fn start(
     let thread = std::thread::Builder::new()
         .name("n8tray-host".into())
         .spawn(move || {
-            let mut host = Host::new(options, lock, Box::new(on_event));
-            host.run(receiver);
+            run_supervised(options, lock, receiver, Box::new(on_event));
         })
         .map_err(StartError::Io)?;
     Ok(HostHandle {
         commands,
         thread: Some(thread),
     })
+}
+
+/// Failures within this time count together; this many and the host stops.
+const FAILURE_WINDOW: StdDuration = StdDuration::from_secs(10 * 60);
+const FAILURES_BEFORE_GIVING_UP: usize = 3;
+/// How long a restarted host keeps showing that it failed.
+const FAILURE_SHOWN_MINUTES: i64 = 10;
+
+/// Runs the host, and starts it again when it fails (a panic: a bug in the
+/// host). The tray shows the failure as a Problem with a plain message and,
+/// after repeated failures, says that the host stopped instead of going on
+/// showing the last snapshot as if nothing happened. Apps keep running.
+fn run_supervised(
+    options: Options,
+    _lock: HostLock,
+    commands: Receiver<Command>,
+    on_event: Box<dyn Fn(Event) + Send>,
+) {
+    let last: Rc<RefCell<Option<Arc<HostSnapshot>>>> = Rc::default();
+    let emit: Rc<dyn Fn(Event)> = {
+        let last = Rc::clone(&last);
+        Rc::new(move |event: Event| {
+            if let Event::Snapshot(snapshot) = &event {
+                *last.borrow_mut() = Some(Arc::clone(snapshot));
+            }
+            on_event(event);
+        })
+    };
+    let mut failures: Vec<Instant> = Vec::new();
+    let mut restart: Option<Restart> = None;
+    loop {
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let mut host = Host::new(options.clone(), Rc::clone(&emit), restart.take());
+            host.run(&commands);
+        }));
+        let Err(payload) = result else {
+            return;
+        };
+        let what = payload
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "an unknown error".into());
+        let now = Utc::now();
+        failures.retain(|t| t.elapsed() < FAILURE_WINDOW);
+        failures.push(Instant::now());
+        let gave_up = failures.len() >= FAILURES_BEFORE_GIVING_UP;
+        let (reason, note) = if gave_up {
+            error!(
+                "The N8 Tray host failed ({what}) {} times in 10 minutes; it is not started again. Apps keep running.",
+                failures.len()
+            );
+            (
+                "N8 Tray's app monitor stopped after repeated errors; quit N8 Tray and open it again (apps keep running)".to_string(),
+                "App monitor stopped: open N8 Tray again".to_string(),
+            )
+        } else {
+            error!("The N8 Tray host failed ({what}); starting it again");
+            (failure_reason(now), FAILURE_NOTE.to_string())
+        };
+        let previous = last.borrow().clone();
+        let intent = previous
+            .iter()
+            .flat_map(|s| s.apps.iter())
+            .map(|a| (a.id.clone(), a.should_run))
+            .collect();
+        if let Some(last) = previous {
+            let mut shown = (*last).clone();
+            shown.level = LevelName::Problem;
+            shown.headline = "Problem".into();
+            shown.reason = Some(reason.clone());
+            shown.tooltip = crate::tooltip::format("N8 Tray: Problem", &[], &[note]);
+            emit(Event::Snapshot(Arc::new(shown)));
+        }
+        if settings::load(&options.folders.settings_file)
+            .settings
+            .notifications
+        {
+            emit(Event::Notify {
+                title: "N8 Tray: Problem".into(),
+                body: reason,
+            });
+        }
+        if gave_up {
+            // Stay until the app quits, so a command finds a receiver.
+            while let Ok(command) = commands.recv() {
+                if command == Command::Shutdown {
+                    break;
+                }
+            }
+            return;
+        }
+        restart = Some(Restart {
+            failed_at: now,
+            intent,
+        });
+    }
+}
+
+/// What a host started again after a failure takes over from the one before.
+struct Restart {
+    failed_at: DateTime<Utc>,
+    /// Whether the user wanted each app running.
+    intent: HashMap<String, bool>,
+}
+
+/// The tray's hover note while a restarted host shows its failure.
+const FAILURE_NOTE: &str = "App monitor restarted after an error";
+
+/// The plain reason a restarted host shows.
+fn failure_reason(at: DateTime<Utc>) -> String {
+    format!(
+        "N8 Tray's app monitor hit an error and restarted at {}; details are in the log",
+        at.with_timezone(&chrono::Local).format("%H:%M")
+    )
 }
 
 /// A status reader for one HTTP app, on its own thread.
@@ -280,8 +401,7 @@ struct UpdateState {
 
 struct Host {
     options: Options,
-    _lock: HostLock,
-    on_event: Box<dyn Fn(Event) + Send>,
+    on_event: Rc<dyn Fn(Event)>,
     settings: settings::Loaded,
     apps: BTreeMap<String, AppRuntime>,
     problems: Vec<Problem>,
@@ -316,10 +436,15 @@ struct Host {
     push_pressure: Hysteresis,
     memory: Option<memory::SystemMemory>,
     memory_notified: bool,
+    /// When the host before this one failed (a restart after a panic).
+    failed_at: Option<DateTime<Utc>>,
+    /// Whether the user wanted each app running, from the host before this
+    /// one; used once per app instead of its auto-start setting.
+    intent: HashMap<String, bool>,
 }
 
 impl Host {
-    fn new(options: Options, lock: HostLock, on_event: Box<dyn Fn(Event) + Send>) -> Host {
+    fn new(options: Options, on_event: Rc<dyn Fn(Event)>, restart: Option<Restart>) -> Host {
         let pid = std::process::id();
         let mut processes = Processes::new();
         let table = processes
@@ -360,7 +485,6 @@ impl Host {
         Host {
             lease: LeaseWriter::new(&run, pid, started_at),
             options,
-            _lock: lock,
             on_event,
             settings,
             apps: BTreeMap::new(),
@@ -393,11 +517,16 @@ impl Host {
             push_pressure: Hysteresis::push(attention, problem),
             memory: None,
             memory_notified: false,
+            failed_at: restart.as_ref().map(|r| r.failed_at),
+            intent: restart.map(|r| r.intent).unwrap_or_default(),
         }
     }
 
-    fn run(&mut self, commands: Receiver<Command>) {
+    fn run(&mut self, commands: &Receiver<Command>) {
         self.apply_sign_in();
+        // Find the apps before the first command, so a command that waited
+        // while the host (re)started finds its app.
+        self.tick();
         loop {
             match commands.recv_timeout(self.options.tick) {
                 Ok(Command::Shutdown) | Err(RecvTimeoutError::Disconnected) => break,
@@ -677,7 +806,13 @@ impl Host {
             let settings = self.settings.settings.app(&id);
             let app = self.apps.get_mut(&id).unwrap();
             app.auto_start_applied = true;
-            if !settings.enabled || !app.supported() || !app.auto_start(&settings) {
+            // After a restart of the host, what the user wanted before it
+            // stands, not the start-with-N8-Tray setting.
+            let wanted = match self.intent.remove(&id) {
+                Some(wanted) => wanted && settings.enabled && app.supported(),
+                None => settings.enabled && app.supported() && app.auto_start(&settings),
+            };
+            if !wanted {
                 continue;
             }
             app.wanted = true;
@@ -1488,6 +1623,7 @@ impl Host {
             }
             Command::WindowOpen(open) => self.window_open = open,
             Command::Shutdown => {}
+            Command::FailForTest => panic!("a failure asked for by a test"),
         }
     }
 
@@ -1720,6 +1856,14 @@ impl Host {
                 self.problems[0].message
             ));
         }
+        // A restart after a failure of the host itself stays visible for a while.
+        let failed_at = self
+            .failed_at
+            .filter(|at| now - *at < Duration::minutes(FAILURE_SHOWN_MINUTES));
+        if let Some(at) = failed_at {
+            level = LevelName::Problem;
+            reason = Some(failure_reason(at));
+        }
         let headline = match level {
             LevelName::Problem => "Problem",
             LevelName::Attention => "Needs attention",
@@ -1735,6 +1879,9 @@ impl Host {
         let mut notes = vec![memory.text.clone()];
         if self.legacy {
             notes.push("Watching only: the PowerShell N8 Tray manages apps".into());
+        }
+        if failed_at.is_some() {
+            notes.push(FAILURE_NOTE.into());
         }
         let tooltip =
             crate::tooltip::format(&format!("N8 Tray: {headline}"), &running_names, &notes);

@@ -65,6 +65,17 @@ fn main() {
         std::process::exit(2);
     };
     let _log_guard = logs::init(&folders.logs);
+    // A panic on any thread goes to the log with where it happened (the app
+    // has no console); the host thread then shows it and starts again.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        error!(
+            "Panic on thread {}: {info}",
+            thread.name().unwrap_or("unnamed")
+        );
+        default_hook(info);
+    }));
 
     if let Some(source) = &args.import_settings {
         match n8tray_core::settings::import_powershell_file(source.as_ref(), &folders.settings_file)
