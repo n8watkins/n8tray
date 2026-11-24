@@ -65,6 +65,10 @@ pub struct MemorySettings {
     pub attention_below_gib: f64,
     #[serde(rename = "problemBelowGiB")]
     pub problem_below_gib: f64,
+    /// Notify about low memory (after 5 minutes, at most once an hour).
+    /// Off unless the user turns it on; a file without it reads as off. The
+    /// level still shows on the icon and in the tooltip, and goes to the log.
+    pub notify: bool,
 }
 
 impl Default for MemorySettings {
@@ -72,6 +76,7 @@ impl Default for MemorySettings {
         MemorySettings {
             attention_below_gib: 3.0,
             problem_below_gib: 1.5,
+            notify: false,
         }
     }
 }
@@ -347,6 +352,42 @@ mod tests {
       ],
       "wslMemory": { "distro": "Ubuntu-24.04", "greenAboveGiB": 4, "redBelowGiB": 1.5 }
     }"#;
+
+    #[test]
+    fn low_memory_notifications_are_off_unless_turned_on() {
+        assert!(!Settings::default().memory.notify, "off by default");
+
+        // A settings file from before the setting existed, with
+        // notifications on and its own thresholds: memory notices read as off.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{ "schemaVersion": 1, "notifications": true,
+                 "memory": { "attentionBelowGiB": 4, "problemBelowGiB": 2 } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.error, None);
+        assert!(loaded.settings.notifications);
+        assert!(!loaded.settings.memory.notify);
+        assert_eq!(loaded.settings.memory.problem_below_gib, 2.0);
+
+        // Turned on, it is saved and read back.
+        let mut settings = loaded.settings;
+        settings.memory.notify = true;
+        save(&path, &settings).unwrap();
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("\"notify\": true")
+        );
+        assert!(load(&path).settings.memory.notify);
+
+        // The PowerShell tray's settings bring no memory notices either.
+        let imported = import_powershell(POWERSHELL_SCHEMA_5, Settings::default()).unwrap();
+        assert!(!imported.settings.memory.notify);
+    }
 
     #[test]
     fn imports_the_powershell_settings() {

@@ -33,7 +33,7 @@ use crate::logging::Limiter;
 use crate::model::{
     HostSnapshot, LevelName, MemoryView, ProblemView, SettingsView, TrayUsage, UpdateView,
 };
-use crate::pressure::Hysteresis;
+use crate::pressure::{Hysteresis, LowMemoryNotice};
 use crate::resolve;
 use crate::settings::{self, Channel};
 use crate::status_io::{self, ActionError, Http, Observation};
@@ -106,6 +106,8 @@ pub enum Command {
     },
     SetLaunchAtSignIn(bool),
     SetNotifications(bool),
+    /// Low-memory notifications (they also need `SetNotifications` on).
+    SetMemoryNotifications(bool),
     SetUpdateChannel(Channel),
     SetCheckUpdates(bool),
     ReloadSettings,
@@ -314,7 +316,7 @@ struct Host {
     display_pressure: Hysteresis,
     push_pressure: Hysteresis,
     memory: Option<memory::SystemMemory>,
-    memory_notified: bool,
+    low_memory: LowMemoryNotice,
 }
 
 impl Host {
@@ -391,7 +393,7 @@ impl Host {
             display_pressure: Hysteresis::display(attention, problem),
             push_pressure: Hysteresis::push(attention, problem),
             memory: None,
-            memory_notified: false,
+            low_memory: LowMemoryNotice::default(),
         }
     }
 
@@ -738,13 +740,16 @@ impl Host {
         match self.memory {
             Some(m) => {
                 let free = m.available_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+                let before = self.display_pressure.level();
                 let shown = self.display_pressure.step(free, now);
                 self.push_pressure.step(free, now);
-                if shown == LevelName::Problem && !self.memory_notified {
-                    self.memory_notified = true;
+                // Every change of level goes to the log; the icon and the
+                // tooltip show it. A notification is the user's choice.
+                if before != Some(shown) {
+                    info!("System memory: {shown:?}, {free:.1} GB free");
+                }
+                if self.low_memory.step(shown, settings.memory.notify, now) {
                     self.notify("Low memory", &format!("{free:.1} GB free"));
-                } else if shown == LevelName::Ok {
-                    self.memory_notified = false;
                 }
             }
             None => {
@@ -1421,6 +1426,7 @@ impl Host {
                 self.apply_sign_in();
             }
             Command::SetNotifications(on) => self.change(|s| s.notifications = on),
+            Command::SetMemoryNotifications(on) => self.change(|s| s.memory.notify = on),
             Command::SetUpdateChannel(channel) => {
                 self.change(|s| s.updates.channel = channel);
                 self.update = UpdateState::default();
@@ -1747,6 +1753,7 @@ impl Host {
                 launch_at_sign_in: settings.startup.launch_at_sign_in,
                 sign_in_foreign: self.sign_in_foreign,
                 notifications: settings.notifications,
+                memory_notifications: settings.memory.notify,
                 update_channel: channel_name(settings.updates.channel).into(),
                 check_updates: settings.updates.check,
                 error: self.settings.error.clone(),

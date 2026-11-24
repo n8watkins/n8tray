@@ -71,6 +71,13 @@ export function Settings({ snapshot }: { snapshot: HostSnapshot }) {
           onChange={(on) => setSetting("notifications", on)}
         />
         <Toggle
+          label="Low memory notifications"
+          hint="After 5 minutes of low memory, at most once an hour. The icon shows it either way"
+          on={s.memoryNotifications}
+          disabled={s.error !== null || !s.notifications}
+          onChange={(on) => setSetting("memoryNotifications", on)}
+        />
+        <Toggle
           label="Check for updates"
           hint={
             u.available

@@ -118,6 +118,7 @@ pub fn set_setting(
     let command = match (key.as_str(), app) {
         ("launchAtSignIn", None) => Command::SetLaunchAtSignIn(on),
         ("notifications", None) => Command::SetNotifications(on),
+        ("memoryNotifications", None) => Command::SetMemoryNotifications(on),
         ("checkUpdates", None) => Command::SetCheckUpdates(on),
         ("betaUpdates", None) => Command::SetUpdateChannel(if on {
             n8tray_core::settings::Channel::Beta

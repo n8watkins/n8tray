@@ -266,6 +266,8 @@ pub struct SettingsView {
     /// The sign-in entry exists but N8 Tray did not make it.
     pub sign_in_foreign: bool,
     pub notifications: bool,
+    /// Low-memory notifications (off unless turned on).
+    pub memory_notifications: bool,
     pub update_channel: String,
     pub check_updates: bool,
     /// The settings file has an error: defaults in use, nothing saved.

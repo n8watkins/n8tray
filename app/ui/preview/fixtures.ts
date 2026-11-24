@@ -186,6 +186,7 @@ const settings = {
   launchAtSignIn: true,
   signInForeign: false,
   notifications: true,
+  memoryNotifications: false,
   updateChannel: "stable",
   checkUpdates: true,
   error: null,
