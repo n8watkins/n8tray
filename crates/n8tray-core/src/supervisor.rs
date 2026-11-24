@@ -254,7 +254,12 @@ impl AppRuntime {
             } else if root.started_at.is_none() {
                 root.started_at = table.get(root.pid).map(|p| p.started_at);
             }
-        } else if !root.started_at.is_some_and(|s| table.is_alive(root.pid, s)) {
+        } else if !root.started_at.is_some_and(|s| table.is_alive(root.pid, s))
+            // A process this host started before it was restarted has no
+            // handle any more: collect its exit here, or it lingers as a
+            // zombie that the process table still lists.
+            || n8tray_platform::signal::reap(root.pid)
+        {
             exited = true;
         }
         if !exited {
