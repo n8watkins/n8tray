@@ -4,8 +4,11 @@
 //! actions, `exec` actions, update checks) runs on short-lived worker threads
 //! and reports back to the tick, so a hung app never stalls the tray.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::io;
+use std::panic::AssertUnwindSafe;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -21,7 +24,7 @@ use n8tray_platform::gpu::{GpuSampler, GpuUse};
 use n8tray_platform::process::Processes;
 use n8tray_platform::spawn::{SpawnSpec, spawn};
 use n8tray_platform::{folders as pfolders, legacy, memory, signal};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::alerts::Budget;
 use crate::demand::{self, DemandState};
@@ -42,6 +45,7 @@ use crate::update;
 use crate::verify::{self, ProcessTable, Reported};
 
 /// How the host runs.
+#[derive(Clone)]
 pub struct Options {
     pub folders: Folders,
     /// The command line the sign-in entry starts; `None` leaves sign-in alone.
@@ -117,6 +121,9 @@ pub enum Command {
     /// The window opened or closed: sampling is faster while it is open.
     WindowOpen(bool),
     Shutdown,
+    /// Tests only: the host thread panics, as a bug in it would.
+    #[doc(hidden)]
+    FailForTest,
 }
 
 #[derive(Debug)]
@@ -187,14 +194,128 @@ pub fn start(
     let thread = std::thread::Builder::new()
         .name("n8tray-host".into())
         .spawn(move || {
-            let mut host = Host::new(options, lock, Box::new(on_event));
-            host.run(receiver);
+            run_supervised(options, lock, receiver, Box::new(on_event));
         })
         .map_err(StartError::Io)?;
     Ok(HostHandle {
         commands,
         thread: Some(thread),
     })
+}
+
+/// Failures within this time count together; this many and the host stops.
+const FAILURE_WINDOW: StdDuration = StdDuration::from_secs(10 * 60);
+const FAILURES_BEFORE_GIVING_UP: usize = 3;
+/// How long a restarted host keeps showing that it failed.
+const FAILURE_SHOWN_MINUTES: i64 = 10;
+
+/// Runs the host, and starts it again when it fails (a panic: a bug in the
+/// host). The tray shows the failure as a Problem with a plain message and,
+/// after repeated failures, says that the host stopped instead of going on
+/// showing the last snapshot as if nothing happened. Apps keep running.
+fn run_supervised(
+    options: Options,
+    _lock: HostLock,
+    commands: Receiver<Command>,
+    on_event: Box<dyn Fn(Event) + Send>,
+) {
+    let last: Rc<RefCell<Option<Arc<HostSnapshot>>>> = Rc::default();
+    let emit: Rc<dyn Fn(Event)> = {
+        let last = Rc::clone(&last);
+        Rc::new(move |event: Event| {
+            if let Event::Snapshot(snapshot) = &event {
+                *last.borrow_mut() = Some(Arc::clone(snapshot));
+            }
+            on_event(event);
+        })
+    };
+    let mut failures: Vec<Instant> = Vec::new();
+    let mut restart: Option<Restart> = None;
+    loop {
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let mut host = Host::new(options.clone(), Rc::clone(&emit), restart.take());
+            host.run(&commands);
+        }));
+        let Err(payload) = result else {
+            return;
+        };
+        let what = payload
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "an unknown error".into());
+        let now = Utc::now();
+        failures.retain(|t| t.elapsed() < FAILURE_WINDOW);
+        failures.push(Instant::now());
+        let gave_up = failures.len() >= FAILURES_BEFORE_GIVING_UP;
+        let (reason, note) = if gave_up {
+            error!(
+                "The N8 Tray host failed ({what}) {} times in 10 minutes; it is not started again. Apps keep running.",
+                failures.len()
+            );
+            (
+                "N8 Tray's app monitor stopped after repeated errors; quit N8 Tray and open it again (apps keep running)".to_string(),
+                "App monitor stopped: open N8 Tray again".to_string(),
+            )
+        } else {
+            error!("The N8 Tray host failed ({what}); starting it again");
+            (failure_reason(now), FAILURE_NOTE.to_string())
+        };
+        let previous = last.borrow().clone();
+        let intent = previous
+            .iter()
+            .flat_map(|s| s.apps.iter())
+            .map(|a| (a.id.clone(), a.should_run))
+            .collect();
+        if let Some(last) = previous {
+            let mut shown = (*last).clone();
+            shown.level = LevelName::Problem;
+            shown.headline = "Problem".into();
+            shown.reason = Some(reason.clone());
+            shown.tooltip = crate::tooltip::format("N8 Tray: Problem", &[], &[note]);
+            emit(Event::Snapshot(Arc::new(shown)));
+        }
+        if settings::load(&options.folders.settings_file)
+            .settings
+            .notifications
+        {
+            emit(Event::Notify {
+                title: "N8 Tray: Problem".into(),
+                body: reason,
+            });
+        }
+        if gave_up {
+            // Stay until the app quits, so a command finds a receiver.
+            while let Ok(command) = commands.recv() {
+                if command == Command::Shutdown {
+                    break;
+                }
+            }
+            return;
+        }
+        restart = Some(Restart {
+            failed_at: now,
+            intent,
+        });
+    }
+}
+
+/// What a host started again after a failure takes over from the one before.
+struct Restart {
+    failed_at: DateTime<Utc>,
+    /// Whether the user wanted each app running.
+    intent: HashMap<String, bool>,
+}
+
+/// The tray's hover note while a restarted host shows its failure.
+const FAILURE_NOTE: &str = "App monitor restarted after an error";
+
+/// The plain reason a restarted host shows.
+fn failure_reason(at: DateTime<Utc>) -> String {
+    format!(
+        "N8 Tray's app monitor hit an error and restarted at {}; details are in the log",
+        at.with_timezone(&chrono::Local).format("%H:%M")
+    )
 }
 
 /// A status reader for one HTTP app, on its own thread.
@@ -266,6 +387,7 @@ enum Done {
     Update(Result<update::Outcome, String>),
     Pressure {
         app: String,
+        level: LevelName,
         accepted: bool,
     },
 }
@@ -281,8 +403,7 @@ struct UpdateState {
 
 struct Host {
     options: Options,
-    _lock: HostLock,
-    on_event: Box<dyn Fn(Event) + Send>,
+    on_event: Rc<dyn Fn(Event)>,
     settings: settings::Loaded,
     apps: BTreeMap<String, AppRuntime>,
     problems: Vec<Problem>,
@@ -317,10 +438,15 @@ struct Host {
     push_pressure: Hysteresis,
     memory: Option<memory::SystemMemory>,
     low_memory: LowMemoryNotice,
+    /// When the host before this one failed (a restart after a panic).
+    failed_at: Option<DateTime<Utc>>,
+    /// Whether the user wanted each app running, from the host before this
+    /// one; used once per app instead of its auto-start setting.
+    intent: HashMap<String, bool>,
 }
 
 impl Host {
-    fn new(options: Options, lock: HostLock, on_event: Box<dyn Fn(Event) + Send>) -> Host {
+    fn new(options: Options, on_event: Rc<dyn Fn(Event)>, restart: Option<Restart>) -> Host {
         let pid = std::process::id();
         let mut processes = Processes::new();
         let table = processes
@@ -361,7 +487,6 @@ impl Host {
         Host {
             lease: LeaseWriter::new(&run, pid, started_at),
             options,
-            _lock: lock,
             on_event,
             settings,
             apps: BTreeMap::new(),
@@ -394,11 +519,16 @@ impl Host {
             push_pressure: Hysteresis::push(attention, problem),
             memory: None,
             low_memory: LowMemoryNotice::default(),
+            failed_at: restart.as_ref().map(|r| r.failed_at),
+            intent: restart.map(|r| r.intent).unwrap_or_default(),
         }
     }
 
-    fn run(&mut self, commands: Receiver<Command>) {
+    fn run(&mut self, commands: &Receiver<Command>) {
         self.apply_sign_in();
+        // Find the apps before the first command, so a command that waited
+        // while the host (re)started finds its app.
+        self.tick();
         loop {
             match commands.recv_timeout(self.options.tick) {
                 Ok(Command::Shutdown) | Err(RecvTimeoutError::Disconnected) => break,
@@ -591,7 +721,34 @@ impl Host {
             }
             app.observation = observation;
 
-            let crashed = app.follow_root(table);
+            let install = resolve::install_dir(app.manifest(), &self.options.folders).ok();
+            let owns = owns_matcher(app, &self.options.folders);
+            let tools = self.options.folders.tools.clone();
+
+            // An app found running is adopted only when the process its
+            // status names is the app's: in its container (the host started
+            // it), its program by location, or its interpreter running its
+            // script.
+            if app.root.is_none() && app.container.is_none() && app.status().is_some() {
+                app.container = Container::open(id);
+            }
+            let in_container = app
+                .container
+                .as_ref()
+                .map(Container::pids)
+                .unwrap_or_default();
+            let script = app
+                .manifest()
+                .run
+                .as_ref()
+                .and_then(|r| r.interpreter.zip(r.script.clone()).zip(install.clone()));
+            let crashed = app.follow_root(table, |pid| {
+                in_container.contains(&pid)
+                    || location_ok(pid, install.as_deref(), &tools, &owns)
+                    || script
+                        .as_ref()
+                        .is_some_and(|((kind, script), dir)| runs_script(pid, *kind, dir, script))
+            });
             if crashed && app.wanted && !self.legacy {
                 app.crashed(now);
                 match (&app.gave_up, app.restart_at) {
@@ -629,9 +786,6 @@ impl Host {
                         .collect()
                 })
                 .unwrap_or_default();
-            let install = resolve::install_dir(app.manifest(), &self.options.folders).ok();
-            let owns = owns_matcher(app, &self.options.folders);
-            let tools = self.options.folders.tools.clone();
             app.attribution = verify::attribute(table, root, &contained, &reported, |pid| {
                 location_ok(pid, install.as_deref(), &tools, &owns)
             });
@@ -654,7 +808,13 @@ impl Host {
             let settings = self.settings.settings.app(&id);
             let app = self.apps.get_mut(&id).unwrap();
             app.auto_start_applied = true;
-            if !settings.enabled || !app.supported() || !app.auto_start(&settings) {
+            // After a restart of the host, what the user wanted before it
+            // stands, not the start-with-N8-Tray setting.
+            let wanted = match self.intent.remove(&id) {
+                Some(wanted) => wanted && settings.enabled && app.supported(),
+                None => settings.enabled && app.supported() && app.auto_start(&settings),
+            };
+            if !wanted {
                 continue;
             }
             app.wanted = true;
@@ -809,12 +969,12 @@ impl Host {
 
             // Memory pressure, to apps that take it, on every change and when they start.
             if app.manifest().has_feature(LifecycleFeature::Pressure) && app.status().is_some() {
-                if app.pressure_sent != Some(push) && !self.legacy {
-                    app.pressure_sent = Some(push);
+                if app.pressure_due(push, now) && !self.legacy {
+                    app.pressure_pushed(push);
                     pushes.push((id.clone(), push));
                 }
             } else {
-                app.pressure_sent = None;
+                app.pressure_reset();
             }
 
             // Demand rules, for apps that should run.
@@ -910,15 +1070,14 @@ impl Host {
                         .pressure(&origin, &token, pressure, StdDuration::from_secs(2))
                         .is_ok()
                 });
-                info!(
-                    "{app}: memory pressure {pressure:?} {}",
-                    if accepted {
-                        "sent"
-                    } else {
-                        "not accepted; sent again later"
-                    }
-                );
-                let _ = tx.send(Done::Pressure { app, accepted });
+                if accepted {
+                    info!("{app}: memory pressure {pressure:?} sent");
+                }
+                let _ = tx.send(Done::Pressure {
+                    app,
+                    level,
+                    accepted,
+                });
             });
     }
 
@@ -953,7 +1112,7 @@ impl Host {
                         );
                         warn!("{id}: did not stop, even by force");
                     } else {
-                        let forced = force_stop(app);
+                        let forced = force_stop(app, &self.table);
                         match forced {
                             Ok(count) => {
                                 warn!(
@@ -1371,9 +1530,25 @@ impl Host {
                     }
                 }
             }
-            Done::Pressure { app, accepted } => {
-                if !accepted && let Some(runtime) = self.apps.get_mut(&app) {
-                    runtime.pressure_sent = None;
+            Done::Pressure {
+                app,
+                level,
+                accepted,
+            } => {
+                if let Some(runtime) = self.apps.get_mut(&app) {
+                    if accepted {
+                        runtime.pressure_accepted();
+                        self.limiter.clear(&format!("pressure:{app}"));
+                    } else {
+                        let wait = runtime.pressure_refused(level, now);
+                        // Logged once per 5 minutes while it keeps refusing.
+                        if self.limiter.due(&format!("pressure:{app}"), "refused", now) {
+                            warn!(
+                                "{app}: memory pressure {level:?} not accepted; trying again in {} s",
+                                wait.num_seconds()
+                            );
+                        }
+                    }
                 }
             }
             Done::Update(result) => {
@@ -1454,6 +1629,7 @@ impl Host {
             }
             Command::WindowOpen(open) => self.window_open = open,
             Command::Shutdown => {}
+            Command::FailForTest => panic!("a failure asked for by a test"),
         }
     }
 
@@ -1686,6 +1862,14 @@ impl Host {
                 self.problems[0].message
             ));
         }
+        // A restart after a failure of the host itself stays visible for a while.
+        let failed_at = self
+            .failed_at
+            .filter(|at| now - *at < Duration::minutes(FAILURE_SHOWN_MINUTES));
+        if let Some(at) = failed_at {
+            level = LevelName::Problem;
+            reason = Some(failure_reason(at));
+        }
         let headline = match level {
             LevelName::Problem => "Problem",
             LevelName::Attention => "Needs attention",
@@ -1701,6 +1885,9 @@ impl Host {
         let mut notes = vec![memory.text.clone()];
         if self.legacy {
             notes.push("Watching only: the PowerShell N8 Tray manages apps".into());
+        }
+        if failed_at.is_some() {
+            notes.push(FAILURE_NOTE.into());
         }
         let tooltip =
             crate::tooltip::format(&format!("N8 Tray: {headline}"), &running_names, &notes);
@@ -1780,7 +1967,13 @@ impl Host {
             (Some(f), Some(t)) => format!("{os} {f:.1}/{t:.1} GB free"),
             _ => format!("{os} memory unknown"),
         };
-        text.push_str(&format!(" · N8 {:.1} GB", n8_mb / 1024.0));
+        // As the window and the menu write memory: MB below 1000, GB from there.
+        let n8 = if n8_mb >= 1000.0 {
+            format!("{:.1} GB", n8_mb / 1024.0)
+        } else {
+            format!("{n8_mb:.0} MB")
+        };
+        text.push_str(&format!(" · N8 {n8}"));
         MemoryView {
             free_gb: free.map(|f| (f * 10.0).round() / 10.0),
             total_gb: total.map(|t| (t * 10.0).round() / 10.0),
@@ -1800,14 +1993,15 @@ fn channel_name(channel: Channel) -> &'static str {
 }
 
 /// Forces a stop: the whole Job Object on Windows, the verified tree on Unix.
-/// Returns how many processes it ended.
-fn force_stop(app: &mut AppRuntime) -> Result<usize, String> {
-    let owned = app.owned_pids();
+/// Only an app the host started is ever forced (D12): one found running is
+/// only asked to stop. Returns how many processes it ended.
+fn force_stop(app: &mut AppRuntime, table: &ProcessTable) -> Result<usize, String> {
+    const NOT_OURS: &str = "it did not stop in time, and N8 Tray force-stops only apps it started";
     if Container::SUPPORTED {
+        // The Job Object exists only for an app this host started, and
+        // ending it reaches nothing outside it.
         let Some(container) = app.container.as_ref() else {
-            return Err(
-                "it did not stop in time, and N8 Tray force-stops only apps it started".into(),
-            );
+            return Err(NOT_OURS.into());
         };
         let members = container.pids();
         if members.is_empty() {
@@ -1818,9 +2012,19 @@ fn force_stop(app: &mut AppRuntime) -> Result<usize, String> {
         container.terminate().map_err(|e| e.to_string())?;
         return Ok(members.len());
     }
+    // No container here: only the tree of a root the host started itself
+    // (it holds the handle) is forced.
+    if !app.root.as_ref().is_some_and(Root::ours) {
+        return Err(NOT_OURS.into());
+    }
     let mut ended = 0;
-    for pid in owned {
-        if signal::force_stop(pid).is_ok() {
+    for pid in app.owned_pids() {
+        // The table can be seconds old: end the pid only while it is still
+        // the process that was verified.
+        let verified = table.get(pid).map(|p| p.started_at);
+        let now = n8tray_platform::process::started_at(pid);
+        let same = matches!((verified, now), (Some(a), Some(b)) if crate::util::same_start(a, b));
+        if same && signal::force_stop(pid).is_ok() {
             ended += 1;
         }
     }
@@ -1914,6 +2118,48 @@ fn owns_matcher(app: &AppRuntime, folders: &Folders) -> Owns {
     Owns { globs }
 }
 
+/// For an app run through an interpreter (spec 3.4): the process is that
+/// interpreter, and the script it runs is the app's script file.
+fn runs_script(
+    pid: u32,
+    kind: n8tray_contract::manifest::Interpreter,
+    install: &std::path::Path,
+    script: &str,
+) -> bool {
+    let Some(exe) = n8tray_platform::process::exe_path(pid) else {
+        return false;
+    };
+    if !resolve::is_interpreter(kind, &exe) {
+        return false;
+    }
+    let Some((args, cwd)) = n8tray_platform::process::arguments_and_cwd(pid) else {
+        return false;
+    };
+    let Some(argument) = resolve::script_argument(kind, &args) else {
+        return false;
+    };
+    // A relative script is relative to the process's working folder (an app
+    // that starts itself as `node server.js` from its folder).
+    let argument = std::path::Path::new(argument);
+    let running = if argument.is_absolute() {
+        argument.to_path_buf()
+    } else {
+        match cwd {
+            Some(cwd) => cwd.join(argument),
+            None => return false,
+        }
+    };
+    // The same file: both canonical, compared whole.
+    match (
+        std::fs::canonicalize(running),
+        resolve::inside(install, script)
+            .and_then(|s| std::fs::canonicalize(&s).map_err(|e| format!("{}: {e}", s.display()))),
+    ) {
+        (Ok(running), Ok(script)) => running == script,
+        _ => false,
+    }
+}
+
 /// Step 4 of ownership: the executable is the app's (spec 7.2).
 fn location_ok(
     pid: u32,
@@ -1935,4 +2181,163 @@ fn location_ok(
                     .is_some_and(|c| c.contains(needle.as_str()))
             })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use n8tray_contract::manifest::Interpreter;
+
+    const SLEEP: &str = "setTimeout(() => {}, 60000);";
+
+    /// A real `node` process with these arguments, started in `cwd`; killed
+    /// on drop.
+    struct Node(std::process::Child);
+
+    impl Node {
+        fn start(node: &std::path::Path, cwd: &std::path::Path, args: &[&std::ffi::OsStr]) -> Node {
+            let child = std::process::Command::new(node)
+                .args(args)
+                .current_dir(cwd)
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+            let pid = child.id();
+            // The arguments are readable once the process has started.
+            let end = Instant::now() + StdDuration::from_secs(10);
+            while n8tray_platform::process::arguments_and_cwd(pid)
+                .is_none_or(|(a, _)| a.len() < args.len() + 1)
+                && Instant::now() < end
+            {
+                std::thread::sleep(StdDuration::from_millis(50));
+            }
+            Node(child)
+        }
+
+        fn pid(&self) -> u32 {
+            self.0.id()
+        }
+    }
+
+    impl Drop for Node {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    /// A script app's process is its interpreter running its script, so it
+    /// is adopted although the interpreter lives outside `installDir`; any
+    /// other script, or the app's path merely somewhere on the command line,
+    /// is not.
+    #[test]
+    fn an_interpreter_running_the_apps_script_is_the_apps() {
+        let Some(node) = resolve::which("node") else {
+            eprintln!("node is not installed; skipped");
+            return;
+        };
+        let install = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let dir = install.path();
+        for name in ["app.js", "app.js.bak", "other.js"] {
+            std::fs::write(dir.join(name), SLEEP).unwrap();
+        }
+        std::fs::write(elsewhere.path().join("evil.js"), SLEEP).unwrap();
+        let app = resolve::inside(dir, "app.js").unwrap();
+        let bak = resolve::inside(dir, "app.js.bak").unwrap();
+        let evil = elsewhere.path().join("evil.js");
+        let is_app = |n: &Node| runs_script(n.pid(), Interpreter::Node, dir, "app.js");
+
+        // The app's script by its full path, and as `node app.js` started
+        // from the install folder (how VoiceDock starts itself).
+        let full = Node::start(&node, elsewhere.path(), &[app.as_os_str()]);
+        assert!(is_app(&full), "node running app.js is the app's");
+        assert!(!runs_script(full.pid(), Interpreter::Node, dir, "other.js"));
+        assert!(!runs_script(full.pid(), Interpreter::Pwsh, dir, "app.js"));
+        let relative = Node::start(&node, dir, &["app.js".as_ref()]);
+        assert!(is_app(&relative), "a relative script in its working folder");
+        let options = Node::start(
+            &node,
+            dir,
+            &["--no-warnings".as_ref(), "--".as_ref(), "./app.js".as_ref()],
+        );
+        assert!(is_app(&options), "options before the script");
+
+        // Another script that names the app's path in its arguments, or a
+        // file whose name only starts with it, is refused.
+        let bypass = Node::start(&node, dir, &[evil.as_os_str(), bak.as_os_str()]);
+        assert!(!is_app(&bypass), "evil.js with app.js.bak as an argument");
+        let named = Node::start(&node, dir, &[evil.as_os_str(), app.as_os_str()]);
+        assert!(!is_app(&named), "evil.js with app.js as an argument");
+        let suffix = Node::start(&node, dir, &[bak.as_os_str()]);
+        assert!(!is_app(&suffix), "app.js.bak is not app.js");
+        let relative_elsewhere = Node::start(&node, elsewhere.path(), &["evil.js".as_ref()]);
+        assert!(!is_app(&relative_elsewhere));
+    }
+
+    #[test]
+    fn the_script_an_interpreter_runs() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let ps = args(&[
+            "powershell.exe",
+            "-NoLogo",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            r"C:\Apps\x\x.ps1",
+            "-Stop",
+        ]);
+        assert_eq!(
+            resolve::script_argument(Interpreter::Powershell, &ps),
+            Some(r"C:\Apps\x\x.ps1")
+        );
+        let ps = args(&["pwsh", "/f", "x.ps1"]);
+        assert_eq!(
+            resolve::script_argument(Interpreter::Pwsh, &ps),
+            Some("x.ps1")
+        );
+        let ps = args(&["powershell", "-Command", "x.ps1"]);
+        assert_eq!(resolve::script_argument(Interpreter::Powershell, &ps), None);
+        let ps = args(&["powershell", "-NoProfile", "x.ps1"]);
+        assert_eq!(resolve::script_argument(Interpreter::Powershell, &ps), None);
+
+        let node = |list: &[&str]| {
+            resolve::script_argument(Interpreter::Node, &args(list)).map(str::to_string)
+        };
+        assert_eq!(node(&["node", "server.js"]).as_deref(), Some("server.js"));
+        assert_eq!(
+            node(&[
+                "node",
+                "--max-old-space-size=512",
+                "-r",
+                "dotenv/config",
+                "server.js",
+                "--port",
+                "1"
+            ])
+            .as_deref(),
+            Some("server.js")
+        );
+        assert_eq!(node(&["node", "--", "-odd.js"]).as_deref(), Some("-odd.js"));
+        assert_eq!(node(&["node", "-e", "x"]), None);
+        assert_eq!(node(&["node"]), None);
+    }
+
+    /// The verbatim and UNC forms of the same file compare equal once both
+    /// are canonical (the old text comparison turned `\\?\UNC\srv` into
+    /// `UNC/srv`, which never matched).
+    #[cfg(windows)]
+    #[test]
+    fn verbatim_paths_compare_as_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("app.js"), "").unwrap();
+        let verbatim = std::fs::canonicalize(dir.path().join("app.js")).unwrap();
+        let plain =
+            std::path::PathBuf::from(verbatim.to_str().unwrap().trim_start_matches(r"\\?\"));
+        assert_ne!(plain.display().to_string(), verbatim.display().to_string());
+        assert_eq!(
+            std::fs::canonicalize(&plain).unwrap(),
+            std::fs::canonicalize(&verbatim).unwrap()
+        );
+    }
 }

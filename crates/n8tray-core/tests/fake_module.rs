@@ -224,8 +224,36 @@ struct External {
 
 impl External {
     fn start(run_dir: &Path, args: &[&str]) -> External {
-        let mut child = Command::new(fake_module())
-            .args(args)
+        let mut command = Command::new(fake_module());
+        command.args(args);
+        External::spawn(command, run_dir)
+    }
+
+    /// Like [`External::start`], ignoring the polite stop request (SIGTERM;
+    /// on Windows a windowless fake ignores the close request anyway).
+    fn start_stubborn(run_dir: &Path, args: &[&str]) -> External {
+        #[cfg(unix)]
+        let command = {
+            // An ignored signal stays ignored across exec.
+            let mut command = Command::new("sh");
+            command
+                .arg("-c")
+                .arg("trap '' TERM; exec \"$0\" \"$@\"")
+                .arg(fake_module())
+                .args(args);
+            command
+        };
+        #[cfg(windows)]
+        let command = {
+            let mut command = Command::new(fake_module());
+            command.args(args);
+            command
+        };
+        External::spawn(command, run_dir)
+    }
+
+    fn spawn(mut command: Command, run_dir: &Path) -> External {
+        let mut child = command
             .args(["--exit-after-seconds", "300"])
             .env("N8TRAY_RUN_DIR", run_dir)
             .stdin(Stdio::null())
@@ -455,6 +483,59 @@ fn rejects_a_process_the_app_does_not_own() {
 }
 
 #[test]
+fn a_status_naming_a_program_from_elsewhere_is_not_adopted() {
+    let tray = Tray::start();
+    // The app is installed in a folder of its own, but a status document in
+    // its name comes from a program somewhere else (here the fake module in
+    // the build folder): it must not become the app's root process.
+    let install = tempfile::tempdir().unwrap();
+    let mut impostor = External::start(
+        &tray.run_dir(),
+        &[
+            "--id",
+            "placed",
+            "--status",
+            "file",
+            "--interval-seconds",
+            "1",
+        ],
+    );
+    let pid = impostor.child.id();
+    tray.write_manifest(
+        "placed",
+        json!({
+            "contract": 2,
+            "id": "placed",
+            "name": "Placed",
+            "version": "1.0.0",
+            "installDir": install.path().display().to_string(),
+            "status": { "type": "file", "intervalSeconds": 1 },
+            "run": { "program": "placed", "stop": { "type": "terminate", "graceSeconds": 2 } },
+        }),
+    );
+    let app = tray.wait_app("placed", "the status to be read", |a| {
+        a.state == "ready" && a.processes.iter().any(|p| p.pid == pid)
+    });
+    let shown = app.processes.iter().find(|p| p.pid == pid).unwrap();
+    assert_eq!(shown.verdict, "rejected", "{shown:?}");
+    assert!(
+        app.processes
+            .iter()
+            .all(|p| p.verdict != "verified" && p.verdict != "unreported"),
+        "nothing of the impostor is counted: {:?}",
+        app.processes
+    );
+
+    // A stop has nothing of the app's to act on, and the impostor lives on.
+    tray.action("placed", "stop", None);
+    std::thread::sleep(Duration::from_secs(4));
+    assert!(
+        matches!(impostor.child.try_wait(), Ok(None)),
+        "the impostor was not touched"
+    );
+}
+
+#[test]
 fn an_app_with_its_own_icon_hides_it_while_hosted() {
     let mut tray = Tray::start();
     let manifest = tray.folders.modules.join("iconapp.json");
@@ -551,6 +632,170 @@ fn forces_a_stop_only_after_the_grace_period() {
         assert!(Instant::now() < end, "still running: {alive:?}");
         std::thread::sleep(Duration::from_millis(200));
     }
+}
+
+fn tray_with_a_running_app() -> Tray {
+    let tray = Tray::start();
+    tray.write_manifest(
+        "steady",
+        fake_manifest(
+            "steady",
+            json!({ "type": "file", "intervalSeconds": 1 }),
+            &["--status", "file", "--interval-seconds", "1"],
+            json!({ "autoStartDefault": true }),
+        ),
+    );
+    tray.wait_app("steady", "the app to be ready", |a| a.state == "ready");
+    tray
+}
+
+#[test]
+fn a_failure_in_the_host_is_shown_and_the_host_starts_again() {
+    let tray = tray_with_a_running_app();
+    tray.send(HostCommand::FailForTest);
+    let snapshot = tray.wait("the failure to be shown", |s| {
+        s.level == LevelName::Problem
+            && s.reason
+                .as_deref()
+                .is_some_and(|r| r.contains("app monitor") && r.contains("restarted"))
+    });
+    assert_eq!(snapshot.headline, "Problem");
+    assert!(snapshot.tooltip.contains("Problem"), "{}", snapshot.tooltip);
+    assert!(
+        tray.notices
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|n| n.contains("app monitor")),
+        "a notification says so"
+    );
+
+    // The new host finds the running app again (its own snapshots list the
+    // running apps in the tooltip) and acts on commands.
+    tray.wait("the new host's snapshot", |s| {
+        s.tooltip.contains("Running: Fake steady") && s.tooltip.contains("restarted")
+    });
+    tray.wait_app("steady", "the app to be found again", |a| {
+        a.state == "ready" && a.processes.iter().any(|p| p.verdict == "verified")
+    });
+    tray.action("steady", "stop", None);
+    tray.wait_app("steady", "the app to stop", |a| {
+        a.state == "stopped" && !a.running
+    });
+    let snapshot = tray.wait("the snapshot after the stop", |_| true);
+    assert_eq!(
+        snapshot.level,
+        LevelName::Problem,
+        "the failure stays visible for a while"
+    );
+
+    // What the user chose stands across a restart: the app they stopped is
+    // not started again by its start-with-N8-Tray setting.
+    tray.send(HostCommand::FailForTest);
+    let end = Instant::now() + DEADLINE;
+    while tray
+        .notices
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|n| n.contains("app monitor"))
+        .count()
+        < 2
+    {
+        assert!(Instant::now() < end, "the second failure is shown");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    // Long enough for an unwanted start to show (the fake reports in 1 s).
+    std::thread::sleep(Duration::from_secs(4));
+    let app = tray.wait_app("steady", "the app", |_| true);
+    assert!(!app.running && !app.should_run, "{app:?}");
+}
+
+#[test]
+fn a_host_that_keeps_failing_says_it_stopped() {
+    let tray = tray_with_a_running_app();
+    for _ in 0..3 {
+        // Each failure waits for the restarted host before the next.
+        tray.send(HostCommand::FailForTest);
+        std::thread::sleep(Duration::from_millis(1500));
+    }
+    let snapshot = tray.wait("the host to say it stopped", |s| {
+        s.level == LevelName::Problem
+            && s.reason
+                .as_deref()
+                .is_some_and(|r| r.contains("app monitor stopped"))
+    });
+    assert!(snapshot.tooltip.contains("stopped"), "{}", snapshot.tooltip);
+}
+
+#[test]
+fn small_figures_read_right() {
+    let tray = Tray::start();
+    let snapshot = tray.wait("a sampled snapshot", |s| s.tray.rss_mb > 0.0);
+    let json = serde_json::to_string(&*snapshot).unwrap();
+    assert!(!json.contains("-0.0"), "no negative zeros: {json}");
+    // The tray alone is tens of MB: said in MB, not as "0.0 GB".
+    let n8 = snapshot.memory.n8_mb;
+    assert!(n8 > 0.0 && n8 < 1000.0, "{n8}");
+    let text = &snapshot.memory.text;
+    let said: f64 = text
+        .strip_suffix(" MB")
+        .and_then(|t| t.rsplit_once("· N8 "))
+        .and_then(|(_, n)| n.parse().ok())
+        .unwrap_or_else(|| panic!("the N8 figure in MB: {text}"));
+    assert!((said - n8).abs() <= 1.0, "{text} for {n8} MB");
+}
+
+#[test]
+fn an_app_found_running_is_asked_to_stop_but_never_forced() {
+    let tray = Tray::start();
+    // Started outside the host (by hand, or by another tray), and it ignores
+    // the polite request.
+    let mut found = External::start_stubborn(
+        &tray.run_dir(),
+        &[
+            "--id",
+            "found",
+            "--status",
+            "file",
+            "--interval-seconds",
+            "1",
+        ],
+    );
+    let pid = found.child.id();
+    tray.write_manifest(
+        "found",
+        fake_manifest(
+            "found",
+            json!({ "type": "file", "intervalSeconds": 1 }),
+            &["--status", "file", "--interval-seconds", "1"],
+            json!({ "run": { "stop": { "type": "terminate", "graceSeconds": 2 } } }),
+        ),
+    );
+    tray.wait_app("found", "the running app to be adopted", |a| {
+        a.state == "ready"
+            && a.processes
+                .iter()
+                .any(|p| p.pid == pid && p.verdict == "verified")
+    });
+    tray.action("found", "stop", None);
+    let app = tray.wait_app("found", "the stop to give up", |a| {
+        a.last_outcome.as_ref().is_some_and(|o| o.action == "stop")
+    });
+    let outcome = app.last_outcome.unwrap();
+    assert_eq!(outcome.outcome, "failed", "{outcome:?}");
+    assert!(
+        outcome
+            .message
+            .as_deref()
+            .is_some_and(|m| m.contains("force-stops only apps it started")),
+        "{outcome:?}"
+    );
+    std::thread::sleep(Duration::from_secs(1));
+    assert!(
+        matches!(found.child.try_wait(), Ok(None)),
+        "the app N8 Tray did not start is still running"
+    );
 }
 
 #[test]
@@ -674,6 +919,87 @@ fn alerts_when_an_app_goes_over_its_budget() {
             .count(),
         1,
         "once per episode: {notices:?}"
+    );
+}
+
+/// Waits for a file the started script writes and returns its text.
+#[cfg(windows)]
+fn wait_for_file(path: &Path) -> String {
+    let end = Instant::now() + DEADLINE;
+    while Instant::now() < end {
+        if let Ok(text) = std::fs::read_to_string(path)
+            && !text.trim().is_empty()
+        {
+            return text;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    panic!("the script never wrote {}", path.display());
+}
+
+/// Starts a script app the way the installed ones are (an `interpreter` and a
+/// `script` in a folder of its own) and returns what the script wrote: the
+/// folder it found itself in and its working folder.
+#[cfg(windows)]
+fn run_script_app(id: &str, interpreter: &str, file: &str, script: &str) -> String {
+    let tray = Tray::start();
+    let install = tempfile::tempdir().unwrap();
+    std::fs::write(install.path().join(file), script).unwrap();
+    tray.write_manifest(
+        id,
+        json!({
+            "contract": 2,
+            "id": id,
+            "name": format!("Script {id}"),
+            "version": "1.0.0",
+            "installDir": install.path().display().to_string(),
+            "status": { "type": "file", "intervalSeconds": 5 },
+            "run": { "interpreter": interpreter, "script": file, "args": [] },
+        }),
+    );
+    tray.wait_app(id, "the app to be found", |_| true);
+    tray.action(id, "start", None);
+    let text = wait_for_file(&install.path().join("started.txt"));
+    // The script exits at once; give the host a moment to notice before the
+    // install folder goes away.
+    std::thread::sleep(Duration::from_millis(500));
+    text
+}
+
+#[cfg(windows)]
+#[test]
+fn starts_a_powershell_script_that_finds_files_next_to_itself() {
+    let text = run_script_app(
+        "psscript",
+        "powershell",
+        "start.ps1",
+        "$ErrorActionPreference = 'Stop'\r\n\
+         $out = Join-Path $PSScriptRoot 'started.txt'\r\n\
+         Set-Content -LiteralPath $out -Value \"root=$PSScriptRoot cwd=$((Get-Location).ProviderPath)\"\r\n",
+    );
+    assert!(
+        !text.contains(r"\\?\"),
+        "paths without the \\\\?\\ prefix: {text}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn starts_a_node_script_that_finds_files_next_to_itself() {
+    if n8tray_core::resolve::which("node").is_none() {
+        eprintln!("node is not installed; skipped");
+        return;
+    }
+    let text = run_script_app(
+        "nodescript",
+        "node",
+        "start.js",
+        "const path = require('path');\n\
+         require('fs').writeFileSync(path.join(__dirname, 'started.txt'), `root=${__dirname} cwd=${process.cwd()}`);\n",
+    );
+    assert!(
+        !text.contains(r"\\?\"),
+        "paths without the \\\\?\\ prefix: {text}"
     );
 }
 

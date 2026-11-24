@@ -73,8 +73,12 @@ pub fn read_status_file(
     };
     match parse(&text, id) {
         Observation::Live(status) => {
-            if (now - status.updated_at).num_seconds() >= FILE_FRESH_SECONDS {
+            let age = (now - status.updated_at).num_seconds();
+            if age >= FILE_FRESH_SECONDS {
                 Observation::Invalid("the status file is stale".into())
+            } else if age <= -FILE_FRESH_SECONDS {
+                // Fresh forever otherwise; a clock a little ahead is fine.
+                Observation::Invalid("the status file is dated in the future".into())
             } else if !alive(status.pid, status.pid_started_at) {
                 Observation::Invalid("the status file's process is gone".into())
             } else {
@@ -295,6 +299,18 @@ mod tests {
         let later = now + chrono::Duration::seconds(31);
         assert!(matches!(
             read_status_file(dir.path(), "a", later, alive),
+            Observation::Invalid(_)
+        ));
+        // A clock a little ahead is fine; a date far in the future would
+        // otherwise keep the file fresh forever.
+        let earlier = now - chrono::Duration::seconds(5);
+        assert!(matches!(
+            read_status_file(dir.path(), "a", earlier, alive),
+            Observation::Live(_)
+        ));
+        let long_before = now - chrono::Duration::seconds(31);
+        assert!(matches!(
+            read_status_file(dir.path(), "a", long_before, alive),
             Observation::Invalid(_)
         ));
 

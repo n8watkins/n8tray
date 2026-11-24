@@ -14,6 +14,7 @@ workspace = true
 n8tray-contract = { path = "../n8tray-contract" }
 n8tray-platform = { path = "../n8tray-platform" }
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "serde"] }
+dunce = "1.0.5"
 globset = { version = "0.4.18", default-features = false }
 notify = "8.2.0"
 semver = "1.0.28"

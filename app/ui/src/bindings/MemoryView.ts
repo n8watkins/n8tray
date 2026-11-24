@@ -15,6 +15,6 @@ n8Mb: number,
  */
 system: string, 
 /**
- * "Windows 4.2/31.1 GB free · N8 0.3 GB".
+ * "Windows 4.2/31.1 GB free · N8 310 MB" (GB from 1000 MB).
  */
 text: string, };

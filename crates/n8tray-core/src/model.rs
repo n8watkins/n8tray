@@ -71,7 +71,7 @@ pub struct MemoryView {
     pub n8_mb: f64,
     /// The system's name for the memory line: `Windows`, `macOS` or `Linux`.
     pub system: String,
-    /// "Windows 4.2/31.1 GB free · N8 0.3 GB".
+    /// "Windows 4.2/31.1 GB free · N8 310 MB" (GB from 1000 MB).
     pub text: String,
 }
 

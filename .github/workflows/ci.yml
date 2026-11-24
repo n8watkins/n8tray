@@ -61,7 +61,15 @@ jobs:
       - run: npm ci
       - name: Linux packages for the tray and the WebView
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+        # The package mirrors' DNS fails now and then: retry the whole step.
+        run: |
+          for attempt in 1 2 3 4 5; do
+            sudo apt-get -o Acquire::Retries=3 update --error-on=any \
+              && sudo apt-get -o Acquire::Retries=3 install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev \
+              && exit 0
+            echo "::warning::apt failed (attempt $attempt of 5)"; sleep $((attempt * 15))
+          done
+          exit 1
       - name: Build the window (the app embeds it)
         run: npm ci --prefix app/ui && npm run build --prefix app/ui
       - run: rustup toolchain install # the version in rust-toolchain.toml
@@ -108,7 +116,15 @@ jobs:
           persist-credentials: false
       - name: Linux packages for the tray and the WebView
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+        # The package mirrors' DNS fails now and then: retry the whole step.
+        run: |
+          for attempt in 1 2 3 4 5; do
+            sudo apt-get -o Acquire::Retries=3 update --error-on=any \
+              && sudo apt-get -o Acquire::Retries=3 install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev \
+              && exit 0
+            echo "::warning::apt failed (attempt $attempt of 5)"; sleep $((attempt * 15))
+          done
+          exit 1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -154,8 +170,14 @@ jobs:
         working-directory: app/ui
       - run: npm test
         working-directory: app/ui
-      - run: npx playwright install --with-deps chromium
+      - name: Chromium and its Linux packages (retried, as the apt steps)
         working-directory: app/ui
+        run: |
+          for attempt in 1 2 3 4 5; do
+            npx playwright install --with-deps chromium && exit 0
+            echo "::warning::playwright install failed (attempt $attempt of 5)"; sleep $((attempt * 15))
+          done
+          exit 1
       - run: npm run screens
         working-directory: app/ui
       - if: always()
@@ -185,11 +207,17 @@ jobs:
           persist-credentials: false
       - name: Linux packages for the tray, the WebView and its WebDriver
         if: runner.os == 'Linux'
+        # The package mirrors' DNS fails now and then: retry the whole step.
         run: |
-          sudo apt-get update
-          # WebKitWebDriver: webkitgtk-webdriver from Ubuntu 26.04, webkit2gtk-driver before.
-          driver=webkitgtk-webdriver; apt-cache show "$driver" > /dev/null 2>&1 || driver=webkit2gtk-driver
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev "$driver" xvfb
+          for attempt in 1 2 3 4 5; do
+            if sudo apt-get -o Acquire::Retries=3 update --error-on=any; then
+              # WebKitWebDriver: webkitgtk-webdriver from Ubuntu 26.04, webkit2gtk-driver before.
+              driver=webkitgtk-webdriver; apt-cache show "$driver" > /dev/null 2>&1 || driver=webkit2gtk-driver
+              sudo apt-get -o Acquire::Retries=3 install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev "$driver" xvfb && exit 0
+            fi
+            echo "::warning::apt failed (attempt $attempt of 5)"; sleep $((attempt * 15))
+          done
+          exit 1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22

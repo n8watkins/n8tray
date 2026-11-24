@@ -18,6 +18,25 @@ pub fn close_request(pid: u32) -> bool {
     }
 }
 
+/// Collects the exit of `pid` if it is a child of this process that has
+/// exited and that no `Child` handle waits for any more (one the host
+/// started before it was restarted), so it does not linger as a zombie.
+/// Returns whether it reaped one. A no-op on Windows, which has no zombies.
+pub fn reap(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        let _ = pid;
+        false
+    }
+    #[cfg(unix)]
+    {
+        let mut status = 0;
+        #[allow(unsafe_code)]
+        let reaped = unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) };
+        reaped == pid as libc::pid_t
+    }
+}
+
 /// Ends a process at once. The caller must have verified that the process
 /// belongs to the app.
 pub fn force_stop(pid: u32) -> io::Result<()> {
