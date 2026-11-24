@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.0 - 2026-11-24
+
+PowerShell and Node apps start again on Windows, safer handling of apps the tray did not start, and low-memory alerts are off unless you turn them on.
+
+### New
+
+- Low-memory notifications are off unless you turn them on ([#30](https://github.com/n8watkins/n8tray/pull/30))
+
+### Fixed
+
+- An app N8 Tray did not start is never force-stopped ([#27](https://github.com/n8watkins/n8tray/pull/27))
+- PowerShell and node apps start on Windows again ([#25](https://github.com/n8watkins/n8tray/pull/25))
+- The memory line shows small amounts in MB, and a few quiet host fixes ([#29](https://github.com/n8watkins/n8tray/pull/29))
+- An app found running is adopted only when the process is really the app's ([#26](https://github.com/n8watkins/n8tray/pull/26))
+- The tray says so when its app monitor fails, and starts it again ([#28](https://github.com/n8watkins/n8tray/pull/28))
+- On Windows, apps stay stoppable after the app monitor restarts ([#31](https://github.com/n8watkins/n8tray/pull/31))
+
 ## 0.3.0 - 2026-11-10
 
 ### New

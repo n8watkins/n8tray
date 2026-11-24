@@ -4,6 +4,97 @@
   "repository": "n8watkins/n8tray",
   "releases": [
     {
+      "version": "0.4.0",
+      "tag": "v0.4.0",
+      "date": "2026-11-24",
+      "time": "2026-11-24T22:18:38Z",
+      "url": "https://github.com/n8watkins/n8tray/releases/tag/v0.4.0",
+      "previous": "v0.3.0",
+      "summary": "PowerShell and Node apps start again on Windows, safer handling of apps the tray did not start, and low-memory alerts are off unless you turn them on.",
+      "breaking": false,
+      "notes": [
+        {
+          "section": "new",
+          "type": "feat",
+          "scope": null,
+          "text": "Low-memory notifications are off unless you turn them on",
+          "breaking": false,
+          "pr": 30,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/30",
+          "commit": "750de863d0c4d2d6a2486fa9337007296b617d1a",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/750de863d0c4d2d6a2486fa9337007296b617d1a"
+        },
+        {
+          "section": "fixed",
+          "type": "fix",
+          "scope": null,
+          "text": "An app N8 Tray did not start is never force-stopped",
+          "breaking": false,
+          "pr": 27,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/27",
+          "commit": "26d492f5869cdd765b0f4bb25d47a3fc0767771f",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/26d492f5869cdd765b0f4bb25d47a3fc0767771f"
+        },
+        {
+          "section": "fixed",
+          "type": "fix",
+          "scope": null,
+          "text": "PowerShell and node apps start on Windows again",
+          "breaking": false,
+          "pr": 25,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/25",
+          "commit": "c096b89c90d6030fb70ad93e4780628632a6956d",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/c096b89c90d6030fb70ad93e4780628632a6956d"
+        },
+        {
+          "section": "fixed",
+          "type": "fix",
+          "scope": null,
+          "text": "The memory line shows small amounts in MB, and a few quiet host fixes",
+          "breaking": false,
+          "pr": 29,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/29",
+          "commit": "e400695d16fad60ace802f8fd7d504719b5d9986",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/e400695d16fad60ace802f8fd7d504719b5d9986"
+        },
+        {
+          "section": "fixed",
+          "type": "fix",
+          "scope": null,
+          "text": "An app found running is adopted only when the process is really the app's",
+          "breaking": false,
+          "pr": 26,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/26",
+          "commit": "c8616198e743684d330694e6dfe427d08fcede0b",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/c8616198e743684d330694e6dfe427d08fcede0b"
+        },
+        {
+          "section": "fixed",
+          "type": "fix",
+          "scope": null,
+          "text": "The tray says so when its app monitor fails, and starts it again",
+          "breaking": false,
+          "pr": 28,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/28",
+          "commit": "f6d15a2506c31772a6408e8b064357501c0b7252",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/f6d15a2506c31772a6408e8b064357501c0b7252"
+        },
+        {
+          "section": "fixed",
+          "type": "fix",
+          "scope": null,
+          "text": "On Windows, apps stay stoppable after the app monitor restarts",
+          "breaking": false,
+          "pr": 31,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/31",
+          "commit": "2ea6e16f33958fd37b710958a550992f0f77c0d7",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/2ea6e16f33958fd37b710958a550992f0f77c0d7"
+        }
+      ],
+      "source": "release",
+      "unattributed": 0
+    },
+    {
       "version": "0.3.0",
       "tag": "v0.3.0",
       "date": "2026-11-10",
