@@ -756,6 +756,87 @@ fn alerts_when_an_app_goes_over_its_budget() {
     );
 }
 
+/// Waits for a file the started script writes and returns its text.
+#[cfg(windows)]
+fn wait_for_file(path: &Path) -> String {
+    let end = Instant::now() + DEADLINE;
+    while Instant::now() < end {
+        if let Ok(text) = std::fs::read_to_string(path)
+            && !text.trim().is_empty()
+        {
+            return text;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    panic!("the script never wrote {}", path.display());
+}
+
+/// Starts a script app the way the installed ones are (an `interpreter` and a
+/// `script` in a folder of its own) and returns what the script wrote: the
+/// folder it found itself in and its working folder.
+#[cfg(windows)]
+fn run_script_app(id: &str, interpreter: &str, file: &str, script: &str) -> String {
+    let tray = Tray::start();
+    let install = tempfile::tempdir().unwrap();
+    std::fs::write(install.path().join(file), script).unwrap();
+    tray.write_manifest(
+        id,
+        json!({
+            "contract": 2,
+            "id": id,
+            "name": format!("Script {id}"),
+            "version": "1.0.0",
+            "installDir": install.path().display().to_string(),
+            "status": { "type": "file", "intervalSeconds": 5 },
+            "run": { "interpreter": interpreter, "script": file, "args": [] },
+        }),
+    );
+    tray.wait_app(id, "the app to be found", |_| true);
+    tray.action(id, "start", None);
+    let text = wait_for_file(&install.path().join("started.txt"));
+    // The script exits at once; give the host a moment to notice before the
+    // install folder goes away.
+    std::thread::sleep(Duration::from_millis(500));
+    text
+}
+
+#[cfg(windows)]
+#[test]
+fn starts_a_powershell_script_that_finds_files_next_to_itself() {
+    let text = run_script_app(
+        "psscript",
+        "powershell",
+        "start.ps1",
+        "$ErrorActionPreference = 'Stop'\r\n\
+         $out = Join-Path $PSScriptRoot 'started.txt'\r\n\
+         Set-Content -LiteralPath $out -Value \"root=$PSScriptRoot cwd=$((Get-Location).ProviderPath)\"\r\n",
+    );
+    assert!(
+        !text.contains(r"\\?\"),
+        "paths without the \\\\?\\ prefix: {text}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn starts_a_node_script_that_finds_files_next_to_itself() {
+    if n8tray_core::resolve::which("node").is_none() {
+        eprintln!("node is not installed; skipped");
+        return;
+    }
+    let text = run_script_app(
+        "nodescript",
+        "node",
+        "start.js",
+        "const path = require('path');\n\
+         require('fs').writeFileSync(path.join(__dirname, 'started.txt'), `root=${__dirname} cwd=${process.cwd()}`);\n",
+    );
+    assert!(
+        !text.contains(r"\\?\"),
+        "paths without the \\\\?\\ prefix: {text}"
+    );
+}
+
 #[test]
 fn an_app_with_a_demand_rule_sleeps_until_its_process_runs() {
     let tray = Tray::start();
