@@ -12,7 +12,7 @@ const DARK: &[u8] = include_bytes!("../icons/tray.png");
 /// The cyan and navy monogram, for a light taskbar.
 const LIGHT: &[u8] = include_bytes!("../icons/tray-light.png");
 
-/// Every level, in the order of `LevelName`'s values.
+/// Every level and every taskbar; `slot` places each pair in the cache.
 const LEVELS: [LevelName; 5] = [
     LevelName::Hidden,
     LevelName::Off,
@@ -39,9 +39,19 @@ fn color(level: LevelName) -> [u8; 3] {
 }
 
 /// Where the icon for a taskbar and a level sits in the cache.
+/// A new taskbar or level fails to compile here until it has a place.
 fn slot(taskbar: Taskbar, level: LevelName) -> usize {
-    let t = TASKBARS.iter().position(|t| *t == taskbar).unwrap();
-    let l = LEVELS.iter().position(|l| *l == level).unwrap();
+    let t = match taskbar {
+        Taskbar::Dark => 0,
+        Taskbar::Light => 1,
+    };
+    let l = match level {
+        LevelName::Hidden => 0,
+        LevelName::Off => 1,
+        LevelName::Ok => 2,
+        LevelName::Attention => 3,
+        LevelName::Problem => 4,
+    };
     t * LEVELS.len() + l
 }
 
@@ -49,9 +59,15 @@ fn slot(taskbar: Taskbar, level: LevelName) -> usize {
 pub fn icon(taskbar: Taskbar, level: LevelName) -> Image<'static> {
     static ICONS: OnceLock<Vec<Image<'static>>> = OnceLock::new();
     let icons = ICONS.get_or_init(|| {
-        TASKBARS
-            .iter()
-            .flat_map(|t| LEVELS.iter().map(move |l| draw(base(*t), *l)))
+        let mut icons = vec![None; TASKBARS.len() * LEVELS.len()];
+        for t in TASKBARS {
+            for l in LEVELS {
+                icons[slot(t, l)] = Some(draw(base(t), l));
+            }
+        }
+        icons
+            .into_iter()
+            .map(|i| i.expect("every slot is drawn"))
             .collect()
     });
     icons[slot(taskbar, level)].clone()

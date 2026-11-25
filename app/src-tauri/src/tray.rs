@@ -114,8 +114,14 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         })
         .build(app)?;
     let handle = app.clone();
-    if theme::watch_taskbar(move |taskbar| set_taskbar(&handle, taskbar)) {
-        info!("The tray icon follows the taskbar's colour ({taskbar:?} now)");
+    let watch = theme::watch_taskbar(move |report| match report {
+        Ok(taskbar) => set_taskbar(&handle, taskbar),
+        Err(e) => warn!("The tray icon stopped following the taskbar's colour: {e}"),
+    });
+    match watch {
+        Ok(true) => info!("The tray icon follows the taskbar's colour ({taskbar:?} now)"),
+        Ok(false) => info!("The tray icon uses the art for a {taskbar:?} taskbar"),
+        Err(e) => warn!("The tray icon cannot follow the taskbar's colour: {e}"),
     }
     Ok(())
 }

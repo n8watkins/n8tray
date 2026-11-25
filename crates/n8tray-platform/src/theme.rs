@@ -47,21 +47,27 @@ pub fn taskbar() -> Option<Taskbar> {
     }
 }
 
-/// Calls `changed` from a thread of its own each time the taskbar changes
-/// colour, until the process ends. Returns whether a watch was started.
-pub fn watch_taskbar(changed: impl Fn(Taskbar) + Send + 'static) -> bool {
+/// Watches the taskbar's colour from a thread of its own, until the process
+/// ends. `report` gets the colour once the watch is armed (so a change since
+/// [`taskbar`] was read is not lost), then each change, and a last `Err` if
+/// the watch ever stops. Returns `Ok(false)` where the platform has nothing
+/// to watch, and why a watch could not start.
+pub fn watch_taskbar(
+    report: impl Fn(Result<Taskbar, String>) + Send + 'static,
+) -> Result<bool, String> {
     #[cfg(windows)]
     {
         crate::win::theme::watch_dword(
             PERSONALIZE,
             SYSTEM_USES_LIGHT_THEME,
-            Box::new(move |value| changed(Taskbar::from_system_uses_light_theme(value))),
+            Box::new(move |value| report(value.map(Taskbar::from_system_uses_light_theme))),
         )
+        .map(|()| true)
     }
     #[cfg(not(windows))]
     {
-        let _ = changed;
-        false
+        let _ = report;
+        Ok(false)
     }
 }
 
@@ -93,7 +99,7 @@ mod tests {
     #[test]
     fn elsewhere_nothing_is_known_or_watched() {
         assert_eq!(taskbar(), None);
-        assert!(!watch_taskbar(|_| {}));
+        assert_eq!(watch_taskbar(|_| {}), Ok(false));
     }
 
     #[cfg(windows)]
@@ -103,41 +109,59 @@ mod tests {
         assert!(taskbar().is_some());
     }
 
+    /// Deletes the test's key when the test ends, even by a panic, and then
+    /// the shared parent, which stays while another test still uses it.
+    #[cfg(windows)]
+    struct TestKey(String);
+
+    #[cfg(windows)]
+    impl Drop for TestKey {
+        fn drop(&mut self) {
+            let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
+            let _ = hkcu.delete_subkey_all(&self.0);
+            // Fails harmlessly when not empty.
+            let _ = hkcu.delete_subkey(r"Software\N8TrayTests");
+        }
+    }
+
     /// The watch, on a key of its own (the real one belongs to the user).
     #[cfg(windows)]
     #[test]
-    fn a_change_is_reported_once() {
+    fn the_value_then_each_change_is_reported_once() {
         use std::sync::mpsc;
         use std::time::Duration;
         use winreg::RegKey;
         use winreg::enums::HKEY_CURRENT_USER;
 
-        let path = format!("Software\\N8TrayTests\\Theme{}", std::process::id());
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let (key, _) = hkcu.create_subkey(&path).unwrap();
+        let path = TestKey(format!(r"Software\N8TrayTests\Theme{}", std::process::id()));
+        let (key, _) = RegKey::predef(HKEY_CURRENT_USER)
+            .create_subkey(&path.0)
+            .unwrap();
         key.set_value(SYSTEM_USES_LIGHT_THEME, &0u32).unwrap();
         assert_eq!(
-            crate::win::theme::dword(&path, SYSTEM_USES_LIGHT_THEME),
+            crate::win::theme::dword(&path.0, SYSTEM_USES_LIGHT_THEME),
             Some(0)
         );
 
         let (tx, rx) = mpsc::channel();
-        assert!(crate::win::theme::watch_dword(
-            &path,
+        crate::win::theme::watch_dword(
+            &path.0,
             SYSTEM_USES_LIGHT_THEME,
             Box::new(move |value| {
-                let _ = tx.send(Taskbar::from_system_uses_light_theme(value));
+                let _ = tx.send(value.map(Taskbar::from_system_uses_light_theme));
             }),
-        ));
+        )
+        .unwrap();
+        let wait = || rx.recv_timeout(Duration::from_secs(10));
+        // Once armed, the value as it is.
+        assert_eq!(wait(), Ok(Ok(Taskbar::Dark)));
         // Another value under the key changes: nothing to report.
         key.set_value("AppsUseLightTheme", &1u32).unwrap();
         key.set_value(SYSTEM_USES_LIGHT_THEME, &1u32).unwrap();
-        let first = rx.recv_timeout(Duration::from_secs(10));
+        assert_eq!(wait(), Ok(Ok(Taskbar::Light)));
         // Setting the same value again is not a change.
         key.set_value(SYSTEM_USES_LIGHT_THEME, &1u32).unwrap();
-        let second = rx.recv_timeout(Duration::from_millis(500));
-        let _ = hkcu.delete_subkey_all(&path);
-        assert_eq!(first, Ok(Taskbar::Light));
-        assert!(second.is_err(), "reported twice: {second:?}");
+        let again = rx.recv_timeout(Duration::from_millis(500));
+        assert!(again.is_err(), "reported twice: {again:?}");
     }
 }
