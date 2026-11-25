@@ -1,4 +1,5 @@
-//! The tray icon with a dot for the overall level: green, amber, red or grey.
+//! The tray icon for the overall level: the logo alone when healthy, and a
+//! dot on it otherwise: amber, red or grey.
 
 use std::sync::OnceLock;
 
@@ -36,6 +37,11 @@ fn draw(level: LevelName) -> Image<'static> {
     let base = Image::from_bytes(BASE).expect("the tray icon is a valid PNG");
     let (w, h) = (base.width(), base.height());
     let mut rgba = base.rgba().to_vec();
+    // Healthy shows the logo alone: the dot appears only when something needs
+    // a look (D30), so the mark is not half covered all day.
+    if level == LevelName::Ok {
+        return Image::new_owned(rgba, w, h);
+    }
     // A dot in the bottom-right corner with a transparent ring around it,
     // so it reads on any taskbar color.
     let r = w as f32 * 0.24;

@@ -244,4 +244,5 @@ N8 Tray's icon is the owner's n8builds "n8" logo (`tools/icons/n8builds-logo.png
 `tools/icons/make-icons.py` makes every size from it without redrawing anything: it crops to the mark, keys the black background out (the art is light over black, so alpha is the brightest channel) and resizes.
 The glow is kept, but faded out along the letters' outline, close to them below 48 px so it does not smear at 16 px, and wider on the tile.
 From 48 px up (Start menu, installer, Explorer, the Startup apps list) the mark sits on a dark rounded tile: rendered bare on a light background, the white n and its glow vanish.
-The tray stays bare: the owner's taskbar is dark, and the level dot over it (`badge.rs`) is unchanged.
+The tray stays bare: the owner's taskbar is dark.
+The level dot over it (`badge.rs`) shows only on trouble (owner, 2026-11-25): healthy is the logo alone, because the dot covers most of the 8; amber, red and grey are as before.
