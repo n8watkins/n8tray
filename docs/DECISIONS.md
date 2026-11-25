@@ -244,5 +244,9 @@ N8 Tray's icon is the owner's n8builds "n8" logo (`tools/icons/n8builds-logo.png
 `tools/icons/make-icons.py` makes every size from it without redrawing anything: it crops to the mark, keys the black background out (the art is light over black, so alpha is the brightest channel) and resizes.
 The glow is kept, but faded out along the letters' outline, close to them below 48 px so it does not smear at 16 px, and wider on the tile.
 From 48 px up (Start menu, installer, Explorer, the Startup apps list) the mark sits on a dark rounded tile: rendered bare on a light background, the white n and its glow vanish.
-The tray stays bare: the owner's taskbar is dark.
-The level dot over it (`badge.rs`) shows only on trouble (owner, 2026-11-25): healthy is the logo alone, because the dot covers most of the 8; amber, red and grey are as before.
+The tray stays bare, in art that matches the taskbar (owner, 2026-11-25): the logo on a dark taskbar, and on a light one his cyan and navy monogram (`tools/icons/n8-monogram-light.png`, already transparent, so only cropped), where the white n would vanish.
+On Windows the taskbar's colour is `SystemUsesLightTheme` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`, not `AppsUseLightTheme`, which a window's theme events follow and which can differ.
+N8 Tray reads it at start and watches the key with `RegNotifyChangeKeyValue` on a thread of its own (`n8tray_platform::theme`), which sleeps until the registry signals a change: no polling, and no window needed.
+The `WM_SETTINGCHANGE` "ImmersiveColorSet" broadcast was the other way; Tauri does not pass the tray's hidden window's messages on, so it would need a window of our own just to receive one message.
+macOS and Linux keep the dark-taskbar art until they get a signal of their own.
+The level dot over it (`badge.rs`) shows only on trouble (owner, 2026-11-25): healthy is the logo alone, because the dot covers most of the 8; amber, red and grey are as before, on either art.

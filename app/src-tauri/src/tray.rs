@@ -1,12 +1,14 @@
 //! The tray icon and its native menu, built from the host's snapshot. The
 //! menu's shape is rebuilt only when it changes (an app or action appears or
 //! goes); otherwise only the texts and states that changed are updated, so a
-//! menu the user has open does not flicker.
+//! menu the user has open does not flicker. The icon's art follows the
+//! taskbar's colour, live (`n8tray_platform::theme`).
 
 use std::collections::HashMap;
 
 use n8tray_core::host::Command;
 use n8tray_core::model::{ActionKindView, AppView, HostSnapshot, LevelName};
+use n8tray_platform::theme::{self, Taskbar};
 use tauri::menu::{
     CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu,
 };
@@ -77,10 +79,14 @@ pub struct TrayState {
     lines: HashMap<String, Line>,
     handles: HashMap<String, Handle>,
     level: Option<LevelName>,
+    taskbar: Taskbar,
     tooltip: String,
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
+    // Where the platform cannot say, the art for a dark taskbar.
+    let taskbar = theme::taskbar().unwrap_or_default();
+    app.state::<AppState>().tray.lock().unwrap().taskbar = taskbar;
     let menu = Menu::with_items(
         app,
         &[
@@ -90,7 +96,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         ],
     )?;
     TrayIconBuilder::with_id(TRAY_ID)
-        .icon(crate::badge::icon(LevelName::Off))
+        .icon(crate::badge::icon(taskbar, LevelName::Off))
         .tooltip("N8 Tray")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -107,7 +113,27 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .build(app)?;
+    let handle = app.clone();
+    if theme::watch_taskbar(move |taskbar| set_taskbar(&handle, taskbar)) {
+        info!("The tray icon follows the taskbar's colour ({taskbar:?} now)");
+    }
     Ok(())
+}
+
+/// Switches the icon's art when the taskbar changes colour.
+fn set_taskbar(app: &AppHandle, taskbar: Taskbar) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    let mut ours = state.tray.lock().unwrap();
+    if ours.taskbar == taskbar {
+        return;
+    }
+    info!("The taskbar is now {taskbar:?}");
+    ours.taskbar = taskbar;
+    let level = ours.level.unwrap_or(LevelName::Off);
+    let _ = tray.set_icon(Some(crate::badge::icon(taskbar, level)));
 }
 
 fn memory_text(mb: Option<f64>) -> String {
@@ -239,7 +265,7 @@ pub fn update(app: &AppHandle, snapshot: &HostSnapshot) {
     let state = app.state::<AppState>();
     let mut ours = state.tray.lock().unwrap();
     if ours.level != Some(snapshot.level) {
-        let _ = tray.set_icon(Some(crate::badge::icon(snapshot.level)));
+        let _ = tray.set_icon(Some(crate::badge::icon(ours.taskbar, snapshot.level)));
         ours.level = Some(snapshot.level);
     }
     if ours.tooltip != snapshot.tooltip {

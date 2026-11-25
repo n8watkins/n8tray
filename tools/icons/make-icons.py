@@ -5,10 +5,11 @@ Run from the repository root:
     python3 tools/icons/make-icons.py
 
 Needs Pillow (only to make these files; the app has no Python at run time).
-Reads tools/icons/n8builds-logo.png, the original artwork, and writes
+Reads the original artwork, tools/icons/n8builds-logo.png (and, for the tray
+on a light taskbar, tools/icons/n8-monogram-light.png), and writes
 app/src-tauri/icons/ and the hub's own icon, app/ui/src/assets/n8tray.png.
-Nothing is redrawn: the artwork is cropped to the mark, its black background
-is keyed out so the glow fades to transparent, and it is resized.
+Nothing is redrawn: the artwork is cropped to the mark, the logo's black
+background is keyed out so the glow fades to transparent, and it is resized.
 """
 
 from dataclasses import dataclass
@@ -28,6 +29,13 @@ MARK = (228, 134, 1306, 954)
 SOLID = 230
 # The source's "black" is a few levels above zero; below this is background.
 FLOOR = 4
+
+# The tray icon for a light taskbar: the cyan and navy monogram (cyan n,
+# navy 8), whose solid mark spans these pixels (alpha above half).
+LIGHT_SOURCE = HERE / "n8-monogram-light.png"
+LIGHT_MARK = (219, 305, 1037, 970)
+# Alpha below this is a speck of noise around the mark, not part of it.
+SPECK = 8
 
 # From this size up the mark sits on a dark rounded tile: on a light Start
 # menu or Explorer window the white n and its glow vanish without one.
@@ -102,6 +110,24 @@ def resized(art: Image.Image, size: int) -> Image.Image:
     return art.convert("RGBa").resize((size, size), Image.LANCZOS).convert("RGBA")
 
 
+def light_mark() -> Image.Image:
+    """The monogram for a light taskbar as a square RGBA image.
+
+    The file already has a transparent background (it looks white only in a
+    viewer), so it needs no keying: specks of near-zero alpha are dropped,
+    the solid colours' alpha of 253-254 is made opaque, and it is cropped.
+    """
+    src = Image.open(LIGHT_SOURCE).convert("RGBA")
+    a = src.getchannel("A").point(lambda v: 0 if v < SPECK else 255 if v >= 250 else v)
+    src.putalpha(a)
+    x0, y0, x1, y1 = LIGHT_MARK
+    margin = round((x1 - x0) * BARE.margin / (MARK[2] - MARK[0]))
+    side = max(x1 - x0, y1 - y0) + 2 * margin
+    left = round((x0 + x1 - side) / 2)
+    top = round((y0 + y1 - side) / 2)
+    return src.crop((left, top, left + side, top + side))
+
+
 def tiled(art: Image.Image, size: int) -> Image.Image:
     s = size * 4
     tile = Image.new("RGBA", (s, s), (0, 0, 0, 0))
@@ -126,8 +152,10 @@ def main() -> None:
     ICONS.mkdir(parents=True, exist_ok=True)
     for name, size in (("32x32.png", 32), ("128x128.png", 128), ("128x128@2x.png", 256), ("icon.png", 512)):
         icons.icon(size).save(ICONS / name)
-    # The tray's base image; the app draws the level dot over it (badge.rs).
+    # The tray's base images, for a dark and a light taskbar; the app draws
+    # the level dot over the one in use (badge.rs).
     resized(icons.bare, 64).save(ICONS / "tray.png")
+    resized(light_mark(), 64).save(ICONS / "tray-light.png")
     # Each .ico entry is made at its own size, not shrunk from the largest.
     images = [icons.icon(s) for s in ICO_SIZES]
     images[-1].save(
