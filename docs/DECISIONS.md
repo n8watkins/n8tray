@@ -237,3 +237,20 @@ A low-memory reason reads "Low memory"; the meter under it shows the figures.
 
 The hub showed the tray's window as its working set (about 290 MB on the owner's PC), most of which is WebView2 runtime code shared with Edge (D19, D24).
 The N8 Tray row and the status card's "N8 ... in all" now count the tray and its window by private memory, what they cost the system (about 115 MB with the window open); the status details still show both figures.
+
+## D30. The icons are the owner's n8builds artwork (2026-11-25)
+
+N8 Tray's icons are the owner's own n8builds artwork, not drawings made for the tray: a redraw tuned for 16 px was tried and dropped, because his originals shrunk to 16, 24 and 32 px stay legible and he wanted his artwork.
+`tools/icons/make-icons.py` makes every file from three sources without redrawing anything; each is only cut out and resized:
+
+- The app icon (every `icon.ico` entry from 16 to 256 px, `icon.png`, `32x32.png`, `128x128.png`, `128x128@2x.png`, and N8 Tray's own icon in the hub) is the Flow monogram on its bordered dark tile (`n8-flow-app.png`, the owner's pick), with the black outside its rounded corners made transparent along the border's own edge.
+  At 16 and 20 px the blue border softens into a faint ring; the n8 still reads.
+- The tray on a dark taskbar is the glowing logo (`n8builds-logo.png`), cropped to the mark with its black background keyed out (the art is light over black, so alpha is the brightest channel); its glow fades out close to the letters so it does not smear at 16 px.
+- The tray on a light taskbar is the cyan and navy monogram (`n8-monogram-light.png`), already transparent, so only cropped; the white n of the logo would vanish there.
+
+The tray follows the taskbar's colour live (owner, 2026-11-25).
+On Windows the taskbar's colour is `SystemUsesLightTheme` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`, not `AppsUseLightTheme`, which a window's theme events follow and which can differ.
+N8 Tray reads it at start and watches the key with `RegNotifyChangeKeyValue` on a thread of its own (`n8tray_platform::theme`), which sleeps until the registry signals a change: no polling, and no window needed.
+The `WM_SETTINGCHANGE` "ImmersiveColorSet" broadcast was the other way; Tauri does not pass the tray's hidden window's messages on, so it would need a window of our own just to receive one message.
+macOS and Linux keep the dark-taskbar art until they get a signal of their own.
+The level dot over it (`badge.rs`) shows only on trouble (owner, 2026-11-25): healthy is the logo alone, because the dot covers most of the 8; amber, red and grey are as before, on either art.

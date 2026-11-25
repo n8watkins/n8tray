@@ -306,8 +306,10 @@ mod tests {
         disable(&location, &moved).unwrap();
         #[cfg(windows)]
         if let Location::RegistryKey(path) = &location {
-            let _ =
-                winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER).delete_subkey_all(path);
+            let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
+            let _ = hkcu.delete_subkey_all(path);
+            // The shared parent; fails harmlessly while another test uses it.
+            let _ = hkcu.delete_subkey("Software\\N8TrayTests");
         }
     }
 

@@ -4,7 +4,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { LevelName } from "../bindings/LevelName";
 import { appIcon } from "../api";
-import n8tray from "../assets/n8tray.svg";
+import n8tray from "../assets/n8tray.png";
 
 // One read per app and icon path while the window lives.
 const cache = new Map<string, Promise<string | null>>();

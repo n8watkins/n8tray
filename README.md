@@ -44,6 +44,8 @@ app/
                          preview/ runs it against recorded snapshots for screenshots
 docs/
   DECISIONS.md       why things are the way they are
+tools/
+  icons/             the n8builds logo and the script that makes every icon from it
 ```
 
 Start with [`spec/contract-v2.md`](spec/contract-v2.md).
