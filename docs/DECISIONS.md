@@ -237,3 +237,11 @@ A low-memory reason reads "Low memory"; the meter under it shows the figures.
 
 The hub showed the tray's window as its working set (about 290 MB on the owner's PC), most of which is WebView2 runtime code shared with Edge (D19, D24).
 The N8 Tray row and the status card's "N8 ... in all" now count the tray and its window by private memory, what they cost the system (about 115 MB with the window open); the status details still show both figures.
+
+## D30. The icon is the n8builds logo itself (2026-11-25)
+
+N8 Tray's icon is the owner's n8builds "n8" logo (`tools/icons/n8builds-logo.png`), not a drawing made for the tray: a redraw tuned for 16 px was tried and dropped, because the original shrunk to 16, 24 and 32 px stays legible and the owner wanted his artwork.
+`tools/icons/make-icons.py` makes every size from it without redrawing anything: it crops to the mark, keys the black background out (the art is light over black, so alpha is the brightest channel) and resizes.
+The glow is kept, but faded out along the letters' outline, close to them below 48 px so it does not smear at 16 px, and wider on the tile.
+From 48 px up (Start menu, installer, Explorer, the Startup apps list) the mark sits on a dark rounded tile: rendered bare on a light background, the white n and its glow vanish.
+The tray stays bare: the owner's taskbar is dark, and the level dot over it (`badge.rs`) is unchanged.
