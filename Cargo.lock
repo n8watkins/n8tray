@@ -2602,7 +2602,7 @@ dependencies = [
 
 [[package]]
 name = "n8tray"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -2622,7 +2622,7 @@ dependencies = [
 
 [[package]]
 name = "n8tray-conformance"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "clap",
@@ -2637,7 +2637,7 @@ dependencies = [
 
 [[package]]
 name = "n8tray-contract"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "jsonschema",
@@ -2647,7 +2647,7 @@ dependencies = [
 
 [[package]]
 name = "n8tray-core"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "dunce",
@@ -2666,7 +2666,7 @@ dependencies = [
 
 [[package]]
 name = "n8tray-platform"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "libc",

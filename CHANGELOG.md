@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 - 2026-11-25
+
+### New
+
+- New n8builds icons, with a tray icon that matches a light or dark taskbar ([#36](https://github.com/n8watkins/n8tray/pull/36))
+
 ## 0.4.1 - 2026-11-25
 
 ### Fixed

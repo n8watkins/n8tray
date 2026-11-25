@@ -4,6 +4,31 @@
   "repository": "n8watkins/n8tray",
   "releases": [
     {
+      "version": "0.5.0",
+      "tag": "v0.5.0",
+      "date": "2026-11-25",
+      "time": "2026-11-25T21:09:58Z",
+      "url": "https://github.com/n8watkins/n8tray/releases/tag/v0.5.0",
+      "previous": "v0.4.1",
+      "summary": null,
+      "breaking": false,
+      "notes": [
+        {
+          "section": "new",
+          "type": "feat",
+          "scope": "app",
+          "text": "New n8builds icons, with a tray icon that matches a light or dark taskbar",
+          "breaking": false,
+          "pr": 36,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/36",
+          "commit": "c64b04a3ca9d5df4f15b2d15f529ab2833098230",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/c64b04a3ca9d5df4f15b2d15f529ab2833098230"
+        }
+      ],
+      "source": "release",
+      "unattributed": 0
+    },
+    {
       "version": "0.4.1",
       "tag": "v0.4.1",
       "date": "2026-11-25",
