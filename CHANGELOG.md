@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 - 2026-11-25
+
+### Fixed
+
+- Windows shows n8builds.dev as the publisher ([#34](https://github.com/n8watkins/n8tray/pull/34))
+
 ## 0.4.0 - 2026-11-24
 
 PowerShell and Node apps start again on Windows, safer handling of apps the tray did not start, and low-memory alerts are off unless you turn them on.

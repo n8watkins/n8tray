@@ -4,6 +4,31 @@
   "repository": "n8watkins/n8tray",
   "releases": [
     {
+      "version": "0.4.1",
+      "tag": "v0.4.1",
+      "date": "2026-11-25",
+      "time": "2026-11-25T17:46:42Z",
+      "url": "https://github.com/n8watkins/n8tray/releases/tag/v0.4.1",
+      "previous": "v0.4.0",
+      "summary": null,
+      "breaking": false,
+      "notes": [
+        {
+          "section": "fixed",
+          "type": "fix",
+          "scope": "app",
+          "text": "Windows shows n8builds.dev as the publisher",
+          "breaking": false,
+          "pr": 34,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/34",
+          "commit": "b7d11882b29f16233185137151119d3abb797135",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/b7d11882b29f16233185137151119d3abb797135"
+        }
+      ],
+      "source": "release",
+      "unattributed": 0
+    },
+    {
       "version": "0.4.0",
       "tag": "v0.4.0",
       "date": "2026-11-24",
