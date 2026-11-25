@@ -18,6 +18,7 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "n8builds.dev",
     "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",
