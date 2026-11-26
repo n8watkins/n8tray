@@ -301,3 +301,53 @@ Keeping an unused app stopped is the existing "Start with N8 Tray" switch (`auto
 A settings file without the key reads as pinned, so no migration was needed and the settings schema stays at version 1.
 An older N8 Tray keeps the key through a load and a save (unknown keys are preserved), so going back a version loses no choice.
 The core publishes the data now and the native window will show it; today's window does not read the new fields, and with every app pinned (the default) the snapshot reads as before apart from the new fields themselves.
+
+## D33. The native shell: Slint next to the Tauri app until the switch (2026-11-25)
+
+The owner decided N8 Tray becomes a native Slint app with no WebView, for memory, and that it must end up looking exactly like today's.
+Only the shell and the window are replaced (`app/src-tauri` and `app/ui`); the UI-free crates stay as they are.
+Lane N0 adds the skeleton as its own crate and binary, `native/` and `n8tray-native.exe`, so the Tauri app keeps shipping untouched until a later switch.
+
+Its shape:
+
+- One `Shell` on the UI thread holds the host's handle, the latest snapshot, the tray icon and the window, if there is one.
+  Host events, the taskbar's colour, tray and menu clicks and requests from a later copy are posted to the UI thread with `slint::invoke_from_event_loop` and handled one at a time.
+- The tray is `tray-icon` with `muda` menus, at the version Tauri's tray uses (0.25), since 0.27 needs a newer GTK than Tauri's on Linux and one workspace can link only one.
+  The menu is a line-for-line port of today's (same items, order, labels, states and in-place updates), the badge is today's drawing on plain RGBA, and the process lets its menus follow the system's dark mode, as Tauri's window library does.
+- The commands are plain Rust functions with today's validation: the window passes ids and keys only, never a path, a URL or a command line (D18).
+- Slint is pinned to 1.19.1, Pulse's version, on the winit backend with the `accessibility` feature.
+  Slint re-activates a window each time it shows it, so the window is shown once off screen and never activated (owned by a hidden window, so it never has a taskbar button or an Alt-Tab entry), then shown, hidden and placed only through Win32 (`n8tray_platform::window`).
+  Its frame insets are 0 on the owner's PC (a frameless winit window keeps no invisible border); the placement still subtracts them, as for the Tauri window (D25).
+- Single instance is a named mutex plus one named event per request (show, hide, exit) in `n8tray_platform::single`.
+  The name is derived from the N8 Tray home, so the native shell never meets the installed app's lock, and two test homes never meet each other.
+- Until the switch the native shell never writes the sign-in entry (the installed app owns it), shows no notifications (they are logged) and opens the release page for Install update instead of installing in place (D27).
+  It runs on Windows only; on macOS and Linux it is compiled and tested in CI.
+- `app-release.yml` builds the Tauri app alone; a CI step fails if it ever names the native shell or builds the whole workspace.
+
+Measured on the owner's PC on 2026-11-25 with `native/scripts/measure.ps1` (no input, never the focus), each run in its own `N8TRAY_HOME` hosting the conformance kit's fake module, the placeholder window 380 by 104 px.
+Figures are the tray process's private working set (Task Manager's Memory column) and, after the slash, its private bytes, in MB, the median of three readings.
+The PC was quiet at the start (CPU 6%) and busy at the end (87%, other agents building); memory figures do not depend on that.
+
+| Run | Closed, 36 s after start | Window open | Hidden 5 s | 16 s after hiding | After 4 more opens |
+|---|---|---|---|---|---|
+| Drop, `software` | 2.39 / 13.6 | 4.07 / 14.7 | 4.07 / 14.7 | 3.01 / 15.1 | 0.66 / 14.9 |
+| Drop, `skia-software` | 2.35 / 13.3 | 4.03 / 14.4 | 4.09 / 14.4 | 2.94 / 14.7 | 0.61 / 14.7 |
+| Keep, `software` | 2.50 / 13.7 | 4.05 / 14.3 | 4.05 / 14.3 | 3.21 / 15.7 | 0.89 / 15.5 |
+| Keep, `skia-software` | 2.51 / 13.4 | 4.11 / 14.9 | 4.12 / 14.9 | 3.10 / 15.6 | 0.87 / 15.5 |
+| Drop, a build with `software` only | 2.41 / 13.3 | 3.57 / 13.8 | 3.58 / 13.8 | 2.76 / 14.4 | 0.71 / 14.3 |
+
+The installed Tauri N8 Tray 0.5.0 read 4.9 to 5.3 / 18.4 to 18.6 at the same time, closed, and its window costs about 66 MB more in its WebView processes.
+So the native shell is about half today's cost closed, and its open window adds about 1.6 MB to the one process instead of starting WebView2.
+
+What the figures decide:
+
+- **The window is dropped 10 s after it hides (D17 stays).**
+  Dropping returns about 0.6 to 0.8 MB of private bytes that a kept window holds, and five opens and closes in a row grew nothing.
+  Creating the window again took 1 to 6 ms, and opening it measured the same either way (206 to 228 ms from starting a `--show` copy to the window on screen), so dropping costs users nothing.
+  The real screens will hold more than the placeholder (text, icons, models), which widens the gap.
+- **The renderer is `software`, the default when `N8TRAY_RENDERER` names none.**
+  With the placeholder both renderers cost the same within a few hundred KB, but a binary that links Skia loads `OPENGL32.dll` and `dxcore.dll` from the start, even when it draws with `software`; the `software`-only build loads neither (37 modules closed instead of 43 to 44), is 19.3 MB instead of 24.7 MB, and its open window is 0.5 MB smaller.
+  Scribe's Slint trial found Skia keeping 5.6 MB of caches after its window closed against 1.8 MB for `software`.
+  The `skia-software` feature stays buildable only until the real hub screen has been compared with today's window pixel for pixel in both renderers; if `software` text matches as well, the switch builds without Skia.
+
+The memory script keeps a window on screen about a second per open, shown without activation; it never took the focus in any run.
