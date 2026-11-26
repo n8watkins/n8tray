@@ -16,7 +16,7 @@ use super::{about, all_apps, details, history, hub, panel, settings};
 use crate::ui::Gallery;
 use crate::ui::{
     AboutModel, AllAppsModel, DetailsModel, FlyoutWindow, HistoryModel, HubModel, Nav, PanelModel,
-    RowFocus, SettingsModel, Theme, View,
+    Reveal, RowFocus, SettingsModel, Theme, View,
 };
 use slint::ComponentHandle;
 
@@ -31,6 +31,7 @@ pub trait Models {
     fn about(&self) -> AboutModel<'_>;
     fn history(&self) -> HistoryModel<'_>;
     fn row_focus(&self) -> RowFocus<'_>;
+    fn reveal(&self) -> Reveal<'_>;
     fn theme(&self) -> Theme<'_>;
     fn nav(&self) -> Nav<'_>;
 }
@@ -62,6 +63,9 @@ macro_rules! models {
             fn row_focus(&self) -> RowFocus<'_> {
                 self.global()
             }
+            fn reveal(&self) -> Reveal<'_> {
+                self.global()
+            }
             fn theme(&self) -> Theme<'_> {
                 self.global()
             }
@@ -83,6 +87,38 @@ pub struct Ctx<'a> {
     pub confirms: &'a Confirms,
     pub icons: &'a mut Icons,
     pub now: Instant,
+}
+
+/// One picture of a view for its golden images,
+/// `native/tests/goldens/view-<name>/<state>-<theme>.png`: the view in the
+/// shell's window, filled from a fixture by the view's own `fill`, at a
+/// density and a height limit, in light, dark and High Contrast. Each view
+/// module lists its own (`SHOTS`); adding one touches no other file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shot {
+    /// The picture's name (`busy`, `compact-tall`, `armed`).
+    pub state: &'static str,
+    /// A snapshot in `native/fixtures/<fixture>.json` (read only).
+    pub fixture: &'static str,
+    /// The app of a panel or of one app's history; "" for none.
+    pub app: &'static str,
+    /// Compact rows (D35).
+    pub compact: bool,
+    /// The window's height limit: 400, 500 or 600 (D35).
+    pub height: u32,
+}
+
+impl Shot {
+    /// A shot of `fixture` in Normal rows, with the short window.
+    pub const fn of(state: &'static str, fixture: &'static str) -> Shot {
+        Shot {
+            state,
+            fixture,
+            app: "",
+            compact: false,
+            height: 400,
+        }
+    }
 }
 
 /// What Escape does.

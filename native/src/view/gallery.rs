@@ -21,44 +21,29 @@ use slint::{ComponentHandle, ModelRc, PlatformError, Rgb8Pixel, SharedString, Ve
 use super::confirm::Confirms;
 use super::format;
 use super::icons::Icons;
-use super::router::{self, Ctx, Models};
+use super::router::{self, Ctx, Models, Router, Shot};
 use super::theme::{self, Choice, NIGHT_SKY};
-use crate::ui::{Gallery, View};
+use super::{about, all_apps, details, history, hub, panel, settings};
+use crate::ui::{FlyoutWindow, Gallery, Theme, View};
 
 /// The widget families and the views, as the gallery's `only` names them.
 /// Each has its own folder of golden images.
 pub const FAMILIES: &[&str] = &[
-    "title",
-    "rows",
-    "compact",
-    "more",
-    "status",
-    "buttons",
-    "switches",
-    "banners",
-    "sections",
-    "blocks",
-    "table",
-    "scroll",
-    "tooltip",
-    "view-hub",
-    "view-all-apps",
-    "view-panel",
-    "view-details",
-    "view-settings",
-    "view-about",
-    "view-history",
+    "title", "rows", "compact", "more", "status", "buttons", "switches", "banners", "sections",
+    "blocks", "table", "scroll", "tooltip",
 ];
 
-/// The views' pages, with the view each shows.
-const VIEWS: &[(&str, View)] = &[
-    ("view-hub", View::Hub),
-    ("view-all-apps", View::AllApps),
-    ("view-panel", View::Panel),
-    ("view-details", View::Details),
-    ("view-settings", View::Settings),
-    ("view-about", View::About),
-    ("view-history", View::History),
+/// The views: each one's folder of golden images, the view, and the
+/// pictures its module asks for (`SHOTS`, see `router::Shot`). The gallery
+/// window also shows each view, on the busy fixture.
+pub const VIEWS: &[(&str, View, &[Shot])] = &[
+    ("view-hub", View::Hub, hub::SHOTS),
+    ("view-all-apps", View::AllApps, all_apps::SHOTS),
+    ("view-panel", View::Panel, panel::SHOTS),
+    ("view-details", View::Details, details::SHOTS),
+    ("view-settings", View::Settings, settings::SHOTS),
+    ("view-about", View::About, about::SHOTS),
+    ("view-history", View::History, history::SHOTS),
 ];
 
 /// A theme to render in.
@@ -149,7 +134,7 @@ fn fill(ui: &Gallery) {
 
     let confirms = Confirms::default();
     let mut icons = Icons::default();
-    for (_, view) in VIEWS {
+    for (_, view, _) in VIEWS {
         let mut ctx = Ctx {
             snapshot: &snapshot,
             app: Some("voicedock"),
@@ -161,13 +146,124 @@ fn fill(ui: &Gallery) {
     }
 }
 
-fn set_font(ui: &Gallery, font: Font) {
+fn set_font(theme: &Theme<'_>, font: Font) {
     if font == Font::Test {
-        let theme = ui.theme();
         theme.set_font_family("Inter".into());
         // Inter's own line (ascent plus descent) is 1.21 times its size.
         theme.set_line_factor(1.4 / 1.21);
     }
+}
+
+/// Puts a look and a font on a window's theme.
+fn set_look(theme: &Theme<'_>, look: Look, font: Font) {
+    let family = if font == Font::Test {
+        "Inter"
+    } else {
+        theme::font()
+    };
+    theme::apply(theme, &look.choice(family));
+    set_font(theme, font);
+}
+
+/// A snapshot from `native/fixtures/<name>.json` (debug builds read it
+/// from the source tree).
+pub fn fixture(name: &str) -> Result<HostSnapshot, String> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures")
+        .join(format!("{name}.json"));
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The shell's window on the headless platform, showing `view` filled from
+/// `shot`'s fixture by the router (so by the view's own `fill`), with the
+/// shot's density and height limit, in `look`.
+pub struct ViewWindow {
+    pub ui: FlyoutWindow,
+    pub window: Rc<MinimalSoftwareWindow>,
+    pub router: Router,
+    pub snapshot: HostSnapshot,
+}
+
+pub fn view_window(view: View, shot: &Shot, look: Look, font: Font) -> Result<ViewWindow, String> {
+    let windows = headless()?;
+    #[cfg(test)]
+    tests::register_test_font();
+    let ui = FlyoutWindow::new().map_err(|e| e.to_string())?;
+    let window = windows
+        .borrow_mut()
+        .pop()
+        .ok_or("the window has no window")?;
+    let mut snapshot = fixture(shot.fixture)?;
+    // The shot's density and height, whatever the fixture's settings say.
+    snapshot.settings.compact = shot.compact;
+    snapshot.settings.window_height_px = shot.height;
+    snapshot.settings.window_height = match shot.height {
+        500 => "medium",
+        600 => "tall",
+        _ => "short",
+    }
+    .into();
+    let theme = ui.global::<Theme>();
+    set_look(&theme, look, font);
+    theme::apply_settings(&theme, &snapshot.settings);
+    router::wire(&ui);
+    let mut router = Router::default();
+    router.open_at(view, shot.app);
+    router.fill(&ui, &snapshot);
+    Ok(ViewWindow {
+        ui,
+        window,
+        router,
+        snapshot,
+    })
+}
+
+impl ViewWindow {
+    /// Sizes the window as the shell does (its content, up to the height
+    /// limit, at least 80 px) and draws it at 1x.
+    pub fn draw(&self) -> Result<Picture, String> {
+        self.draw_at(1.0)
+    }
+
+    /// The same at a display scale.
+    pub fn draw_at(&self, scale: f32) -> Result<Picture, String> {
+        let (ui, window) = (&self.ui, &self.window);
+        window.dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged {
+            scale_factor: scale,
+        });
+        let width = (380.0 * scale).ceil() as u32;
+        if !window.is_visible() {
+            window.set_size(slint::PhysicalSize::new(width, 80));
+            ui.show().map_err(|e| e.to_string())?;
+        }
+        // A first frame at the size it has brings the view up to date.
+        let now = window.size();
+        let mut scratch = vec![Rgb8Pixel::new(0, 0, 0); (now.width * now.height) as usize];
+        window.draw_if_needed(|renderer| {
+            renderer.render(&mut scratch, now.width as usize);
+        });
+        let limit = ui.global::<Theme>().get_height_limit();
+        let logical = ui.get_content_height().clamp(80.0, limit.max(80.0));
+        let height = (logical * scale).ceil() as u32;
+        window.set_size(slint::PhysicalSize::new(width, height));
+        slint::platform::update_timers_and_animations();
+        let mut pixels = vec![Rgb8Pixel::new(0, 0, 0); (width * height) as usize];
+        window.request_redraw();
+        window.draw_if_needed(|renderer| {
+            renderer.render(&mut pixels, width as usize);
+        });
+        let rgb = pixels.iter().flat_map(|p| [p.r, p.g, p.b]).collect();
+        Ok(Picture { width, height, rgb })
+    }
+}
+
+/// One view's picture for a shot (its golden image).
+pub fn render_view(view: View, shot: &Shot, look: Look, font: Font) -> Result<Picture, String> {
+    let w = view_window(view, shot, look, font)?;
+    let picture = w.draw()?;
+    w.ui.hide().map_err(|e| e.to_string())?;
+    Ok(picture)
 }
 
 /// `--gallery` or `--gallery-png <folder> [--scale <n>]`: runs it and says
@@ -317,16 +413,7 @@ pub fn headed(look: Look, only: &str, font: Font) -> Result<Headed, String> {
         .pop()
         .ok_or("the gallery has no window")?;
     fill(&ui);
-    set_font(&ui, font);
-    let family = if font == Font::Test {
-        "Inter"
-    } else {
-        theme::font()
-    };
-    theme::apply(&ui.theme(), &look.choice(family));
-    if font == Font::Test {
-        set_font(&ui, font);
-    }
+    set_look(&ui.theme(), look, font);
     ui.set_only(only.into());
     Ok(Headed { ui, window })
 }
@@ -366,8 +453,9 @@ pub fn render(look: Look, only: &str, scale: f32, font: Font) -> Result<Picture,
     Ok(picture)
 }
 
-/// Every family and the whole gallery in every theme, as
-/// `<family>-<theme>.png` and `gallery-<theme>.png`.
+/// Every family, the whole gallery and every view's shots in every theme,
+/// as `<family>-<theme>.png`, `gallery-<theme>.png` and
+/// `view-<name>-<state>-<theme>.png`.
 pub fn write_pngs(folder: &Path, scale: f32) -> Result<usize, String> {
     std::fs::create_dir_all(folder).map_err(|e| format!("{}: {e}", folder.display()))?;
     let mut count = 0;
@@ -377,6 +465,16 @@ pub fn write_pngs(folder: &Path, scale: f32) -> Result<usize, String> {
             let name = if only.is_empty() { "gallery" } else { only };
             picture.write_png(&folder.join(format!("{name}-{}.png", look.name())))?;
             count += 1;
+        }
+        for (name, view, shots) in VIEWS {
+            for shot in *shots {
+                let w = view_window(*view, shot, look, Font::System)?;
+                let picture = w.draw_at(scale)?;
+                w.ui.hide().map_err(|e| e.to_string())?;
+                let file = format!("{name}-{}-{}.png", shot.state, look.name());
+                picture.write_png(&folder.join(file))?;
+                count += 1;
+            }
         }
     }
     Ok(count)
@@ -472,58 +570,96 @@ pub mod tests {
         )
     }
 
-    /// Every family in every look against its golden images. One test:
-    /// Slint's platform is per thread, and this thread renders them in turn.
-    #[test]
-    fn every_family_matches_its_golden_images() {
+    /// Compares one picture with its golden image at `path` (or writes it
+    /// there when `N8TRAY_UPDATE_GOLDENS` names its folder or is 1); says
+    /// what failed. `name` names the picture in the report and the diffs.
+    fn check(name: &str, folder: &str, path: &Path, actual: &Picture) -> Option<String> {
         let update = std::env::var("N8TRAY_UPDATE_GOLDENS").ok();
+        if update.as_deref().is_some_and(|u| u == "1" || u == folder) {
+            actual.write_png(path).unwrap();
+            return None;
+        }
+        let golden = match Picture::read_png(path) {
+            Ok(golden) => golden,
+            Err(e) => return Some(format!("{name}: {e}")),
+        };
+        let save = |suffix: &str, picture: &Picture| {
+            picture
+                .write_png(&diffs().join(format!("{name}{suffix}.png")))
+                .unwrap();
+        };
+        if (golden.width, golden.height) != (actual.width, actual.height) {
+            save("-actual", actual);
+            return Some(format!(
+                "{name}: {}x{} now, {}x{} in the golden image",
+                actual.width, actual.height, golden.width, golden.height
+            ));
+        }
+        let (different, diff) = compare(&golden, actual);
+        let allowed = (f64::from(golden.width * golden.height) * PIXEL_SHARE) as usize;
+        if different > allowed {
+            save("-actual", actual);
+            save("-diff", &diff);
+            return Some(format!(
+                "{name}: {different} pixels differ (at most {allowed} may)"
+            ));
+        }
+        None
+    }
+
+    /// Every family and every view's shots in every look against their
+    /// golden images. One test: Slint's platform is per thread, and this
+    /// thread renders them in turn.
+    #[test]
+    fn every_family_and_view_matches_its_golden_images() {
         let mut failures = Vec::new();
         for family in FAMILIES {
             for look in Look::ALL {
                 let actual = render(look, family, 1.0, Font::Test).unwrap();
                 let path = goldens().join(family).join(format!("{}.png", look.name()));
-                if update.as_deref().is_some_and(|u| u == "1" || u == *family) {
-                    actual.write_png(&path).unwrap();
-                    continue;
-                }
                 let name = format!("{family}-{}", look.name());
-                let golden = match Picture::read_png(&path) {
-                    Ok(golden) => golden,
-                    Err(e) => {
-                        failures.push(format!("{name}: {e}"));
-                        continue;
-                    }
-                };
-                let save = |suffix: &str, picture: &Picture| {
-                    picture
-                        .write_png(&diffs().join(format!("{name}{suffix}.png")))
-                        .unwrap();
-                };
-                if (golden.width, golden.height) != (actual.width, actual.height) {
-                    save("-actual", &actual);
-                    failures.push(format!(
-                        "{name}: {}x{} now, {}x{} in the golden image",
-                        actual.width, actual.height, golden.width, golden.height
-                    ));
-                    continue;
-                }
-                let (different, diff) = compare(&golden, &actual);
-                let allowed = (f64::from(golden.width * golden.height) * PIXEL_SHARE) as usize;
-                if different > allowed {
-                    save("-actual", &actual);
-                    save("-diff", &diff);
-                    failures.push(format!(
-                        "{name}: {different} pixels differ (at most {allowed} may)"
-                    ));
+                failures.extend(check(&name, family, &path, &actual));
+            }
+        }
+        for (folder, view, shots) in VIEWS {
+            assert!(!shots.is_empty(), "{folder} has no shot");
+            for shot in *shots {
+                for look in Look::ALL {
+                    let actual = render_view(*view, shot, look, Font::Test).unwrap();
+                    let file = format!("{}-{}.png", shot.state, look.name());
+                    let path = goldens().join(folder).join(&file);
+                    let name = format!("{folder}-{}-{}", shot.state, look.name());
+                    failures.extend(check(&name, folder, &path, &actual));
                 }
             }
         }
         assert!(
             failures.is_empty(),
-            "{}\nThe pictures are in {}; if the change is meant, refresh with N8TRAY_UPDATE_GOLDENS=1 (or =<family>)",
+            "{}\nThe pictures are in {}; if the change is meant, refresh with N8TRAY_UPDATE_GOLDENS=1 (or =<folder>)",
             failures.join("\n"),
             diffs().display()
         );
+    }
+
+    /// Every file in a view's golden folder is one of its shots: a state
+    /// that was renamed or dropped leaves no stale picture behind.
+    #[test]
+    fn each_view_folder_holds_only_its_shots() {
+        for (folder, _, shots) in VIEWS {
+            let dir = goldens().join(folder);
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.filter_map(Result::ok) {
+                let file = entry.file_name().to_string_lossy().to_string();
+                let known = shots.iter().any(|s| {
+                    Look::ALL
+                        .iter()
+                        .any(|l| file == format!("{}-{}.png", s.state, l.name()))
+                });
+                assert!(known, "{folder}/{file} is no shot of the view");
+            }
+        }
     }
 
     /// The tolerance catches a recoloured part and a 2 px shift.
@@ -573,6 +709,175 @@ pub mod tests {
             .window
             .dispatch_event(WindowEvent::KeyReleased { text });
         draw(headed, 1.0).unwrap();
+    }
+
+    /// What `tab_through` saw.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct Stops {
+        /// Controls in a bar (`in-bar`: they never scroll the list).
+        pub in_bars: usize,
+        /// Controls in the scroll area.
+        pub in_list: usize,
+        /// How far the list was scrolled at the bottom (0: it fits).
+        pub bottom: f32,
+    }
+
+    /// Scrolls the list to the bottom with the mouse wheel at `wheel_at`,
+    /// then Tabs through every focus stop until the first comes again, and
+    /// checks each: a control in a bar never moves the list (it is outside
+    /// the list's visible part, often), and a control in the list is
+    /// scrolled into view.
+    fn tab_core(
+        models: &dyn Models,
+        window: &MinimalSoftwareWindow,
+        draw: &dyn Fn(),
+        wheel_at: (f32, f32),
+    ) -> Stops {
+        use slint::platform::{Key, WindowEvent};
+        let reveal = models.reveal();
+        window.dispatch_event(WindowEvent::PointerScrolled {
+            position: slint::LogicalPosition::new(wheel_at.0, wheel_at.1),
+            delta_x: 0.0,
+            delta_y: -100_000.0,
+        });
+        draw();
+        let bottom = reveal.get_scrolled();
+        let tab = || {
+            let text: SharedString = Key::Tab.into();
+            window.dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+            window.dispatch_event(WindowEvent::KeyReleased { text });
+            draw();
+        };
+        let mut stops = Stops {
+            in_bars: 0,
+            in_list: 0,
+            bottom,
+        };
+        let mut first = None;
+        for _ in 0..200 {
+            let before = reveal.get_scrolled();
+            let serial = reveal.get_focused_serial();
+            tab();
+            if reveal.get_focused_serial() == serial {
+                // The focus went to no control: the shell window's top
+                // (`focus-top`), where the round started.
+                assert!(first.is_some(), "Tab found no control to focus");
+                assert_eq!(
+                    reveal.get_scrolled(),
+                    before,
+                    "the view's top moved the list"
+                );
+                return stops;
+            }
+            let spot = (
+                reveal.get_focused_x(),
+                reveal.get_focused_top(),
+                reveal.get_focused_bottom(),
+            );
+            if reveal.get_focused_reveals() {
+                stops.in_list += 1;
+                if bottom > 0.0 {
+                    assert_eq!(
+                        reveal.get_revealed_serial(),
+                        reveal.get_serial(),
+                        "the list did not answer the control at {spot:?}"
+                    );
+                    let (top, end) = (reveal.get_revealed_top(), reveal.get_revealed_bottom());
+                    assert!(
+                        top >= reveal.get_view_top() - 0.5 && end <= reveal.get_view_bottom() + 0.5,
+                        "the control at {spot:?} is at {top}..{end}, outside the list's {}..{}",
+                        reveal.get_view_top(),
+                        reveal.get_view_bottom()
+                    );
+                }
+            } else {
+                assert_eq!(
+                    reveal.get_scrolled(),
+                    before,
+                    "the bar control at {spot:?} moved the list"
+                );
+                if first == Some(spot) {
+                    return stops;
+                }
+                if first.is_none() {
+                    first = Some(spot);
+                }
+                stops.in_bars += 1;
+            }
+            assert!(
+                first.is_some(),
+                "the first control after the view's top must be in its title bar"
+            );
+        }
+        panic!("Tab did not come back to the first control in 200 presses");
+    }
+
+    /// For a view lane's own test: the view of `shot` in the shell's window,
+    /// scrolled to the bottom, Tabbed through every focus stop from the
+    /// view's top. Fails if a control outside the list (in a bar) moves the
+    /// list, or one in the list is not brought into view; a control that is
+    /// in neither (README: "every control is in a bar or in the
+    /// ScrollArea") shows as the first of those failures. Say what you
+    /// expect of the result, such as `assert!(stops.in_list >= 4)`.
+    pub fn tab_through(view: View, shot: &Shot) -> Stops {
+        let w = view_window(view, shot, Look::Light, Font::Test).unwrap();
+        w.draw().unwrap();
+        let height = w.window.size().height as f32;
+        crate::window::arrived(&w.ui);
+        let draw = || {
+            w.draw().unwrap();
+        };
+        let stops = tab_core(&w.ui, &w.window, &draw, (190.0, height / 2.0));
+        w.ui.hide().unwrap();
+        stops
+    }
+
+    /// The keyboard test itself, on a view's shape: a title bar, a list
+    /// that scrolls, a bottom bar.
+    #[test]
+    fn tab_through_keeps_bars_out_of_the_list_and_brings_rows_into_view() {
+        let headed = headed(Look::Light, "keys", Font::Test).unwrap();
+        let snapshot = fixture("compactTall").unwrap();
+        let model = Rc::new(VecModel::default());
+        let data: Vec<RowData> = snapshot
+            .apps
+            .iter()
+            .map(|a| {
+                rows::row_data(
+                    a,
+                    slint::Image::default(),
+                    &Confirms::default(),
+                    false,
+                    Instant::now(),
+                )
+            })
+            .collect();
+        assert!(data.len() >= 5, "enough rows to scroll");
+        list::sync(&model, data, |r| r.id.clone());
+        set_live_rows(&headed.ui, &model);
+        draw(&headed, 1.0).unwrap();
+        let redraw = || {
+            draw(&headed, 1.0).unwrap();
+        };
+        let stops = tab_core(&headed.ui, &headed.window, &redraw, (200.0, 160.0));
+        assert!(stops.bottom > 0.0, "the list scrolled: {stops:?}");
+        assert!(stops.in_list >= 5, "{stops:?}");
+        assert!(stops.in_bars >= 3, "{stops:?}");
+        headed.ui.hide().unwrap();
+    }
+
+    /// The shell's window: the hub's bars never move its list.
+    #[test]
+    fn tab_through_the_hub() {
+        // Lower than any preset, so the placeholder's lines scroll.
+        let shot = Shot {
+            compact: true,
+            height: 200,
+            ..Shot::of("compact-low", "compactTall")
+        };
+        let stops = tab_through(View::Hub, &shot);
+        assert!(stops.bottom > 0.0, "the list scrolled: {stops:?}");
+        assert!(stops.in_bars >= 2, "{stops:?}");
     }
 
     /// The keyboard focus follows the app, not the position, when its list

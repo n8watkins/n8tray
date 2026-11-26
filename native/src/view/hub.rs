@@ -13,6 +13,18 @@ use super::router::{Ctx, Models};
 use super::rows;
 use crate::ui::HubLine;
 
+/// The view's golden images (`router::Shot`): add a state here.
+#[cfg(debug_assertions)]
+pub const SHOTS: &[super::router::Shot] = &[
+    super::router::Shot::of("busy", "busy"),
+    super::router::Shot::of("pinned", "pinned"),
+    super::router::Shot {
+        compact: true,
+        height: 600,
+        ..super::router::Shot::of("compact-tall", "compactTall")
+    },
+];
+
 /// The placeholder's lines: the headline, then each app in the main view.
 pub fn lines(snapshot: &HostSnapshot) -> Vec<HubLine> {
     let apps = format::main_view_apps(&snapshot.apps).into_iter().map(|a| {
