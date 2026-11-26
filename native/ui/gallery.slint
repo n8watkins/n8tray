@@ -1,0 +1,725 @@
+// The widget gallery (`n8tray-native --gallery`, debug and test builds
+// only): every widget in every state, Normal and Compact, in one theme at a
+// time (light, dark or High Contrast, set from Rust). The golden image
+// tests render it headless; the screen lanes and the owner look at it.
+//
+// Each card is the window's real width (380 px). `only` shows one family.
+import {
+    Theme, SystemColors, Level, Tone, Glyph, GlyphName, Label, IconButton, SmallButton,
+    LinkButton, LinkSwitch, HeadLink, Pill, Tag, AppIcon, ProgressBar,
+    AppRow, RowAction, MoreLine, Banner, BannerKind, AlertLine, Section,
+    SectionHeading, GroupHeading, Divider, Switch, ToggleRow, Spark, Chart,
+    ChartLegend, ScrollArea, Tooltip, TooltipLayer, TitleBar, BottomBar,
+} from "widgets.slint";
+// The golden image tests' font (OFL), registered for them; the gallery on
+// screen uses Segoe UI as the app does.
+import "../tests/fonts/Inter-VariableFont.ttf";
+
+export { Theme, SystemColors }
+
+// A card: a caption, then the window's width of widgets on its background.
+component Card inherits VerticalLayout {
+    in property <string> caption;
+    spacing: 4px;
+    width: Theme.window-width;
+
+    Text {
+        text: root.caption;
+        font-size: 12px;
+        font-weight: 600;
+        color: Theme.contrast ? Theme.system.canvas-text : Theme.dark ? #c8c8c8 : #333333;
+        accessible-role: none;
+    }
+    Rectangle {
+        background: Theme.bg;
+        border-width: 1px;
+        border-color: Theme.contrast ? Theme.system.canvas-text : Theme.dark ? #3a3a3a : #d0d0d0;
+
+        VerticalLayout {
+            padding: 1px;
+            @children
+        }
+    }
+}
+
+// The name of a state, between examples.
+component State inherits Text {
+    font-size: 10px;
+    color: Theme.contrast ? Theme.system.gray-text : #8a8a8a;
+    height: 16px;
+    vertical-alignment: bottom;
+    accessible-role: none;
+}
+
+// A list area (`.list { padding: 2px 6px 4px }`).
+component List inherits VerticalLayout {
+    padding-left: 6px;
+    padding-right: 6px;
+    padding-top: 2px;
+    padding-bottom: 4px;
+}
+
+// A gutter (10 px at the sides, as banners and sections have).
+component Gutter inherits VerticalLayout {
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    spacing: 6px;
+}
+
+export component Gallery inherits Window {
+    // Empty: every family; else one of: title, rows, compact, more, status,
+    // buttons, switches, banners, sections, charts, scroll, tooltip.
+    in property <string> only;
+    // Drawings from Rust (view::format::spark and chart), from the fixtures.
+    in property <[string]> spark-lines;
+    in property <[string]> spark-fills;
+    in property <string> chart-memory-line;
+    in property <string> chart-memory-fill;
+    in property <string> chart-cpu-line;
+    property <bool> all: root.only == "";
+
+    // Its full size: a headless render uses it, a window scrolls to it.
+    out property <length> content-width: page.preferred-width;
+    out property <length> content-height: page.preferred-height;
+
+    title: "N8 Tray widgets";
+    background: Theme.contrast ? Theme.system.canvas : Theme.dark ? #141414 : #e9e9ec;
+    default-font-size: Theme.text-body;
+    default-font-family: Theme.font-family;
+    preferred-width: min(root.content-width, 1600px);
+    preferred-height: min(root.content-height, 1000px);
+
+    fl := Flickable {
+        content-width: root.content-width;
+        content-height: root.content-height;
+
+    page := VerticalLayout {
+        width: root.content-width;
+        height: root.content-height;
+
+    // The theme, for a look on screen.
+    if root.all: HorizontalLayout {
+        padding-left: 16px;
+        padding-top: 12px;
+        spacing: 4px;
+        alignment: start;
+        Text {
+            text: "Theme:";
+            font-size: 12px;
+            color: Theme.contrast ? Theme.system.canvas-text : Theme.dark ? #c8c8c8 : #333333;
+            vertical-alignment: center;
+        }
+        HeadLink {
+            text: "Light";
+            toggle: true;
+            pressed: !Theme.dark && !Theme.contrast;
+            clicked => { Theme.dark = false; Theme.contrast = false; }
+        }
+        HeadLink {
+            text: "Dark";
+            toggle: true;
+            pressed: Theme.dark && !Theme.contrast;
+            clicked => { Theme.dark = true; Theme.contrast = false; }
+        }
+        HeadLink {
+            text: "High Contrast";
+            toggle: true;
+            pressed: Theme.contrast;
+            clicked => { Theme.contrast = true; }
+        }
+    }
+
+    l := HorizontalLayout {
+        padding: 16px;
+        spacing: 24px;
+        alignment: start;
+
+        // Column 1: title bars, Normal rows, the more line.
+        if root.all || root.only == "title" || root.only == "rows" || root.only == "more": VerticalLayout {
+            spacing: 20px;
+            alignment: start;
+
+            if root.all || root.only == "title": Card {
+                caption: "Title bar";
+                State { text: "Hub: logo, level pill, summary"; }
+                TitleBar {
+                    show-pill: true;
+                    level: Level.ok;
+                    level-text: "Healthy";
+                    summary: "3 of 3 · 1.9 GB";
+                    show-settings: true;
+                }
+                State { text: "Nothing pinned"; }
+                TitleBar {
+                    show-pill: true;
+                    level: Level.ok;
+                    level-text: "Healthy";
+                    summary: "0 pinned · 1.9 GB";
+                    show-settings: true;
+                }
+                State { text: "Something wrong: the amber line; summary hovered"; }
+                TitleBar {
+                    show-pill: true;
+                    level: Level.attention;
+                    level-text: "Needs attention";
+                    summary: "2 of 3 · 1.9 GB";
+                    show-settings: true;
+                    demo-summary-hover: true;
+                }
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-bottom: 6px;
+                    AlertLine {
+                        text: "WSL Memory is not responding";
+                        detail: "· 1.9 GB in all";
+                    }
+                }
+                State { text: "Panel: Back, icon, name, pill, actions; Close hovered"; }
+                TitleBar {
+                    title: "VoiceDock";
+                    back: true;
+                    show-icon: true;
+                    icon: @image-url("../../spec/examples/icons/voicedock.svg");
+                    icon-level: Level.ok;
+                    show-pill: true;
+                    level: Level.ok;
+                    level-text: "Running";
+                    demo-close-hover: true;
+                    VerticalLayout {
+                        alignment: center;
+                        IconButton { glyph: GlyphName.stop; glyph-size: 13px; label: "Stop VoiceDock"; tooltip: "Stop"; compact: false; }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        IconButton { glyph: GlyphName.restart; label: "Restart VoiceDock"; tooltip: "Restart"; compact: false; }
+                    }
+                }
+                State { text: "Panel with a long name"; }
+                TitleBar {
+                    title: "A very long app name that does not fit";
+                    back: true;
+                    show-icon: true;
+                    icon-level: Level.problem;
+                    show-pill: true;
+                    level: Level.problem;
+                    level-text: "Stopped: crashed";
+                }
+                State { text: "Other views"; }
+                TitleBar {
+                    title: "All apps";
+                    back: true;
+                }
+                State { text: "Compact"; }
+                TitleBar {
+                    compact: true;
+                    show-pill: true;
+                    level: Level.problem;
+                    level-text: "Problem";
+                    summary: "1 of 3 · 806 MB";
+                    show-settings: true;
+                }
+            }
+
+            if root.all || root.only == "rows": Card {
+                caption: "Rows, Normal";
+                List {
+                    State { text: "Running, sparkline, Stop"; }
+                    AppRow {
+                        compact: false;
+                        name: "VoiceDock";
+                        line: "Kokoro ready · Piper idle";
+                        memory: "643 MB";
+                        sub: "12% CPU";
+                        show-spark: true;
+                        spark-line: root.spark-lines[0];
+                        spark-fill: root.spark-fills[0];
+                        level: Level.ok;
+                        icon: @image-url("../../spec/examples/icons/voicedock.svg");
+                        action: RowAction.stop;
+                        action-label: "Stop VoiceDock";
+                        action-tooltip: "Stop";
+                    }
+                    State { text: "Attention, most of it in WSL; hovered"; }
+                    AppRow {
+                        compact: false;
+                        name: "Lead Scraper";
+                        line: "Over its 1 GB warning";
+                        tone: Tone.attention;
+                        memory: "1.2 GB";
+                        sub: "in WSL";
+                        show-spark: true;
+                        spark-line: root.spark-lines[1];
+                        spark-fill: root.spark-fills[1];
+                        level: Level.attention;
+                        icon: @image-url("../../spec/examples/icons/leadscraper.svg");
+                        action: RowAction.stop;
+                        action-label: "Stop Lead Scraper";
+                        demo-hover: true;
+                    }
+                    State { text: "Pending, its action dimmed"; }
+                    AppRow {
+                        compact: false;
+                        name: "N8 Hotkeys";
+                        line: "Restarting";
+                        memory: "24 MB";
+                        sub: "0% CPU";
+                        show-spark: true;
+                        spark-line: root.spark-lines[2];
+                        spark-fill: root.spark-fills[2];
+                        level: Level.ok;
+                        icon: @image-url("../../spec/examples/icons/n8hotkeys.svg");
+                        action: RowAction.stop;
+                        action-label: "Stop N8 Hotkeys";
+                        action-enabled: false;
+                    }
+                    State { text: "A failed start (two lines), Start; keyboard focus"; }
+                    AppRow {
+                        compact: false;
+                        name: "VoiceDock";
+                        line: "Start failed: bin/voicedock-hub.exe is missing from the app's folder";
+                        tone: Tone.problem;
+                        level: Level.problem;
+                        icon: @image-url("../../spec/examples/icons/voicedock.svg");
+                        action: RowAction.start;
+                        action-label: "Start VoiceDock";
+                        demo-focus: true;
+                    }
+                    State { text: "Stopped; Stop armed (Confirm), action focused"; }
+                    AppRow {
+                        compact: false;
+                        name: "N8 Commentary";
+                        line: "Installed but not running";
+                        level: Level.off;
+                        icon: @image-url("../../spec/examples/icons/n8commentary.svg");
+                        action: RowAction.stop;
+                        action-label: "Stop N8 Commentary";
+                        action-confirm: true;
+                        demo-armed: true;
+                        demo-action-focus: true;
+                    }
+                    State { text: "A manifest problem: no icon, not clickable"; }
+                    AppRow {
+                        compact: false;
+                        name: "broken";
+                        line: "Manifest invalid: /status: \"type\" is required";
+                        tone: Tone.problem;
+                        level: Level.problem;
+                        static: true;
+                    }
+                    Divider { compact: false; }
+                    State { text: "N8 Tray itself"; }
+                    AppRow {
+                        compact: false;
+                        name: "N8 Tray";
+                        line: "This app";
+                        memory: "13 MB";
+                        sub: "window 88 MB";
+                        show-spark: true;
+                        spark-line: root.spark-lines[3];
+                        spark-fill: root.spark-fills[3];
+                        level: Level.ok;
+                        icon: @image-url("../../app/src-tauri/icons/128x128.png");
+                    }
+                }
+            }
+
+            if root.all || root.only == "more": Card {
+                caption: "The more line";
+                List {
+                    State { text: "Normal"; }
+                    MoreLine { compact: false; text: "2 more · 1 running, 38 MB"; }
+                    State { text: "Hovered"; }
+                    MoreLine { compact: false; text: "2 more"; demo-hover: true; }
+                    State { text: "Keyboard focus"; }
+                    MoreLine { compact: false; text: "2 more · 1 running, 38 MB"; demo-focus: true; }
+                    State { text: "Compact"; }
+                    MoreLine { compact: true; text: "2 more · 1 running, 38 MB"; }
+                }
+            }
+        }
+
+        // Column 2: Compact rows, icons and pills, buttons.
+        if root.all || root.only == "compact" || root.only == "status" || root.only == "buttons": VerticalLayout {
+            spacing: 20px;
+            alignment: start;
+
+            if root.all || root.only == "compact": Card {
+                caption: "Rows, Compact";
+                List {
+                    AppRow {
+                        compact: true;
+                        name: "VoiceDock";
+                        line: "Kokoro ready · Piper idle";
+                        memory: "643 MB";
+                        sub: "12% CPU";
+                        level: Level.ok;
+                        icon: @image-url("../../spec/examples/icons/voicedock.svg");
+                        action: RowAction.stop;
+                        action-label: "Stop VoiceDock";
+                    }
+                    AppRow {
+                        compact: true;
+                        name: "Lead Scraper";
+                        line: "Over its 1 GB warning";
+                        tone: Tone.attention;
+                        memory: "1.2 GB";
+                        level: Level.attention;
+                        icon: @image-url("../../spec/examples/icons/leadscraper.svg");
+                        action: RowAction.stop;
+                        action-label: "Stop Lead Scraper";
+                        demo-hover: true;
+                    }
+                    AppRow {
+                        compact: true;
+                        name: "N8 Hotkeys";
+                        line: "Restarting";
+                        memory: "24 MB";
+                        level: Level.ok;
+                        icon: @image-url("../../spec/examples/icons/n8hotkeys.svg");
+                        action: RowAction.stop;
+                        action-label: "Stop N8 Hotkeys";
+                        action-enabled: false;
+                    }
+                    AppRow {
+                        compact: true;
+                        name: "VoiceDock";
+                        line: "Start failed: bin/voicedock-hub.exe is missing";
+                        tone: Tone.problem;
+                        level: Level.problem;
+                        icon: @image-url("../../spec/examples/icons/voicedock.svg");
+                        action: RowAction.start;
+                        action-label: "Start VoiceDock";
+                        demo-focus: true;
+                    }
+                    AppRow {
+                        compact: true;
+                        name: "N8 Commentary";
+                        line: "Installed but not running";
+                        level: Level.off;
+                        icon: @image-url("../../spec/examples/icons/n8commentary.svg");
+                        action: RowAction.start;
+                        action-label: "Start N8 Commentary";
+                        demo-armed: true;
+                        action-confirm: true;
+                    }
+                    MoreLine { compact: true; text: "2 more · 1 running, 38 MB"; }
+                    Divider { compact: true; }
+                    AppRow {
+                        compact: true;
+                        name: "N8 Tray";
+                        line: "This app";
+                        memory: "13 MB";
+                        level: Level.ok;
+                        icon: @image-url("../../app/src-tauri/icons/128x128.png");
+                    }
+                }
+            }
+
+            if root.all || root.only == "status": Card {
+                caption: "Pills, icons, tags, progress";
+                Gutter {
+                    State { text: "Level pills"; }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        Pill { level: Level.ok; text: "Healthy"; }
+                        Pill { level: Level.attention; text: "Needs attention"; }
+                        Pill { level: Level.problem; text: "Problem"; }
+                        Pill { level: Level.off; text: "Idle"; }
+                    }
+                    State { text: "App icons: each level, generic, small, compact"; }
+                    HorizontalLayout {
+                        spacing: 12px;
+                        alignment: start;
+                        AppIcon { source: @image-url("../../spec/examples/icons/voicedock.svg"); level: Level.ok; }
+                        AppIcon { source: @image-url("../../spec/examples/icons/leadscraper.svg"); level: Level.attention; }
+                        AppIcon { source: @image-url("../../spec/examples/icons/n8hotkeys.svg"); level: Level.problem; }
+                        AppIcon { source: @image-url("../../spec/examples/icons/n8commentary.svg"); level: Level.off; }
+                        AppIcon { level: Level.problem; }
+                        AppIcon { source: @image-url("../../app/src-tauri/icons/128x128.png"); level: Level.ok; }
+                        VerticalLayout { alignment: center; AppIcon { source: @image-url("../../spec/examples/icons/wslmemory.svg"); size: Theme.app-icon-small; show-dot: false; } }
+                        VerticalLayout { alignment: center; AppIcon { source: @image-url("../../spec/examples/icons/voicedock.svg"); level: Level.ok; size: Theme.app-icon-compact; } }
+                        VerticalLayout { alignment: center; AppIcon { level: Level.attention; size: Theme.app-icon-compact; } }
+                    }
+                    State { text: "Process tags"; }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        Tag { level: Level.ok; text: "verified"; }
+                        Tag { level: Level.attention; text: "unverified"; }
+                        Tag { level: Level.problem; text: "rejected"; }
+                        Tag { text: "child"; }
+                    }
+                    State { text: "Progress: 42%"; }
+                    ProgressBar { value: 0.42; label: "Update download"; }
+                }
+            }
+
+            if root.all || root.only == "buttons": Card {
+                caption: "Buttons";
+                Gutter {
+                    State { text: "Icon buttons: rest, hover, pressed, disabled, armed, focus"; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+                        IconButton { glyph: GlyphName.gear; label: "Settings"; compact: false; }
+                        IconButton { glyph: GlyphName.gear; label: "Settings"; compact: false; demo-hover: true; }
+                        IconButton { glyph: GlyphName.gear; label: "Settings"; compact: false; demo-hover: true; demo-pressed: true; }
+                        IconButton { glyph: GlyphName.play; label: "Start"; compact: false; enabled: false; }
+                        IconButton { glyph: GlyphName.stop; glyph-size: 13px; label: "Stop"; compact: false; confirm: true; demo-armed: true; }
+                        IconButton { glyph: GlyphName.close; glyph-size: 12px; label: "Hide N8 Tray"; compact: false; demo-focus: true; }
+                        IconButton { glyph: GlyphName.restart; label: "Restart"; compact: true; }
+                    }
+                    State { text: "Small buttons: plain, hover, primary, disabled, armed, focus"; }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        SmallButton { text: "What's new"; }
+                        SmallButton { text: "Check now"; demo-hover: true; }
+                        SmallButton { text: "Install"; primary: true; }
+                        SmallButton { text: "Check now"; enabled: false; }
+                        SmallButton { text: "Stop Kokoro"; confirm: true; demo-armed: true; }
+                        SmallButton { text: "Restart"; demo-focus: true; }
+                    }
+                    State { text: "Links: rest, hover, disabled, focus; a switch link"; }
+                    HorizontalLayout {
+                        spacing: 2px;
+                        alignment: start;
+                        LinkButton { glyph: GlyphName.history; text: "History"; }
+                        LinkButton { glyph: GlyphName.file; text: "Log"; demo-hover: true; }
+                        LinkButton { glyph: GlyphName.folder; text: "Folder"; enabled: false; }
+                        LinkButton { glyph: GlyphName.web; text: "Site"; demo-focus: true; }
+                    }
+                    HorizontalLayout {
+                        spacing: 2px;
+                        alignment: start;
+                        LinkSwitch { text: "Start at sign-in"; checked: true; }
+                        LinkSwitch { text: "Start at sign-in"; checked: false; demo-hover: true; }
+                    }
+                    State { text: "Heading links: rest, chosen, focus"; }
+                    HorizontalLayout {
+                        spacing: 2px;
+                        alignment: start;
+                        HeadLink { text: "Copy status"; }
+                        HeadLink { text: "24 hours"; toggle: true; pressed: true; }
+                        HeadLink { text: "7 days"; toggle: true; demo-focus: true; }
+                    }
+                    State { text: "Every glyph"; }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: start;
+                        for g in [GlyphName.play, GlyphName.stop, GlyphName.restart, GlyphName.back, GlyphName.close,
+                            GlyphName.gear, GlyphName.check, GlyphName.box, GlyphName.history, GlyphName.file,
+                            GlyphName.folder, GlyphName.web, GlyphName.copy, GlyphName.info, GlyphName.update,
+                            GlyphName.chevron]: Glyph {
+                            name: g;
+                            colorize: Theme.fg;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Column 3: settings, banners, sections and charts, scrolling,
+        // tooltips, the bottom bar.
+        if root.all || root.only == "switches" || root.only == "banners" || root.only == "sections" || root.only == "charts" || root.only == "scroll" || root.only == "tooltip": VerticalLayout {
+            spacing: 20px;
+            alignment: start;
+
+            if root.all || root.only == "switches": Card {
+                caption: "Switches and setting rows";
+                Gutter {
+                    State { text: "Off, on, disabled off, disabled on, hover, focus"; }
+                    HorizontalLayout {
+                        spacing: 14px;
+                        alignment: start;
+                        padding: 4px;
+                        Switch { checked: false; label: "Off"; }
+                        Switch { checked: true; label: "On"; }
+                        Switch { checked: false; enabled: false; label: "Disabled"; }
+                        Switch { checked: true; enabled: false; label: "Disabled"; }
+                        Switch { checked: false; demo-hover: true; label: "Hover"; }
+                        Switch { checked: true; demo-focus: true; label: "Focus"; }
+                    }
+                    Section {
+                        label: "N8 Tray";
+                        SectionHeading { text: "N8 Tray"; }
+                        ToggleRow { first: true; text: "Start at sign-in"; checked: true; }
+                        ToggleRow { text: "Notifications"; hint: "Only for problems, once each"; checked: true; }
+                        ToggleRow { text: "Beta versions"; hint: "Pre-releases, for trying what comes next"; checked: false; enabled: false; }
+                        ToggleRow { text: "Lead Scraper"; show-icon: true; icon: @image-url("../../spec/examples/icons/leadscraper.svg"); hint: "Uses its own tray icon"; checked: false; demo-focus: true; }
+                    }
+                }
+            }
+
+            if root.all || root.only == "banners": Card {
+                caption: "Banners";
+                VerticalLayout {
+                    padding-top: 6px;
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-bottom: 0px;
+                    spacing: 8px;
+                    Banner {
+                        glyph: GlyphName.info;
+                        text: "Your PowerShell N8 Tray is managing these apps. This app is watching only; nothing here starts or stops apps.";
+                        link: "Learn more";
+                        link-open: "Show less";
+                        more: "Both trays read the same apps. Until this one replaces the PowerShell tray, it only shows their state and memory, so the two never fight over an app. Exit the PowerShell N8 Tray and this one manages them.";
+                    }
+                    Banner {
+                        glyph: GlyphName.info;
+                        text: "Your PowerShell N8 Tray is managing these apps. This app is watching only; nothing here starts or stops apps.";
+                        link: "Learn more";
+                        link-open: "Show less";
+                        more: "Both trays read the same apps. Until this one replaces the PowerShell tray, it only shows their state and memory, so the two never fight over an app. Exit the PowerShell N8 Tray and this one manages them.";
+                        expanded: true;
+                        demo-link-focus: true;
+                    }
+                    Banner {
+                        glyph: GlyphName.update;
+                        text: "N8 Tray 0.3.0 is available";
+                        secondary: "What's new";
+                        primary: "Install";
+                    }
+                    Banner {
+                        glyph: GlyphName.update;
+                        text: "Downloading N8 Tray 0.3.0: 42%";
+                        progress: 0.42;
+                        secondary: "What's new";
+                    }
+                    Banner {
+                        kind: BannerKind.problem;
+                        glyph: GlyphName.update;
+                        text: "Update to 0.3.0 failed";
+                        detail: "the signature does not match N8 Tray's key";
+                        secondary: "Release page";
+                        primary: "Try again";
+                    }
+                    Banner {
+                        kind: BannerKind.problem;
+                        text: "Settings file: expected value at line 3 column 1. Defaults are in use and nothing is saved until it is fixed.";
+                    }
+                    Banner {
+                        kind: BannerKind.attention;
+                        text: "Lead Scraper is over its 1 GB warning";
+                    }
+                    AlertLine {
+                        text: "WSL Memory is not responding";
+                        detail: "· 1.9 GB in all";
+                    }
+                    Rectangle { height: 2px; }
+                }
+            }
+
+            if root.all || root.only == "sections" || root.only == "charts": Card {
+                caption: "Sections, headings, chart";
+                Gutter {
+                    Section {
+                        label: "Last 15 minutes";
+                        SectionHeading {
+                            text: "Last 15 minutes";
+                            HeadLink { text: "24 hours, 7 days"; }
+                        }
+                        VerticalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            padding-top: 4px;
+                            padding-bottom: 10px;
+                            Chart {
+                                memory-line: root.chart-memory-line;
+                                memory-fill: root.chart-memory-fill;
+                                cpu-line: root.chart-cpu-line;
+                                label: "Memory over the last 15 minutes, at most 655 MB; CPU at most 19%";
+                            }
+                            ChartLegend {
+                                memory: "Memory, max 655 MB";
+                                cpu: "CPU, dashed, max 19%";
+                            }
+                        }
+                    }
+                    if root.all || root.only == "sections": Section {
+                        label: "State";
+                        SectionHeading { text: "State"; }
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            padding-bottom: 10px;
+                            padding-top: 2px;
+                            Label {
+                                text: "Kokoro ready · Piper idle";
+                                font-size: Theme.text-small;
+                                color: Theme.muted;
+                            }
+                        }
+                    }
+                }
+                if root.all || root.only == "sections": List {
+                    GroupHeading { compact: false; text: "In the main view"; }
+                    Divider { compact: false; }
+                    GroupHeading { compact: true; text: "Not in the main view (compact)"; }
+                }
+            }
+        }
+
+        // Column 4: scrolling, tooltips, the bottom bar.
+        if root.all || root.only == "scroll" || root.only == "tooltip": VerticalLayout {
+            spacing: 20px;
+            alignment: start;
+
+            if root.all || root.only == "scroll": Card {
+                caption: "Scroll area: 12 apps in 220 px; the scrollbar at rest and hovered";
+                HorizontalLayout {
+                    spacing: 0px;
+                    for hovered in [false, true]: ScrollArea {
+                        height: 220px;
+                        width: Theme.window-width / 2 - 1px;
+                        demo-scrollbar-hover: hovered;
+                        List {
+                            for name in ["Lead Scraper", "N8 Hotkeys", "VoiceDock", "WSL Memory", "Scribe", "Pulse", "Mailroom", "Pool Dash", "Backup", "Tether", "JobSignal", "N8 Commentary"]: AppRow {
+                                compact: true;
+                                name: name;
+                                line: "Running";
+                                level: Level.ok;
+                                reserve-action: false;
+                            }
+                        }
+                    }
+                }
+                BottomBar {
+                    LinkSwitch { text: "Start at sign-in"; checked: true; }
+                    Rectangle { horizontal-stretch: 1; }
+                    LinkButton { glyph: GlyphName.history; text: "History"; }
+                    LinkButton { glyph: GlyphName.file; text: "Log"; }
+                }
+            }
+
+            if root.all || root.only == "tooltip": Card {
+                caption: "Tooltip";
+                Gutter {
+                    padding-bottom: 12px;
+                    HorizontalLayout {
+                        alignment: start;
+                        IconButton { glyph: GlyphName.gear; label: "Settings"; compact: false; demo-hover: true; }
+                    }
+                    HorizontalLayout {
+                        alignment: start;
+                        padding-left: 6px;
+                        Tooltip { text: "Settings"; }
+                    }
+                    HorizontalLayout {
+                        alignment: start;
+                        Tooltip { text: "Another program made the sign-in entry; N8 Tray leaves it alone"; }
+                    }
+                }
+            }
+        }
+    }
+    }
+    }
+
+    TooltipLayer { }
+}

@@ -44,6 +44,9 @@ n8tray-core = { path = "../crates/n8tray-core" }
 n8tray-platform = { path = "../crates/n8tray-platform" }
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 png = "0.18.1"
+# The widget gallery of debug builds reads a fixture snapshot; n8tray-core
+# links it anyway.
+serde_json = "1.0.154"
 # Pinned to Pulse's version, the owner's all-Slint app (D33).
 slint = { version = "=1.19.1", default-features = false, features = ["std", "backend-winit", "accessibility", "compat-1-2", "raw-window-handle-06", "unstable-winit-030"] }
 tracing = "0.1.44"
@@ -51,9 +54,6 @@ tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "ansi", "registry"] }
 # Pulse's version (D33).
 tray-icon = "0.27.0"
-
-[dev-dependencies]
-serde_json = "1.0.154"
 
 [build-dependencies]
 slint-build = "=1.19.1"

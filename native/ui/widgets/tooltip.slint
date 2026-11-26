@@ -1,0 +1,49 @@
+// Tooltips: a control with a `tooltip` sets `Tip` after a pause under the
+// mouse; the window draws it with one `TooltipLayer`, its last child, so it
+// is above everything and never clipped by the scroll area. It looks like
+// the Windows 11 tooltip a browser shows for `title`.
+import { Theme } from "../theme.slint";
+import { Tip } from "base.slint";
+
+export component Tooltip inherits Rectangle {
+    in property <string> text;
+    accessible-role: none;
+    background: Theme.card;
+    border-width: 1px;
+    border-color: Theme.contrast ? Theme.system.canvas-text : Theme.line;
+    border-radius: 4px;
+    drop-shadow-blur: Theme.contrast ? 0px : 8px;
+    drop-shadow-offset-y: 2px;
+    drop-shadow-color: #00000029;
+    min-width: l.preferred-width;
+    min-height: l.preferred-height;
+
+    l := HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 5px;
+        padding-bottom: 6px;
+
+        Text {
+            text: root.text;
+            font-size: Theme.text-small;
+            color: Theme.fg;
+            wrap: word-wrap;
+            max-width: 300px;
+        }
+    }
+}
+
+// Put one as the window's last child, filling it.
+export component TooltipLayer {
+    accessible-role: none;
+
+    if Tip.shown && Tip.text != "": t := Tooltip {
+        text: Tip.text;
+        width: min(self.preferred-width, root.width - 8px);
+        height: self.preferred-height;
+        x: max(4px, min(Tip.x, root.width - self.width - 4px));
+        // Below the control, or above it when there is no room below.
+        y: Tip.y + self.height <= root.height - 4px ? Tip.y : max(4px, Tip.above - self.height - 4px);
+    }
+}

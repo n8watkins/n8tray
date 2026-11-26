@@ -1,8 +1,35 @@
 fn main() {
     println!("cargo:rerun-if-changed=ui");
     println!("cargo:rerun-if-changed=assets");
-    slint_build::compile("ui/window.slint").expect("ui/window.slint compiles");
+    slint_build::compile("ui/main.slint").expect("ui/main.slint compiles");
+    compile_gallery();
     embed_windows_resources();
+}
+
+/// The widget gallery, a module of its own (`OUT_DIR/gallery.rs`) that only
+/// debug and test builds include (`view::gallery`): a release build compiles
+/// it here but links none of it.
+fn compile_gallery() {
+    use std::path::PathBuf;
+
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let config = slint_build::CompilerConfiguration::new()
+        .embed_resources(slint_build::EmbedResourcesKind::EmbedFiles);
+    let used = slint_build::compile_with_output_path(
+        manifest_dir.join("ui/gallery.slint"),
+        out_dir.join("gallery.rs"),
+        config,
+    )
+    .expect("ui/gallery.slint compiles");
+    for path in used {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
+    // What it draws besides `ui/`: the test font, the example apps' icons
+    // and N8 Tray's own, and the snapshot its drawings come from.
+    println!("cargo:rerun-if-changed=tests/fonts");
+    println!("cargo:rerun-if-changed=../spec/examples/icons");
+    println!("cargo:rerun-if-changed=../app/src-tauri/icons/128x128.png");
 }
 
 /// The exe's icon, version details (product N8 Tray, company n8builds.dev)

@@ -240,7 +240,11 @@ impl Hub {
         self.hwnd = Some(hwnd);
         self.life.native_found();
         let Some(ui) = &self.ui else { return };
-        ui.set_dark(dark(ui));
+        crate::view::theme::apply!(
+            ui.global::<crate::ui::Theme>(),
+            crate::ui::SystemColors,
+            crate::view::theme::for_window(ui.window())
+        );
         listen(ui);
         // D25: a frameless Tauri window kept 7 px invisible borders; say what
         // this one keeps, so the placement code path stays honest.
@@ -370,22 +374,6 @@ fn fill(ui: &HubWindow, snapshot: Option<&HostSnapshot>) {
         })
         .collect();
     ui.set_apps(ModelRc::from(Rc::new(VecModel::from(apps))));
-}
-
-/// `N8TRAY_THEME=light|dark`, else the system's app theme as the window
-/// reports it, else dark.
-fn dark(ui: &HubWindow) -> bool {
-    use slint::winit_030::WinitWindowAccessor;
-    use slint::winit_030::winit::window::Theme;
-    match std::env::var("N8TRAY_THEME").as_deref() {
-        Ok("light") => return false,
-        Ok("dark") => return true,
-        _ => {}
-    }
-    ui.window()
-        .with_winit_window(|w| w.theme())
-        .flatten()
-        .is_none_or(|t| t == Theme::Dark)
 }
 
 /// Focus loss, Escape, a close request and a scale change. Each is handled

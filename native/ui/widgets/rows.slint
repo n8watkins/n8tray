@@ -1,0 +1,337 @@
+// An app's row in the hub (`.app`), Normal (two lines) or Compact (one
+// line), and the quiet line that leads to the apps outside the main view.
+import { Theme, Level, Tone } from "../theme.slint";
+import { Glyph, GlyphName, Label, Pressable, WrapLabel } from "base.slint";
+import { IconButton } from "buttons.slint";
+import { AppIcon } from "status.slint";
+import { Spark } from "charts.slint";
+
+// The row's one action: Stop while running, Start while not (model.ts).
+export enum RowAction { none, start, stop, restart }
+
+// The part of a row that opens the app's panel (`.app-main`).
+component RowMain {
+    in property <string> name;
+    in property <string> line;
+    in property <Tone> tone;
+    in property <bool> wrap-problem;
+    in property <string> memory;
+    in property <string> sub;
+    in property <string> spark-line;
+    in property <string> spark-fill;
+    in property <bool> show-spark;
+    in property <Level> level;
+    in property <image> icon;
+    in property <bool> show-dot;
+    in property <string> label;
+    in property <string> tooltip;
+    in property <bool> static;
+    in property <bool> compact;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    out property <bool> hovered: p.hovered;
+    callback clicked();
+
+    forward-focus: p;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-description: root.tooltip;
+    accessible-enabled: !root.static;
+    accessible-action-default => {
+        if !root.static {
+            root.clicked();
+        }
+    }
+    min-width: l.min-width;
+    min-height: l.min-height;
+    preferred-height: l.preferred-height;
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        enabled: !root.static;
+        tooltip: root.tooltip;
+        ring-radius: Theme.focus-radius;
+        demo-hover: root.demo-hover;
+        demo-focus: root.demo-focus;
+        clicked => {
+            root.clicked();
+        }
+
+        // Normal: `grid-template-columns: 28px 1fr auto; gap: 10px;
+        // padding: 7px 4px 7px 8px`. Compact: one line, `18px 1fr auto;
+        // gap: 8px; padding: 4px 8px`.
+        l := HorizontalLayout {
+            padding-top: root.compact ? 4px : 7px;
+            padding-bottom: root.compact ? 4px : 7px;
+            padding-left: 8px;
+            padding-right: 4px;
+            spacing: root.compact ? 8px : 10px;
+
+            VerticalLayout {
+                alignment: center;
+                AppIcon {
+                    source: root.icon;
+                    level: root.level;
+                    show-dot: root.show-dot;
+                    size: root.compact ? Theme.app-icon-compact : Theme.app-icon;
+                }
+            }
+            if !root.compact: VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Label {
+                    text: root.name;
+                    font-weight: Theme.weight-bold;
+                }
+                WrapLabel {
+                    text: root.line;
+                    font-size: Theme.text-small;
+                    color: Theme.tone-color(root.tone);
+                    // A problem may take two lines (`-webkit-line-clamp: 2`).
+                    wrap: root.wrap-problem && root.tone == Tone.problem ? TextWrap.word-wrap : TextWrap.no-wrap;
+                    max-lines: root.wrap-problem && root.tone == Tone.problem ? 2 : 1;
+                    line-height-factor: Theme.line-factor;
+                    min-height: self.font-size * Theme.line-height;
+                }
+            }
+            if !root.compact && (root.show-spark || root.memory != ""): HorizontalLayout {
+                spacing: 6px;
+                alignment: end;
+                horizontal-stretch: 0;
+                if root.show-spark: VerticalLayout {
+                    alignment: center;
+                    Spark {
+                        line: root.spark-line;
+                        fill: root.spark-fill;
+                    }
+                }
+                if root.memory != "": VerticalLayout {
+                    alignment: center;
+                    min-width: 50px;
+                    // `.fig`: 12px, line-height 1.25.
+                    Text {
+                        text: root.memory;
+                        font-size: Theme.text-small;
+                        font-weight: Theme.weight-bold;
+                        color: Theme.fg;
+                        horizontal-alignment: right;
+                        height: 15px;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                    if root.sub != "": Text {
+                        text: root.sub;
+                        font-size: Theme.text-small;
+                        color: Theme.muted;
+                        horizontal-alignment: right;
+                        height: 15px;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                }
+            }
+            if root.compact: HorizontalLayout {
+                spacing: 8px;
+                horizontal-stretch: 1;
+                name := Label {
+                    text: root.name;
+                    font-weight: Theme.weight-bold;
+                    horizontal-stretch: 0;
+                    max-width: self.preferred-width;
+                }
+                Label {
+                    text: root.line;
+                    font-size: Theme.text-small;
+                    color: Theme.tone-color(root.tone);
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                }
+            }
+            if root.compact && root.memory != "": Label {
+                text: root.memory;
+                font-size: Theme.text-small;
+                font-weight: Theme.weight-bold;
+                horizontal-alignment: right;
+                horizontal-stretch: 0;
+            }
+        }
+    }
+}
+
+// An app's row: icon with level dot, name, what it is doing (coloured by
+// tone), its figures and sparkline, and its one action. Clicking the row
+// opens the app's panel; the action button runs the action (after a second
+// click when `action-confirm`).
+export component AppRow {
+    in property <string> name;
+    in property <string> line;
+    in property <Tone> tone: Tone.normal;
+    // Problems take up to two lines (Normal only), as today's rows.
+    in property <bool> wrap-problem: true;
+    in property <string> memory;
+    // "12% CPU", "in WSL" or "window 88 MB"; Normal only.
+    in property <string> sub;
+    in property <string> spark-line;
+    in property <string> spark-fill;
+    in property <bool> show-spark;
+    in property <Level> level: Level.off;
+    in property <image> icon;
+    in property <bool> show-dot: true;
+    // `title`: the app's detail, as a tooltip and a description.
+    in property <string> tooltip;
+    // What a screen reader says for the row; by default its name, line and
+    // figures.
+    in property <string> label: root.name + ", " + root.line
+        + (root.memory != "" ? ", " + root.memory : "")
+        + (root.sub != "" && !root.compact ? ", " + root.sub : "");
+    // A row that opens nothing (a manifest problem).
+    in property <bool> static;
+    in property <RowAction> action: RowAction.none;
+    in property <string> action-label;
+    in property <string> action-tooltip: root.action-label;
+    in property <bool> action-enabled: true;
+    in property <bool> action-confirm;
+    // Keep the action's room when there is no action, so figures line up.
+    in property <bool> reserve-action: true;
+    in property <bool> compact: Theme.compact;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    in property <bool> demo-action-focus;
+    in property <bool> demo-armed;
+    out property <bool> hovered: row-ta.has-hover || main.hovered || root.demo-hover;
+    callback clicked();
+    callback action-clicked();
+
+    forward-focus: main;
+    accessible-role: none;
+    min-height: l.preferred-height;
+
+    row-ta := TouchArea {
+        // Only for the row's hover; clicks are the parts' own.
+        enabled: true;
+    }
+
+    Rectangle {
+        border-radius: Theme.radius-card;
+        background: root.hovered ? Theme.hover : transparent;
+        border-width: Theme.contrast ? 1px : 0px;
+        border-color: root.hovered ? Theme.hover-border : transparent;
+    }
+
+    l := HorizontalLayout {
+        spacing: 4px;
+
+        main := RowMain {
+            horizontal-stretch: 1;
+            name: root.name;
+            line: root.line;
+            tone: root.tone;
+            wrap-problem: root.wrap-problem;
+            memory: root.memory;
+            sub: root.sub;
+            spark-line: root.spark-line;
+            spark-fill: root.spark-fill;
+            show-spark: root.show-spark;
+            level: root.level;
+            icon: root.icon;
+            show-dot: root.show-dot;
+            label: root.label;
+            tooltip: root.tooltip;
+            static: root.static;
+            compact: root.compact;
+            demo-focus: root.demo-focus;
+            clicked => {
+                root.clicked();
+            }
+        }
+
+        if root.action != RowAction.none: HorizontalLayout {
+            padding-right: 4px;
+            alignment: center;
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    glyph: root.action == RowAction.stop ? GlyphName.stop
+                        : root.action == RowAction.restart ? GlyphName.restart
+                        : GlyphName.play;
+                    glyph-size: root.action == RowAction.stop ? 13px : 14px;
+                    label: root.action-label;
+                    tooltip: root.action-tooltip;
+                    enabled: root.action-enabled;
+                    confirm: root.action-confirm;
+                    compact: root.compact;
+                    demo-focus: root.demo-action-focus;
+                    demo-armed: root.demo-armed;
+                    clicked => {
+                        root.action-clicked();
+                    }
+                }
+            }
+        }
+        if root.action == RowAction.none && root.reserve-action: Rectangle {
+            width: 26px + 4px;
+        }
+    }
+}
+
+// The quiet line under the main view's apps: "2 more · 1 running, 38 MB",
+// words only, with a chevron. It opens the All apps view.
+export component MoreLine {
+    in property <string> text;
+    in property <bool> compact: Theme.compact;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    callback clicked();
+
+    forward-focus: p;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-description: "Opens All apps";
+    accessible-action-default => {
+        root.clicked();
+    }
+    min-height: l.preferred-height;
+    preferred-height: l.preferred-height;
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        ring-radius: Theme.focus-radius;
+        demo-hover: root.demo-hover;
+        demo-focus: root.demo-focus;
+        clicked => {
+            root.clicked();
+        }
+
+        Rectangle {
+            border-radius: Theme.radius-card;
+            background: p.hovered ? Theme.hover : transparent;
+            border-width: Theme.contrast ? 1px : 0px;
+            border-color: p.hovered ? Theme.hover-border : transparent;
+        }
+
+        l := HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            padding-top: root.compact ? 4px : 8px;
+            padding-bottom: root.compact ? 4px : 8px;
+            spacing: 8px;
+
+            Label {
+                text: root.text;
+                font-size: root.compact ? Theme.text-small : Theme.text-link;
+                color: p.hovered ? Theme.fg : Theme.muted;
+                horizontal-stretch: 1;
+            }
+            VerticalLayout {
+                alignment: center;
+                Glyph {
+                    name: GlyphName.chevron;
+                    size: 12px;
+                    colorize: p.hovered ? Theme.fg : Theme.muted;
+                }
+            }
+        }
+    }
+}

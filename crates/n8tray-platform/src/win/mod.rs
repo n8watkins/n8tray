@@ -2,6 +2,7 @@
 //! that uses unsafe code; every function here is safe to call.
 #![allow(unsafe_code)]
 
+pub mod contrast;
 pub mod gpu;
 pub mod job;
 pub mod process;

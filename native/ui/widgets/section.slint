@@ -1,0 +1,237 @@
+// A panel's sections (`.section` with its `h2`), the hub's group heading
+// (`.group`), the divider, and the settings switch with its row (`.toggle`).
+import { Theme, Level } from "../theme.slint";
+import { Label, Pressable, WrapLabel } from "base.slint";
+import { AppIcon } from "status.slint";
+
+// A card for one part of a panel. Its children are stacked; put a
+// `SectionHeading` first when it has a title. Screens stack sections with
+// 6 px between them and 10 px at the sides (CSS margins of 6px 10px that
+// collapse between two sections).
+export component Section inherits Rectangle {
+    in property <string> label;
+    accessible-role: groupbox;
+    accessible-label: root.label;
+    background: Theme.card;
+    border-width: 1px;
+    border-color: Theme.line;
+    border-radius: Theme.radius-card;
+    min-height: l.preferred-height;
+
+    l := VerticalLayout {
+        // Inside the 1 px border.
+        padding: 1px;
+        @children
+    }
+}
+
+// A section's title (`.section h2`): small capitals in the faint colour,
+// with links at the right (put `HeadLink`s as children).
+export component SectionHeading {
+    in property <string> text;
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.text;
+    min-height: l.preferred-height;
+
+    l := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 9px;
+        padding-bottom: 4px;
+        spacing: 2px;
+
+        Label {
+            text: root.text.to-uppercase();
+            font-size: Theme.text-group;
+            font-weight: Theme.weight-bold;
+            letter-spacing: Theme.group-spacing;
+            color: Theme.faint;
+            horizontal-stretch: 1;
+        }
+        @children
+    }
+}
+
+// The hub's group heading (`.group`): "IN THE MAIN VIEW".
+export component GroupHeading {
+    in property <string> text;
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.text;
+    in property <bool> compact: Theme.compact;
+    min-height: l.preferred-height;
+
+    l := HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: root.compact ? 5px : 8px;
+        padding-bottom: root.compact ? 2px : 4px;
+
+        Label {
+            text: root.text.to-uppercase();
+            font-size: Theme.text-group;
+            font-weight: Theme.weight-bold;
+            letter-spacing: Theme.group-spacing;
+            color: Theme.faint;
+        }
+    }
+}
+
+// A thin line between parts of a list (`.divider`: 1px, 6px 8px around).
+export component Divider {
+    in property <bool> compact: Theme.compact;
+    accessible-role: none;
+    height: root.compact ? 7px : 13px;
+
+    Rectangle {
+        x: 8px;
+        y: root.compact ? 3px : 6px;
+        width: root.width - 16px;
+        height: 1px;
+        background: Theme.line;
+    }
+}
+
+// The settings switch (`.toggle input`): 34 x 18, its knob sliding right
+// when on.
+export component Switch {
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    in property <string> label;
+    in property <string> description;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    callback toggled();
+
+    width: 34px;
+    height: 18px;
+    forward-focus: p;
+    accessible-role: switch;
+    accessible-label: root.label;
+    accessible-description: root.description;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.toggled();
+        }
+    }
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        enabled: root.enabled;
+        // `outline-offset: 2px` round the whole switch.
+        ring-outset: 4px;
+        ring-radius: 13px;
+        demo-hover: root.demo-hover;
+        demo-focus: root.demo-focus;
+        clicked => {
+            root.toggled();
+        }
+
+        Rectangle {
+            opacity: root.enabled ? 1 : 0.4;
+            border-radius: 9px;
+            border-width: 1px;
+            border-color: root.checked ? Theme.accent
+                : Theme.contrast ? Theme.button-text
+                : Theme.muted;
+            background: root.checked ? Theme.accent : transparent;
+
+            knob := Rectangle {
+                x: root.checked ? 20px : 4px;
+                y: 4px;
+                width: 10px;
+                height: 10px;
+                border-radius: 5px;
+                background: root.checked ? Theme.on-accent
+                    : Theme.contrast ? Theme.button-text
+                    : Theme.muted;
+                animate x { duration: 120ms; }
+            }
+        }
+    }
+}
+
+// A setting's row (`.toggle`): an optional small app icon, the label and a
+// hint under it, the switch at the right. The whole row toggles. `first`
+// leaves out the line above it.
+export component ToggleRow {
+    in property <string> text;
+    in property <string> hint;
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    in property <bool> first;
+    in property <image> icon;
+    in property <bool> show-icon;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    callback toggled();
+
+    forward-focus: s;
+    accessible-role: none;
+    min-height: l.preferred-height;
+
+    TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        clicked => {
+            root.toggled();
+        }
+    }
+
+    if !root.first: Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.line;
+    }
+
+    l := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        spacing: 10px;
+
+        if root.show-icon: VerticalLayout {
+            alignment: center;
+            // `.toggle .appicon { margin-right: -2px }`
+            padding-right: -2px;
+            AppIcon {
+                source: root.icon;
+                size: Theme.app-icon-small;
+                show-dot: false;
+                surface: Theme.card;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Label {
+                text: root.text;
+            }
+            if root.hint != "": WrapLabel {
+                text: root.hint;
+                font-size: Theme.text-small;
+                color: Theme.muted;
+                line-height-factor: Theme.line-factor;
+                min-height: self.font-size * Theme.line-height;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            s := Switch {
+                checked: root.checked;
+                enabled: root.enabled;
+                label: root.text;
+                description: root.hint;
+                demo-hover: root.demo-hover;
+                demo-focus: root.demo-focus;
+                toggled => {
+                    root.toggled();
+                }
+            }
+        }
+    }
+}

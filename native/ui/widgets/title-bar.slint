@@ -1,0 +1,204 @@
+// The window's title bar (`.head`) and bottom bar (`.foot`).
+//
+// The hub's title bar carries the summary next to the level pill ("3 of 3 ·
+// 1.9 GB", approved 2026-11-25): pinned apps that run of those pinned, then
+// N8's memory in all; it opens the status details. Everything in it shares
+// one vertical centre line.
+import { Theme, Level } from "../theme.slint";
+import { Glyph, GlyphName, Label, Pressable } from "base.slint";
+import { IconButton } from "buttons.slint";
+import { AppIcon, Pill } from "status.slint";
+
+// The summary, a quiet button.
+component Summary {
+    in property <string> text;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    callback clicked();
+
+    forward-focus: p;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-description: "Opens status details";
+    accessible-action-default => {
+        root.clicked();
+    }
+    horizontal-stretch: 0;
+    min-width: l.preferred-width;
+    height: 20px;
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        tooltip: "Status details";
+        ring-radius: 4px;
+        demo-hover: root.demo-hover;
+        demo-focus: root.demo-focus;
+        clicked => {
+            root.clicked();
+        }
+
+        l := HorizontalLayout {
+            Label {
+                text: root.text;
+                font-size: Theme.text-small;
+                color: p.hovered ? Theme.fg : Theme.muted;
+                height: 20px;
+            }
+        }
+    }
+}
+
+// The title bar. The hub's has the N8 logo, "N8 Tray", the level pill and
+// the summary; a panel's has Back, the app's small icon, its name (elided)
+// and its pill; other views Back and their title. Extra buttons (a panel's
+// actions) go in as children, before Close.
+export component TitleBar {
+    in property <string> title: "N8 Tray";
+    // Back instead of the logo.
+    in property <bool> back;
+    // An app's small icon after Back (a panel).
+    in property <bool> show-icon;
+    in property <image> icon;
+    in property <Level> icon-level: Level.off;
+    in property <bool> show-pill;
+    in property <Level> level: Level.ok;
+    in property <string> level-text;
+    in property <string> summary;
+    in property <bool> show-settings;
+    in property <bool> compact: Theme.compact;
+    in property <bool> demo-summary-hover;
+    in property <bool> demo-close-hover;
+    callback back-clicked();
+    callback settings-clicked();
+    callback close-clicked();
+    callback summary-clicked();
+
+    accessible-role: window-title-bar;
+    accessible-label: root.title;
+    min-height: l.preferred-height;
+
+    l := HorizontalLayout {
+        // `.head { padding: 12px 10px 8px 14px }`, a crumb from 8px; compact
+        // 8px 8px 6px 12px. Gap 8px (the approved title bar).
+        padding-top: root.compact ? 8px : 12px;
+        padding-bottom: root.compact ? 6px : 8px;
+        padding-right: root.compact ? 8px : 10px;
+        padding-left: root.back ? 8px : root.compact ? 12px : 14px;
+        spacing: 8px;
+        alignment: start;
+
+        if root.back: VerticalLayout {
+            alignment: center;
+            IconButton {
+                glyph: GlyphName.back;
+                label: "Back";
+                tooltip: "Back";
+                compact: false;
+                clicked => {
+                    root.back-clicked();
+                }
+            }
+        }
+        if !root.back: VerticalLayout {
+            alignment: center;
+            Image {
+                source: @image-url("../../../app/src-tauri/icons/128x128.png");
+                width: Theme.logo;
+                height: Theme.logo;
+                accessible-role: none;
+            }
+        }
+        if root.show-icon: VerticalLayout {
+            alignment: center;
+            AppIcon {
+                source: root.icon;
+                level: root.icon-level;
+                size: Theme.app-icon-small;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            min-width: 0px;
+            Label {
+                text: root.title;
+                font-size: Theme.text-title;
+                font-weight: Theme.weight-bold;
+                height: 20px;
+                accessible-role: AccessibleRole.text;
+                accessible-label: self.text;
+            }
+        }
+        if root.show-pill: VerticalLayout {
+            alignment: center;
+            Pill {
+                level: root.level;
+                text: root.level-text;
+            }
+        }
+        if root.summary != "": VerticalLayout {
+            alignment: center;
+            Summary {
+                text: root.summary;
+                demo-hover: root.demo-summary-hover;
+                clicked => {
+                    root.summary-clicked();
+                }
+            }
+        }
+        // The room between the title and the buttons.
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        @children
+        if root.show-settings: VerticalLayout {
+            alignment: center;
+            IconButton {
+                glyph: GlyphName.gear;
+                label: "Settings";
+                tooltip: "Settings";
+                compact: false;
+                clicked => {
+                    root.settings-clicked();
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                glyph: GlyphName.close;
+                glyph-size: 12px;
+                label: "Hide N8 Tray";
+                tooltip: "Hide";
+                compact: false;
+                demo-hover: root.demo-close-hover;
+                clicked => {
+                    root.close-clicked();
+                }
+            }
+        }
+    }
+}
+
+// The bottom bar (`.foot`): a line above, links at the left and right (put
+// a stretching `Rectangle {}` between them).
+export component BottomBar {
+    accessible-role: none;
+    min-height: l.preferred-height;
+
+    Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.line;
+    }
+
+    l := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        padding-top: 6px;
+        padding-bottom: 5px;
+        spacing: 2px;
+        @children
+    }
+}
