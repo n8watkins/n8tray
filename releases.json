@@ -4,6 +4,42 @@
   "repository": "n8watkins/n8tray",
   "releases": [
     {
+      "version": "0.6.0",
+      "tag": "v0.6.0",
+      "date": "2026-11-25",
+      "time": "2026-11-26T07:27:47Z",
+      "url": "https://github.com/n8watkins/n8tray/releases/tag/v0.6.0",
+      "previous": "v0.5.0",
+      "summary": null,
+      "breaking": false,
+      "notes": [
+        {
+          "section": "new",
+          "type": "feat",
+          "scope": "app",
+          "text": "Simpler summary, without the Windows memory bar",
+          "breaking": false,
+          "pr": 38,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/38",
+          "commit": "981af25d4c51af5cdeb9ec574c321ecafd00468b",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/981af25d4c51af5cdeb9ec574c321ecafd00468b"
+        },
+        {
+          "section": "fixed",
+          "type": "fix",
+          "scope": "app",
+          "text": "Escape works right after opening a panel",
+          "breaking": false,
+          "pr": 40,
+          "prUrl": "https://github.com/n8watkins/n8tray/pull/40",
+          "commit": "45802e4ed7e9fd9c7198e12329907075ceaf6c7d",
+          "commitUrl": "https://github.com/n8watkins/n8tray/commit/45802e4ed7e9fd9c7198e12329907075ceaf6c7d"
+        }
+      ],
+      "source": "release",
+      "unattributed": 0
+    },
+    {
       "version": "0.5.0",
       "tag": "v0.5.0",
       "date": "2026-11-25",
