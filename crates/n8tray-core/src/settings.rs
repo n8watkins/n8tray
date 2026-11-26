@@ -314,7 +314,9 @@ pub fn import_powershell(text: &str, base: Settings) -> Result<Imported, String>
         }
     }
     if object.contains_key("wslMemory") {
-        notes.push("the wslMemory section does not apply: N8 Tray does not show the PC's memory".into());
+        notes.push(
+            "the wslMemory section does not apply: N8 Tray does not show the PC's memory".into(),
+        );
     }
     if object.contains_key("ui") {
         notes.push("the ui section (WinForms sizes) does not apply to the new tray".into());
@@ -441,7 +443,10 @@ mod tests {
         assert_eq!(s.app("n8hotkeys").auto_start, Some(true));
         assert!(!s.app("voicedock").enabled, "n8voice is voicedock now");
         assert!(!s.apps.contains_key("n8voice"));
-        assert!(!s.other.contains_key("wslMemory"), "N8 Tray shows no PC memory");
+        assert!(
+            !s.other.contains_key("wslMemory"),
+            "N8 Tray shows no PC memory"
+        );
         assert!(imported.notes.iter().any(|n| n.contains("wslMemory")));
         assert!(!s.other.contains_key("ui"));
         assert!(imported.notes.iter().any(|n| n.contains("n8voice")));

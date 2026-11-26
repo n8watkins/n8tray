@@ -960,8 +960,16 @@ fn small_figures_read_right() {
         .unwrap_or_else(|| panic!("the N8 figure in MB: {text}"));
     assert!((said - n8).abs() <= 1.0, "{text} for {n8} MB");
     // N8's own memory is the tooltip's note; the PC's memory is not (D34).
-    assert!(snapshot.tooltip.ends_with(text.as_str()), "{}", snapshot.tooltip);
-    assert!(!snapshot.tooltip.contains("GB free"), "{}", snapshot.tooltip);
+    assert!(
+        snapshot.tooltip.ends_with(text.as_str()),
+        "{}",
+        snapshot.tooltip
+    );
+    assert!(
+        !snapshot.tooltip.contains("GB free"),
+        "{}",
+        snapshot.tooltip
+    );
 }
 
 #[test]
