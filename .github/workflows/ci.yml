@@ -24,7 +24,7 @@ env:
 jobs:
   changes:
     name: What changed
-    uses: n8watkins/release-kit/.github/workflows/changes.yml@v2.9.0
+    uses: n8watkins/release-kit/.github/workflows/changes.yml@v2.10.1
 
   kit:
     name: Kit update
