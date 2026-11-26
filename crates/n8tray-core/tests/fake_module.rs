@@ -1093,6 +1093,53 @@ fn a_0_6_settings_file_runs_and_saves_cleanly() {
     assert_eq!(saved["wslMemory"]["distro"], "Ubuntu-24.04");
 }
 
+/// Compact and the window height (D35) are global settings: normal and short
+/// until chosen, saved with the other keys kept, and read back by a restart.
+#[test]
+fn compact_and_the_window_height_persist_across_a_restart() {
+    use n8tray_core::settings::WindowHeight;
+
+    let mut tray = tray_with_settings(json!({
+        "schemaVersion": 1,
+        "notifications": false,
+        "wslMemory": { "distro": "Ubuntu-24.04" }
+    }));
+    let first = tray.wait("a snapshot", |s| s.tray.rss_mb > 0.0);
+    assert!(!first.settings.compact);
+    assert_eq!(first.settings.window_height, "short");
+    assert_eq!(first.settings.window_height_px, 400);
+
+    tray.send(HostCommand::SetCompact(true));
+    tray.send(HostCommand::SetWindowHeight(WindowHeight::Tall));
+    let changed = tray.wait("both changes", |s| {
+        s.settings.compact && s.settings.window_height == "tall"
+    });
+    assert_eq!(changed.settings.window_height_px, 600);
+    assert_eq!(changed.settings.error, None);
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&tray.folders.settings_file).unwrap())
+            .unwrap();
+    assert_eq!(saved["compact"], true);
+    assert_eq!(saved["windowHeight"], "tall");
+    assert_eq!(saved["notifications"], false);
+    assert_eq!(saved["wslMemory"]["distro"], "Ubuntu-24.04");
+
+    tray.stop_host();
+    *tray.latest.lock().unwrap() = None;
+    tray.start_host();
+    let back = tray.wait("the choices read back", |s| {
+        s.settings.compact && s.settings.window_height == "tall"
+    });
+    assert_eq!(back.settings.window_height_px, 600);
+
+    tray.send(HostCommand::SetWindowHeight(WindowHeight::Medium));
+    tray.send(HostCommand::SetCompact(false));
+    let medium = tray.wait("medium and normal", |s| {
+        !s.settings.compact && s.settings.window_height == "medium"
+    });
+    assert_eq!(medium.settings.window_height_px, 500);
+}
+
 #[test]
 fn pushes_memory_pressure_and_measures_cpu_and_history() {
     // Thresholds no computer meets: the first reading is a problem at once.

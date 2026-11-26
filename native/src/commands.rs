@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use n8tray_core::folders::Folders;
 use n8tray_core::host::Command;
 use n8tray_core::model::HostSnapshot;
-use n8tray_core::settings::Channel;
+use n8tray_core::settings::{Channel, WindowHeight};
 
 /// What opening an app's entry comes to.
 #[derive(Debug, Clone, PartialEq)]
@@ -91,8 +91,24 @@ pub fn set_setting(key: &str, on: bool, app: Option<String>) -> Result<Command, 
         // Not in the Tauri app's list on purpose: pinning (D32) is shown by
         // the native window only, so only its commands take it.
         ("pinned", Some(app)) => Command::SetPinned { app, pinned: on },
+        // Likewise for compact rows (D35): the Tauri window has no density.
+        ("compact", None) => Command::SetCompact(on),
         _ => return Err(format!("unknown setting {key}")),
     })
+}
+
+/// The window's height limit, by preset name: `short`, `medium` or `tall`
+/// (D35). Anything else is refused, never guessed; it is a separate function
+/// from `set_setting` because its value is a name, not an on-off switch.
+/// Like `compact`, the Tauri app does not take it.
+#[allow(
+    dead_code,
+    reason = "the window's settings view calls it (a later lane)"
+)]
+pub fn set_window_height(name: &str) -> Result<Command, String> {
+    WindowHeight::from_name(name)
+        .map(Command::SetWindowHeight)
+        .ok_or_else(|| format!("unknown window height {name}"))
 }
 
 /// Reloads the settings file, or checks for an update now.
@@ -299,6 +315,42 @@ mod tests {
             set_setting("pinned", true, None).is_err(),
             "pinning names an app"
         );
+    }
+
+    /// Compact and the window height are native-only (D35), like `pinned`:
+    /// the Tauri app's list does not have them, on purpose.
+    #[test]
+    fn compact_and_the_window_height_are_native_only_settings() {
+        for on in [true, false] {
+            assert_eq!(
+                set_setting("compact", on, None),
+                Ok(Command::SetCompact(on))
+            );
+        }
+        assert!(
+            set_setting("compact", true, Some("a".into())).is_err(),
+            "density is global, not per app"
+        );
+        assert!(
+            set_setting("windowHeight", true, None).is_err(),
+            "a name, not a switch"
+        );
+
+        assert_eq!(
+            set_window_height("short"),
+            Ok(Command::SetWindowHeight(WindowHeight::Short))
+        );
+        assert_eq!(
+            set_window_height("medium"),
+            Ok(Command::SetWindowHeight(WindowHeight::Medium))
+        );
+        assert_eq!(
+            set_window_height("tall"),
+            Ok(Command::SetWindowHeight(WindowHeight::Tall))
+        );
+        for bad in ["", "Tall", "huge", "500", "400px", " short"] {
+            assert!(set_window_height(bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]

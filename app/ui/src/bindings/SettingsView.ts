@@ -6,6 +6,20 @@ export type SettingsView = { launchAtSignIn: boolean,
  */
 signInForeign: boolean, notifications: boolean, updateChannel: string, checkUpdates: boolean, 
 /**
+ * Compact rows (one line per app) in the native window; the Tauri window
+ * does not read it (D35).
+ */
+compact: boolean, 
+/**
+ * The window's height limit: `short`, `medium` or `tall`.
+ */
+windowHeight: string, 
+/**
+ * `window_height` in pixels (400, 500 or 600), so a shell does not
+ * repeat the mapping.
+ */
+windowHeightPx: number, 
+/**
  * The settings file has an error: defaults in use, nothing saved.
  */
 error: string | null, file: string, };

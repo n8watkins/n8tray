@@ -115,7 +115,15 @@ pub fn set_setting(
     on: bool,
     app: Option<String>,
 ) -> Result<(), String> {
-    let command = match (key.as_str(), app) {
+    state.send(setting_command(&key, on, app)?);
+    Ok(())
+}
+
+/// The command for one setting key. The list has no `pinned`, `compact` or
+/// `windowHeight` on purpose: those (D32, D35) are shown by the native window
+/// only, so only native/src/commands.rs takes them.
+fn setting_command(key: &str, on: bool, app: Option<String>) -> Result<Command, String> {
+    Ok(match (key, app) {
         ("launchAtSignIn", None) => Command::SetLaunchAtSignIn(on),
         ("notifications", None) => Command::SetNotifications(on),
         ("checkUpdates", None) => Command::SetCheckUpdates(on),
@@ -128,9 +136,22 @@ pub fn set_setting(
         ("autoStart", Some(app)) => Command::SetAutoStart { app, on },
         ("hosted", Some(app)) => Command::SetOwnIcon { app, on: !on },
         _ => return Err(format!("unknown setting {key}")),
-    };
-    state.send(command);
-    Ok(())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The native-only settings are refused here, so today's window cannot
+    /// gain them by accident (D32, D35); native/src/commands.rs accepts them.
+    #[test]
+    fn the_native_only_settings_are_not_taken() {
+        assert!(setting_command("compact", true, None).is_err());
+        assert!(setting_command("windowHeight", true, None).is_err());
+        assert!(setting_command("pinned", true, Some("a".into())).is_err());
+        assert!(setting_command("autoStart", true, Some("a".into())).is_ok());
+    }
 }
 
 /// Reloads the settings file, or checks for an update now.
