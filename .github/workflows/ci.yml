@@ -310,10 +310,14 @@ jobs:
           workspaces: native
       # The native crate is a workspace of its own (D33): the root jobs never
       # compile Slint, so its format, lint and tests run here. A release bumps
-      # N8 Tray's own crates, which native/Cargo.lock records: those three
-      # entries are brought up to date first, and every other dependency
-      # stays locked.
-      - run: cargo update --manifest-path native/Cargo.toml -p n8tray-core -p n8tray-platform -p n8tray-contract
+      # N8 Tray's own crates, which native/Cargo.lock records: a plain resolve
+      # brings those path entries up to date first, and every other
+      # dependency stays as the committed lock has it (`cargo update -p`
+      # re-resolved their dependencies too, flipping the lock between two
+      # valid states).
+      - name: Resolve the native lock for N8 Tray's own crates
+        shell: bash
+        run: cargo metadata --manifest-path native/Cargo.toml --format-version 1 > /dev/null
       - run: cargo fmt --manifest-path native/Cargo.toml --check
       - run: cargo clippy --manifest-path native/Cargo.toml --all-targets --locked -- -D warnings
       - run: cargo test --manifest-path native/Cargo.toml --locked
