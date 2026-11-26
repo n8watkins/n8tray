@@ -1,8 +1,8 @@
 {
   "version": "0.2.0",
-  "level": "problem",
-  "headline": "Problem",
-  "reason": "Low memory",
+  "level": "attention",
+  "headline": "Needs attention",
+  "reason": "N8 Hotkeys: 5 of 6 hotkeys registered",
   "running": 1,
   "total": 4,
   "pinnedRunning": 1,
@@ -10,12 +10,8 @@
   "pinnedText": "1 of 4 running",
   "more": null,
   "memory": {
-    "freeGb": 1.4,
-    "totalGb": 31.1,
-    "level": "problem",
     "n8Mb": 117,
-    "system": "Windows",
-    "text": "Windows 1.4/31.1 GB free · N8 0.1 GB"
+    "text": "N8 117 MB in all"
   },
   "pressure": "ok",
   "apps": [
@@ -24,10 +20,10 @@
       "description": null,
       "icon": "icons/n8hotkeys.svg",
       "version": "2.0.0",
-      "level": "ok",
-      "state": "ready",
-      "words": "Ready",
-      "summary": "6 of 6 hotkeys registered",
+      "level": "attention",
+      "state": "degraded",
+      "words": "Ready, with a problem",
+      "summary": "5 of 6 hotkeys registered",
       "detail": null,
       "running": true,
       "shouldRun": true,
@@ -536,13 +532,12 @@
       ]
     }
   },
-  "tooltip": "N8 Tray: Needs attention",
+  "tooltip": "N8 Tray: Needs attention\nRunning: N8 Hotkeys\nWatching only: the PowerShell N8 Tray manages apps\nN8 117 MB in all",
   "legacyTray": true,
   "settings": {
     "launchAtSignIn": true,
     "signInForeign": false,
     "notifications": true,
-    "memoryNotifications": false,
     "updateChannel": "stable",
     "checkUpdates": true,
     "error": null,

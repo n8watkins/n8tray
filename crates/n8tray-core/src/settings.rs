@@ -28,8 +28,8 @@ pub struct Settings {
     pub history: HistorySettings,
     /// Per app, by id. An app missing here has the defaults.
     pub apps: BTreeMap<String, AppSettings>,
-    /// Sections this version does not know (kept as they are, such as the
-    /// imported `wslMemory` section the built-in will read).
+    /// Sections this version does not know, kept as they are (such as a
+    /// `wslMemory` section an earlier import copied from the PowerShell tray).
     #[serde(flatten)]
     pub other: Map<String, Value>,
 }
@@ -56,8 +56,9 @@ pub struct Startup {
     pub launch_at_sign_in: bool,
 }
 
-/// System memory levels: attention below `attentionBelowGiB` free, problem
-/// below `problemBelowGiB` (the PowerShell tray's 3 and 1.5 GB).
+/// The memory pressure levels pushed to apps (D21): attention below
+/// `attentionBelowGiB` free, problem below `problemBelowGiB` (the PowerShell
+/// tray's 3 and 1.5 GB). N8 Tray does not show the PC's memory (D34).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MemorySettings {
@@ -65,10 +66,11 @@ pub struct MemorySettings {
     pub attention_below_gib: f64,
     #[serde(rename = "problemBelowGiB")]
     pub problem_below_gib: f64,
-    /// Notify about low memory (after 5 minutes, at most once an hour).
-    /// Off unless the user turns it on; a file without it reads as off. The
-    /// level still shows on the icon and in the tooltip, and goes to the log.
-    pub notify: bool,
+    /// Keys this version does not read, kept as they are: `notify`, the
+    /// low-memory notification setting of 0.6.0 and earlier, so going back
+    /// a version keeps the user's choice.
+    #[serde(flatten)]
+    pub other: Map<String, Value>,
 }
 
 impl Default for MemorySettings {
@@ -76,7 +78,7 @@ impl Default for MemorySettings {
         MemorySettings {
             attention_below_gib: 3.0,
             problem_below_gib: 1.5,
-            notify: false,
+            other: Map::new(),
         }
     }
 }
@@ -249,7 +251,8 @@ fn contract2_id(powershell_id: &str) -> &str {
 }
 
 /// Converts the PowerShell tray's settings (schema 5 and earlier) into these
-/// settings, on top of `base`. Unknown sections are kept under their names.
+/// settings, on top of `base`. Sections that do not apply are left out, with
+/// a note.
 pub fn import_powershell(text: &str, base: Settings) -> Result<Imported, String> {
     let value = n8tray_contract::parse_json(text).map_err(|e| e.to_string())?;
     let object = value
@@ -310,8 +313,10 @@ pub fn import_powershell(text: &str, base: Settings) -> Result<Imported, String>
             app.auto_start = Some(auto);
         }
     }
-    if let Some(wsl) = object.get("wslMemory") {
-        settings.other.insert("wslMemory".into(), wsl.clone());
+    if object.contains_key("wslMemory") {
+        notes.push(
+            "the wslMemory section does not apply: N8 Tray does not show the PC's memory".into(),
+        );
     }
     if object.contains_key("ui") {
         notes.push("the ui section (WinForms sizes) does not apply to the new tray".into());
@@ -358,40 +363,73 @@ mod tests {
       "wslMemory": { "distro": "Ubuntu-24.04", "greenAboveGiB": 4, "redBelowGiB": 1.5 }
     }"#;
 
+    /// A 0.6.0 settings file, with the low-memory notification turned on and
+    /// the WSL Memory built-in's app settings: it loads without an error,
+    /// and a save keeps both as they were, so going back a version keeps
+    /// the user's choices (D34).
     #[test]
-    fn low_memory_notifications_are_off_unless_turned_on() {
-        assert!(!Settings::default().memory.notify, "off by default");
-
-        // A settings file from before the setting existed, with
-        // notifications on and its own thresholds: memory notices read as off.
+    fn a_0_6_settings_file_loads_and_keeps_what_it_no_longer_reads() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
         std::fs::write(
             &path,
             r#"{ "schemaVersion": 1, "notifications": true,
-                 "memory": { "attentionBelowGiB": 4, "problemBelowGiB": 2 } }"#,
+                 "memory": { "attentionBelowGiB": 4, "problemBelowGiB": 2, "notify": true },
+                 "apps": { "wslmemory": { "enabled": true, "autoStart": true, "ownIcon": true, "pinned": false } },
+                 "wslMemory": { "distro": "Ubuntu-24.04" } }"#,
         )
         .unwrap();
         let loaded = load(&path);
         assert_eq!(loaded.error, None);
+        assert_eq!(SCHEMA_VERSION, 1);
         assert!(loaded.settings.notifications);
-        assert!(!loaded.settings.memory.notify);
+        assert_eq!(loaded.settings.memory.attention_below_gib, 4.0);
         assert_eq!(loaded.settings.memory.problem_below_gib, 2.0);
-
-        // Turned on, it is saved and read back.
-        let mut settings = loaded.settings;
-        settings.memory.notify = true;
-        save(&path, &settings).unwrap();
-        assert!(
-            std::fs::read_to_string(&path)
-                .unwrap()
-                .contains("\"notify\": true")
+        assert_eq!(
+            loaded.settings.memory.other.get("notify"),
+            Some(&Value::Bool(true))
         );
-        assert!(load(&path).settings.memory.notify);
+        assert!(!loaded.settings.app("wslmemory").pinned);
 
-        // The PowerShell tray's settings bring no memory notices either.
-        let imported = import_powershell(POWERSHELL_SCHEMA_5, Settings::default()).unwrap();
-        assert!(!imported.settings.memory.notify);
+        // Saved by this version (any change saves the whole file).
+        let mut settings = loaded.settings;
+        settings.updates.check = false;
+        save(&path, &settings).unwrap();
+        let again = load(&path);
+        assert_eq!(again.error, None);
+        assert_eq!(again.settings, settings);
+        let written: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(written["memory"]["notify"], true);
+        assert_eq!(written["memory"]["attentionBelowGiB"], 4.0);
+        assert_eq!(written["apps"]["wslmemory"]["autoStart"], true);
+        assert_eq!(written["wslMemory"]["distro"], "Ubuntu-24.04");
+
+        // The 0.6.0 memory settings read that file back as they wrote it.
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct OlderMemorySettings {
+            #[serde(rename = "attentionBelowGiB")]
+            attention_below_gib: f64,
+            #[serde(rename = "problemBelowGiB")]
+            problem_below_gib: f64,
+            notify: bool,
+        }
+        let older: OlderMemorySettings = serde_json::from_value(written["memory"].clone()).unwrap();
+        assert!(older.notify);
+        assert_eq!(older.attention_below_gib, 4.0);
+        assert_eq!(older.problem_below_gib, 2.0);
+    }
+
+    /// A file this version writes from scratch has no `notify`: 0.6.0 reads
+    /// a missing `notify` as off, its default.
+    #[test]
+    fn a_new_file_has_no_low_memory_setting() {
+        let text = serde_json::to_string(&Settings::default()).unwrap();
+        assert!(!text.contains("notify"), "{text}");
+        let value: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["memory"]["attentionBelowGiB"], 3.0);
+        assert_eq!(value["memory"]["problemBelowGiB"], 1.5);
     }
 
     #[test]
@@ -405,7 +443,11 @@ mod tests {
         assert_eq!(s.app("n8hotkeys").auto_start, Some(true));
         assert!(!s.app("voicedock").enabled, "n8voice is voicedock now");
         assert!(!s.apps.contains_key("n8voice"));
-        assert_eq!(s.other["wslMemory"]["greenAboveGiB"], 4);
+        assert!(
+            !s.other.contains_key("wslMemory"),
+            "N8 Tray shows no PC memory"
+        );
+        assert!(imported.notes.iter().any(|n| n.contains("wslMemory")));
         assert!(!s.other.contains_key("ui"));
         assert!(imported.notes.iter().any(|n| n.contains("n8voice")));
     }

@@ -36,7 +36,7 @@ use crate::logging::Limiter;
 use crate::model::{
     HostSnapshot, LevelName, MemoryView, ProblemView, SettingsView, TrayUsage, UpdateView,
 };
-use crate::pressure::{Hysteresis, LowMemoryNotice};
+use crate::pressure::Hysteresis;
 use crate::resolve;
 use crate::settings::{self, Channel};
 use crate::status_io::{self, ActionError, Http, Observation};
@@ -116,8 +116,6 @@ pub enum Command {
     },
     SetLaunchAtSignIn(bool),
     SetNotifications(bool),
-    /// Low-memory notifications (they also need `SetNotifications` on).
-    SetMemoryNotifications(bool),
     SetUpdateChannel(Channel),
     SetCheckUpdates(bool),
     ReloadSettings,
@@ -315,6 +313,8 @@ struct Restart {
 
 /// The tray's hover note while a restarted host shows its failure.
 const FAILURE_NOTE: &str = "App monitor restarted after an error";
+/// The tooltip's note while the PowerShell N8 Tray manages the apps (D13).
+pub const WATCHING_NOTE: &str = "Watching only: the PowerShell N8 Tray manages apps";
 
 /// The plain reason a restarted host shows.
 fn failure_reason(at: DateTime<Utc>) -> String {
@@ -442,11 +442,10 @@ struct Host {
     gpu: HashMap<u32, GpuUse>,
     gpu_at: Option<Instant>,
     history: History,
-    /// System memory: the level shown and the level pushed to apps.
-    display_pressure: Hysteresis,
+    /// The memory pressure level pushed to apps with the `pressure` feature,
+    /// from the system's free memory (D21). It is sent to apps only: it
+    /// never colors the tray or notifies (D34).
     push_pressure: Hysteresis,
-    memory: Option<memory::SystemMemory>,
-    low_memory: LowMemoryNotice,
     /// When the host before this one failed (a restart after a panic).
     failed_at: Option<DateTime<Utc>>,
     /// Whether the user wanted each app running, from the host before this
@@ -525,10 +524,7 @@ impl Host {
             gpu: HashMap::new(),
             gpu_at: None,
             history: History::new(&history_dir, keep_days),
-            display_pressure: Hysteresis::display(attention, problem),
             push_pressure: Hysteresis::push(attention, problem),
-            memory: None,
-            low_memory: LowMemoryNotice::default(),
             failed_at: restart.as_ref().map(|r| r.failed_at),
             intent: restart.map(|r| r.intent).unwrap_or_default(),
         }
@@ -900,32 +896,22 @@ impl Host {
             self.gpu_at = Some(Instant::now());
         }
 
-        // System memory: the shown level and the level pushed to apps.
-        self.memory = memory::system_memory();
+        // System memory, only for the pressure level pushed to apps (D21):
+        // N8 Tray neither shows it nor raises its own level for it (D34).
         let settings = self.settings.settings.clone();
-        for h in [&mut self.display_pressure, &mut self.push_pressure] {
-            h.attention_below = settings.memory.attention_below_gib;
-            h.problem_below = settings.memory.problem_below_gib;
-        }
-        match self.memory {
+        self.push_pressure.attention_below = settings.memory.attention_below_gib;
+        self.push_pressure.problem_below = settings.memory.problem_below_gib;
+        match memory::system_memory() {
             Some(m) => {
                 let free = m.available_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
-                let before = self.display_pressure.level();
-                let shown = self.display_pressure.step(free, now);
-                self.push_pressure.step(free, now);
-                // Every change of level goes to the log; the icon and the
-                // tooltip show it. A notification is the user's choice.
-                if before != Some(shown) {
-                    info!("System memory: {shown:?}, {free:.1} GB free");
-                }
-                if self.low_memory.step(shown, settings.memory.notify, now) {
-                    self.notify("Low memory", &format!("{free:.1} GB free"));
+                let before = self.push_pressure.level();
+                let level = self.push_pressure.step(free, now);
+                // Every change of level goes to the log.
+                if before != Some(level) {
+                    info!("Memory pressure for apps: {level:?}, {free:.1} GB free");
                 }
             }
-            None => {
-                self.display_pressure.reset();
-                self.push_pressure.reset();
-            }
+            None => self.push_pressure.reset(),
         }
         let push = self.push_pressure.level().unwrap_or(LevelName::Ok);
 
@@ -1612,7 +1598,6 @@ impl Host {
                 self.apply_sign_in();
             }
             Command::SetNotifications(on) => self.change(|s| s.notifications = on),
-            Command::SetMemoryNotifications(on) => self.change(|s| s.memory.notify = on),
             Command::SetUpdateChannel(channel) => {
                 self.change(|s| s.updates.channel = channel);
                 self.update = UpdateState::default();
@@ -1839,34 +1824,27 @@ impl Host {
         let n8_mb = tray.private_mb.unwrap_or(tray.rss_mb)
             + tray.window_private_mb.unwrap_or(tray.window_mb)
             + hosted.iter().filter_map(|a| a.memory_mb).sum::<f64>();
-        let memory = self.memory_view(n8_mb);
+        let memory = MemoryView {
+            n8_mb: round1(n8_mb),
+            text: format!("N8 {} in all", crate::util::mb_text(n8_mb)),
+        };
 
-        let mut level = hosted
+        // The apps' level only: the PC's free memory never raises it (D34).
+        let mut level: LevelName = hosted
             .iter()
             .map(|a| level_of(a))
             .max()
-            .unwrap_or(n8tray_contract::status::Level::Off);
-        let memory_level = match memory.level {
-            LevelName::Problem => n8tray_contract::status::Level::Problem,
-            LevelName::Attention => n8tray_contract::status::Level::Attention,
-            _ => n8tray_contract::status::Level::Ok,
-        };
-        level = level.max(memory_level);
-        let mut level: LevelName = level.into();
+            .unwrap_or(n8tray_contract::status::Level::Off)
+            .into();
         let mut reason = hosted
             .iter()
             .find(|a| {
                 a.level == level && matches!(level, LevelName::Attention | LevelName::Problem)
             })
-            .map(|a| format!("{}: {}", a.name, a.summary))
-            .or_else(|| {
-                (memory.level == level && level >= LevelName::Attention)
-                    // The window's meter and the tooltip carry the figures.
-                    .then(|| "Low memory".to_string())
-            });
+            .map(|a| format!("{}: {}", a.name, a.summary));
         // Watching while the PowerShell tray manages the apps is how the two
         // trays share the PC, not a fault: the window says so in one line
-        // (`legacy_tray`), and the level stays the apps' and memory's.
+        // (`legacy_tray`), and the level stays the apps'.
         if !self.problems.is_empty() && level < LevelName::Attention {
             level = LevelName::Attention;
             reason = Some(format!(
@@ -1890,13 +1868,16 @@ impl Host {
             LevelName::Off | LevelName::Hidden => "Nothing running",
         }
         .to_string();
-        let mut notes = vec![memory.text.clone()];
+        // The tooltip drops notes from the end when the list needs room, so
+        // N8's memory goes last: it is the first to give way (D34).
+        let mut notes = Vec::new();
         if self.legacy {
-            notes.push("Watching only: the PowerShell N8 Tray manages apps".into());
+            notes.push(WATCHING_NOTE.to_string());
         }
         if failed_at.is_some() {
             notes.push(FAILURE_NOTE.into());
         }
+        notes.push(memory.text.clone());
         let tooltip = crate::tooltip::format(
             &format!("N8 Tray: {headline}"),
             &counts.shown_running,
@@ -1956,41 +1937,12 @@ impl Host {
                 launch_at_sign_in: settings.startup.launch_at_sign_in,
                 sign_in_foreign: self.sign_in_foreign,
                 notifications: settings.notifications,
-                memory_notifications: settings.memory.notify,
                 update_channel: channel_name(settings.updates.channel).into(),
                 check_updates: settings.updates.check,
                 error: self.settings.error.clone(),
                 file: self.settings.path.display().to_string(),
             },
             update,
-        }
-    }
-
-    fn memory_view(&self, n8_mb: f64) -> MemoryView {
-        let os = if cfg!(windows) {
-            "Windows"
-        } else if cfg!(target_os = "macos") {
-            "macOS"
-        } else {
-            "Linux"
-        };
-        let gib = |b: u64| b as f64 / (1024.0 * 1024.0 * 1024.0);
-        let free = self.memory.map(|m| gib(m.available_bytes));
-        let total = self.memory.map(|m| gib(m.total_bytes));
-        // The level with hysteresis and dwell, not the raw reading.
-        let level = self.display_pressure.level().unwrap_or(LevelName::Off);
-        let mut text = match (free, total) {
-            (Some(f), Some(t)) => format!("{os} {f:.1}/{t:.1} GB free"),
-            _ => format!("{os} memory unknown"),
-        };
-        text.push_str(&format!(" · N8 {}", crate::util::mb_text(n8_mb)));
-        MemoryView {
-            free_gb: free.map(|f| (f * 10.0).round() / 10.0),
-            total_gb: total.map(|t| (t * 10.0).round() / 10.0),
-            level,
-            n8_mb: round1(n8_mb),
-            system: os.to_string(),
-            text,
         }
     }
 }

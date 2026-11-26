@@ -6,6 +6,10 @@ An app that implements the contract installs a small manifest, reports its statu
 When N8 Tray runs, it picks the app up, shows it in one hub with every other app, and the app's own icon steps aside.
 Nothing is installed without the user asking.
 
+N8 Tray shows what its apps cost, not the whole PC's memory; for that, use a system monitor.
+Earlier versions turned the tray dot amber or red when the PC ran low on memory, had a "Low memory notifications" setting and showed the PC's free memory in "Details"; all three are gone.
+Apps that ask for it still get told when memory runs low, so they can free some.
+
 ## Status
 
 This repository is new and is being built in phases.
@@ -27,7 +31,7 @@ The PowerShell N8 Tray that runs on the owner's PC today lives in a private repo
 spec/
   contract-v2.md     the contract: manifest, status protocol, vocabulary, resources, ownership, security, lease
   schema/            its JSON Schemas (normative for the shape of every document)
-  examples/          manifests for VoiceDock, Commentary, Hotkeys, Lead Scraper and WSL Memory
+  examples/          manifests for VoiceDock, Commentary, Hotkeys and Lead Scraper
   fixtures/          valid and invalid documents every implementation is tested against
 crates/
   n8tray-contract/       the contract's Rust types and validation

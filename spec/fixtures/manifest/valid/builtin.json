@@ -1,0 +1,11 @@
+{
+  "contract": 2,
+  "id": "fake",
+  "name": "Fake",
+  "version": "0.1.0",
+  "description": "A built-in: compiled into the host, so it has no installDir and no run.",
+  "status": {
+    "type": "builtin"
+  },
+  "trayIcon": "none"
+}

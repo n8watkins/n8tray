@@ -52,6 +52,31 @@ fn pins_agree(name: &str, s: &HostSnapshot) {
     );
 }
 
+/// The tooltip is what the host would write for the fixture: its headline,
+/// the running apps in the main view, then the notes with N8's memory last
+/// (D34), so the native tray's pictures show real hover text.
+fn tooltip_agrees(name: &str, s: &HostSnapshot) {
+    let hub: Vec<_> = s.apps.iter().filter(|a| pins::in_hub(a)).collect();
+    let counts = pins::counts(&hub);
+    let mut notes = Vec::new();
+    if s.legacy_tray {
+        notes.push(n8tray_core::host::WATCHING_NOTE.to_string());
+    }
+    notes.push(s.memory.text.clone());
+    assert_eq!(
+        s.memory.text,
+        format!("N8 {} in all", n8tray_core::util::mb_text(s.memory.n8_mb)),
+        "{name}: memory.text"
+    );
+    let expected = n8tray_core::tooltip::format(
+        &format!("N8 Tray: {}", s.headline),
+        &counts.shown_running,
+        counts.more.as_ref().map_or(0, |m| m.running as usize),
+        &notes,
+    );
+    assert_eq!(s.tooltip, expected, "{name}: tooltip");
+}
+
 #[test]
 fn every_fixture_loads_and_round_trips() {
     let mut names = Vec::new();
@@ -75,6 +100,7 @@ fn every_fixture_loads_and_round_trips() {
         let reloaded: HostSnapshot = serde_json::from_value(again).expect("deserializes again");
         assert_eq!(snapshot, reloaded, "{name}: second round trip differs");
         pins_agree(&name, &snapshot);
+        tooltip_agrees(&name, &snapshot);
         names.push(name);
     }
     names.sort();

@@ -237,8 +237,8 @@ mod tests {
             r#"{ "schemaVersion": 2, "id": "old", "name": "Old" }"#,
         );
         write(
-            "wslmemory.json",
-            r#"{ "contract": 2, "id": "wslmemory", "name": "WSL Memory", "version": "1.0.0", "status": { "type": "builtin" } }"#,
+            "system.json",
+            r#"{ "contract": 2, "id": "system", "name": "System", "version": "1.0.0", "status": { "type": "builtin" } }"#,
         );
         write("notes.txt", "not a manifest");
         write(".hidden.json", "{}");
@@ -252,11 +252,11 @@ mod tests {
                 ProblemKind::Invalid,
                 ProblemKind::NewerContract,
                 ProblemKind::ContractOne,
-                ProblemKind::Invalid,
                 ProblemKind::Builtin,
+                ProblemKind::Invalid,
             ]
         );
-        assert!(found.problems[3].message.contains("id-file-name"));
+        assert!(found.problems[4].message.contains("id-file-name"));
         assert_eq!(
             found.problems[1].message,
             "Needs a newer N8 Tray (contract 3)"

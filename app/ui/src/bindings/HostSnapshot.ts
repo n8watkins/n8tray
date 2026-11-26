@@ -10,7 +10,7 @@ import type { UpdateView } from "./UpdateView";
 
 export type HostSnapshot = { version: string, 
 /**
- * The worst level of every app and of system memory.
+ * The worst level of every app in the hub.
  */
 level: LevelName, 
 /**
