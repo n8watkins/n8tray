@@ -454,9 +454,9 @@ This entry records how the kit answers it; `native/ui/README.md` is the rulebook
 - A focus request by app id (`RowFocus.to-id`) stays pending until a row takes it, and a row checks for one when it is created: after a reorder, the moved rows are new instances that exist only from the next layout, which a `changed` handler never sees.
 - Each view module lists its golden pictures (`SHOTS`: fixture, app, density, height), rendered in the shell's own window, so a lane adds states without touching the gallery's lists or the shared fixtures.
 - Release builds compile `ui/main.slint` alone; debug and test builds compile `ui/debug.slint`, which adds the widget gallery in the same compilation, so both share their Rust types.
-  The Native CI job checks that the release exe holds none of the gallery's own words.
+  The Native CI job checks the Rust code Slint generated for each build: the test build's must have the gallery's component (so the check can fail) and the release build's must not.
   Measured on Windows (release, LTO, stripped): the exe is 27,452,416 bytes, 24,064 smaller than main's CI build (27,476,480).
-  Link-time optimisation had already dropped most of the gallery from release builds, since nothing there creates it: neither exe holds the gallery's words, while the test build does, which is what the CI check tells apart.
+  Link-time optimisation had already dropped most of the gallery from release builds, since nothing there creates it: neither exe holds the gallery's words, so looking in the exe could never fail, and the check reads the generated code instead.
 - The scroll area brings a focused control into view; only `in-bar` keeps a bar's control from moving the list, since the position check cannot tell a bar's control from content once the list is scrolled.
   So every control of a view is in a bar or in its `ScrollArea`, and `view::gallery::tests::tab_through` checks a view for it.
 - Table cells wrap as `td` does, with number columns keeping their width beside a long name, and key-value values wrap instead of eliding (a fixed `height` on any text in a row capped the row at one line).

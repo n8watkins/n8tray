@@ -335,20 +335,30 @@ jobs:
           if-no-files-found: ignore
       - run: cargo build --manifest-path native/Cargo.toml --release --locked
       # Release builds compile ui/main.slint without the widget gallery
-      # (build.rs, D36): none of the gallery's own words may be in the exe.
+      # (build.rs, D36). The check reads the Rust code Slint generated for
+      # each build: the test build's (ui/debug.slint) must have the gallery's
+      # component, so the check can fail, and the release build's
+      # (ui/main.slint) must not. The exe itself proves nothing: link-time
+      # optimisation drops an unused gallery's text either way.
       - name: The release build carries no gallery
         shell: bash
         run: |
-          exe=native/target/release/n8tray-native
-          [ -f "$exe.exe" ] && exe="$exe.exe"
-          for marker in "N8 Tray widgets" "Bars and a scrolling list"; do
-            grep -qF "$marker" native/ui/gallery.slint || { echo "::error::$marker is not in gallery.slint any more"; exit 1; }
-            if grep -qaF "$marker" "$exe"; then
-              echo "::error::$exe contains the gallery's \"$marker\""
-              exit 1
-            fi
-          done
-          ls -l "$exe"
+          newest() { ls -t "$1"/build/n8tray-native-*/out/"$2" 2>/dev/null | head -1; }
+          debug=$(newest native/target/debug debug.rs)
+          release=$(newest native/target/release main.rs)
+          if [ -z "$debug" ] || [ -z "$release" ]; then
+            echo "::error::Slint's generated code was not found (debug: '$debug', release: '$release')"
+            exit 1
+          fi
+          if ! grep -q "struct InnerGallery" "$debug"; then
+            echo "::error::The test build's $debug has no gallery: the check below would prove nothing"
+            exit 1
+          fi
+          if grep -q "struct InnerGallery" "$release"; then
+            echo "::error::The release build's $release contains the widget gallery"
+            exit 1
+          fi
+          echo "Gallery in $debug, none in $release"
       - if: runner.os == 'Windows'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
