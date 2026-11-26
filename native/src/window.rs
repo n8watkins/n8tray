@@ -11,18 +11,19 @@
 //! visible until it is dropped.
 #![forbid(unsafe_code)]
 
-use std::rc::Rc;
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 use n8tray_core::host::Command;
-use n8tray_core::model::{HostSnapshot, LevelName};
+use n8tray_core::model::HostSnapshot;
 use n8tray_core::placement::{self, Rect};
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::ComponentHandle;
 use tracing::{info, warn};
 
 use crate::life::{Life, Step, WhenHidden};
-use crate::ui::{AppLine, HubWindow};
+use crate::ui::{FlyoutWindow, Nav, Theme, View};
+use crate::view::confirm::{self, Press};
+use crate::view::router::{self, Escape, Models, Router};
 
 /// How long a hidden window is kept before it is dropped (D17).
 pub const KEEP_HIDDEN: Duration = Duration::from_secs(10);
@@ -40,14 +41,20 @@ pub fn when_hidden_from_env() -> WhenHidden {
 
 pub struct Hub {
     life: Life,
-    ui: Option<HubWindow>,
+    ui: Option<FlyoutWindow>,
     hwnd: Option<isize>,
     /// The tray icon's rectangle, in physical pixels.
     anchor: Option<Rect>,
     wait: slint::Timer,
     retire: slint::Timer,
     trim: slint::Timer,
+    /// Fires when an armed action stops waiting for its second click.
+    disarm: slint::Timer,
     host: Option<Sender<Command>>,
+    /// Which view shows, the armed actions and the icons.
+    router: Router,
+    /// The snapshot the window shows.
+    latest: Option<HostSnapshot>,
 }
 
 impl Hub {
@@ -60,12 +67,98 @@ impl Hub {
             wait: slint::Timer::default(),
             retire: slint::Timer::default(),
             trim: slint::Timer::default(),
+            disarm: slint::Timer::default(),
             host: None,
+            router: Router::default(),
+            latest: None,
         }
     }
 
     pub fn set_host(&mut self, host: Sender<Command>) {
         self.host = Some(host);
+    }
+
+    /// Fills the view that shows from the latest snapshot.
+    fn fill(&mut self) {
+        let (Some(ui), Some(snapshot)) = (&self.ui, &self.latest) else {
+            return;
+        };
+        self.router.fill(ui, snapshot);
+    }
+
+    /// A view asked for another (`Nav.go`).
+    pub fn go(&mut self, view: View, id: &str) {
+        self.router.go(view, id);
+        self.fill();
+        self.place(false);
+    }
+
+    /// Back (`Nav.back`).
+    pub fn back(&mut self) {
+        self.router.back();
+        self.fill();
+        self.place(false);
+    }
+
+    /// Escape: back, or in the hub hide the window.
+    pub fn escape(&mut self) {
+        match self.router.escape() {
+            Escape::Hide => self.hide(false),
+            Escape::Back => {
+                self.fill();
+                self.place(false);
+            }
+        }
+    }
+
+    /// A click on an action of an app (or of one of its components): it
+    /// runs, or it is armed for a second click when it asks to confirm. The
+    /// armed state is the router's, by app and action, so it survives a
+    /// refresh or a reordered list.
+    pub fn press_action(&mut self, app: &str, action: &str, component: Option<&str>) {
+        let Some(found) = self
+            .latest
+            .as_ref()
+            .and_then(|s| s.apps.iter().find(|a| a.id == app))
+            .and_then(|a| a.actions.iter().find(|x| x.id == action))
+        else {
+            warn!("No action {action} for {app}");
+            return;
+        };
+        let now = Instant::now();
+        let key = confirm::key(app, action, component);
+        match self.router.confirms.press(key, found.confirm, now) {
+            Press::Run => {
+                if let Some(host) = &self.host {
+                    let _ = host.send(crate::commands::module_action(
+                        app.into(),
+                        action.into(),
+                        component.map(String::from),
+                    ));
+                }
+            }
+            Press::Armed => {}
+        }
+        self.fill();
+        self.arm_disarm(now);
+    }
+
+    /// Fills again when the next armed action stops waiting.
+    fn arm_disarm(&mut self, now: Instant) {
+        if let Some(at) = self.router.confirms.next_expiry() {
+            self.disarm.start(
+                slint::TimerMode::SingleShot,
+                at.saturating_duration_since(now) + Duration::from_millis(10),
+                || {
+                    crate::shell::with(|s| {
+                        if s.hub.router.confirms.expire(Instant::now()) {
+                            s.hub.fill();
+                        }
+                        s.hub.arm_disarm(Instant::now());
+                    })
+                },
+            );
+        }
     }
 
     /// Testing on a PC someone uses: shown without taking the focus.
@@ -123,8 +216,9 @@ impl Hub {
 
     /// The snapshot changed while the window is open.
     pub fn refresh(&mut self, snapshot: &HostSnapshot) {
-        if let (Some(ui), true) = (&self.ui, self.life.visible()) {
-            fill(ui, Some(snapshot));
+        self.latest = Some(snapshot.clone());
+        if self.ui.is_some() && self.life.visible() {
+            self.fill();
             self.place(false);
         }
     }
@@ -153,6 +247,8 @@ impl Hub {
                 }
                 Step::Create => match create() {
                     Ok(ui) => {
+                        self.router.reset();
+                        router::wire(&ui);
                         self.ui = Some(ui);
                         self.hwnd = None;
                     }
@@ -163,9 +259,10 @@ impl Hub {
                     }
                 },
                 Step::Fill => {
-                    if let Some(ui) = &self.ui {
-                        fill(ui, snapshot);
+                    if let Some(snapshot) = snapshot {
+                        self.latest = Some(snapshot.clone());
                     }
+                    self.fill();
                 }
                 Step::WaitForNative => {
                     self.wait
@@ -218,6 +315,13 @@ impl Hub {
 
     fn reveal_native(&mut self, activate: bool) {
         let Some(hwnd) = self.hwnd else { return };
+        // The theme and High Contrast as they are now, on every reveal.
+        if let Some(ui) = &self.ui {
+            crate::view::theme::apply(
+                &ui.global::<Theme>(),
+                &crate::view::theme::for_window(ui.window()),
+            );
+        }
         self.place(true);
         if activate {
             n8tray_platform::window::show_active(hwnd);
@@ -240,10 +344,9 @@ impl Hub {
         self.hwnd = Some(hwnd);
         self.life.native_found();
         let Some(ui) = &self.ui else { return };
-        crate::view::theme::apply!(
-            ui.global::<crate::ui::Theme>(),
-            crate::ui::SystemColors,
-            crate::view::theme::for_window(ui.window())
+        crate::view::theme::apply(
+            &ui.global::<Theme>(),
+            &crate::view::theme::for_window(ui.window()),
         );
         listen(ui);
         // D25: a frameless Tauri window kept 7 px invisible borders; say what
@@ -283,7 +386,10 @@ impl Hub {
         // area by the taskbar, bottom-right by default.
         let anchor = anchor.unwrap_or(Rect::new(work.right(), work.bottom(), 1, 1));
         let scale = monitor.scale;
-        let content = f64::from(ui.get_content_height()).clamp(80.0, 4000.0);
+        // As tall as the view wants, up to the height-limit setting; the
+        // view's scroll area takes the rest.
+        let limit = f64::from(ui.global::<Theme>().get_height_limit());
+        let content = f64::from(ui.get_content_height()).clamp(80.0, limit.max(80.0));
         let width = (WIDTH * scale).round() as i32;
         let wanted = (content * scale).round() as i32;
         let room = placement::place(width, wanted, anchor, screen, work, placement::GAP).max_height;
@@ -318,9 +424,14 @@ impl Hub {
     }
 }
 
-fn create() -> Result<HubWindow, slint::PlatformError> {
+fn create() -> Result<FlyoutWindow, slint::PlatformError> {
     let started = Instant::now();
-    let ui = HubWindow::new()?;
+    let ui = FlyoutWindow::new()?;
+    // Navigation, on a later turn: the views ask while Slint handles a click.
+    let nav = ui.global::<Nav>();
+    nav.on_go(|view, id| crate::shell::defer(move |s| s.hub.go(view, &id)));
+    nav.on_back(|| crate::shell::defer(|s| s.hub.back()));
+    nav.on_close(|| crate::shell::defer(|s| s.hub.hide(false)));
     // Slint creates the native window here, off screen and not activated
     // (the attributes in `main.rs`); `adopt` hides it right away.
     ui.show()?;
@@ -331,55 +442,10 @@ fn create() -> Result<HubWindow, slint::PlatformError> {
     Ok(ui)
 }
 
-fn level_name(level: LevelName) -> &'static str {
-    match level {
-        LevelName::Hidden => "hidden",
-        LevelName::Off => "off",
-        LevelName::Ok => "ok",
-        LevelName::Attention => "attention",
-        LevelName::Problem => "problem",
-    }
-}
-
-/// The placeholder's text: the level, the headline and each app.
-pub fn lines(snapshot: &HostSnapshot) -> (String, String, Vec<(String, String)>) {
-    let apps = snapshot
-        .apps
-        .iter()
-        .filter(|a| a.hosted && a.level != LevelName::Hidden)
-        .map(|a| (a.name.clone(), a.pending.clone().unwrap_or(a.words.clone())))
-        .collect();
-    (
-        level_name(snapshot.level).into(),
-        snapshot.headline.clone(),
-        apps,
-    )
-}
-
-fn fill(ui: &HubWindow, snapshot: Option<&HostSnapshot>) {
-    let Some(snapshot) = snapshot else {
-        ui.set_level("off".into());
-        ui.set_headline("Starting".into());
-        ui.set_apps(ModelRc::default());
-        return;
-    };
-    let (level, headline, apps) = lines(snapshot);
-    ui.set_level(level.into());
-    ui.set_headline(headline.into());
-    let apps: Vec<AppLine> = apps
-        .into_iter()
-        .map(|(name, words)| AppLine {
-            name: name.into(),
-            words: words.into(),
-        })
-        .collect();
-    ui.set_apps(ModelRc::from(Rc::new(VecModel::from(apps))));
-}
-
 /// Focus loss, Escape, a close request and a scale change. Each is handled
 /// on a later turn of the event loop: Win32 sends some of them while the
 /// shell is busy showing or hiding the window.
-fn listen(ui: &HubWindow) {
+fn listen(ui: &FlyoutWindow) {
     use slint::winit_030::winit::event::{ElementState, WindowEvent};
     use slint::winit_030::winit::keyboard::{Key, NamedKey};
     use slint::winit_030::{EventResult, WinitWindowAccessor};
@@ -392,7 +458,8 @@ fn listen(ui: &HubWindow) {
             if event.state == ElementState::Pressed
                 && event.logical_key == Key::Named(NamedKey::Escape) =>
         {
-            crate::shell::defer(|s| s.hub.hide(false));
+            // Back, or in the hub hide the window (today's Escape).
+            crate::shell::defer(|s| s.hub.escape());
             EventResult::PreventDefault
         }
         WindowEvent::CloseRequested => {
@@ -408,7 +475,7 @@ fn listen(ui: &HubWindow) {
 }
 
 /// The native window's handle (an `HWND` on Windows).
-fn native_handle(ui: &HubWindow) -> Option<isize> {
+fn native_handle(ui: &FlyoutWindow) -> Option<isize> {
     use slint::winit_030::WinitWindowAccessor;
     use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
     ui.window()
@@ -438,7 +505,6 @@ pub fn test_anchor(value: Option<&str>) -> Option<(Rect, Option<Rect>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::fixture;
 
     #[test]
     fn a_test_anchor_names_an_icon_and_maybe_a_work_area() {
@@ -459,24 +525,6 @@ mod tests {
         assert_eq!(
             test_anchor(Some("1,2,3,4;nonsense")),
             Some((Rect::new(1, 2, 3, 4), None))
-        );
-    }
-
-    #[test]
-    fn the_placeholder_shows_the_level_headline_and_hosted_apps() {
-        let s = fixture("trouble");
-        let (level, headline, apps) = lines(&s);
-        assert_eq!(level, level_name(s.level));
-        assert_eq!(headline, s.headline);
-        let hosted: Vec<_> = s
-            .apps
-            .iter()
-            .filter(|a| a.hosted && a.level != LevelName::Hidden)
-            .map(|a| a.name.clone())
-            .collect();
-        assert_eq!(
-            apps.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>(),
-            hosted
         );
     }
 }

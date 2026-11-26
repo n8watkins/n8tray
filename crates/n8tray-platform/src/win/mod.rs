@@ -5,6 +5,7 @@
 pub mod contrast;
 pub mod gpu;
 pub mod job;
+pub mod locale;
 pub mod process;
 pub mod single;
 pub mod system;

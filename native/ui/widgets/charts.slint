@@ -99,6 +99,7 @@ export component ChartLegend {
         padding-top: 2px;
         spacing: 8px;
 
+        // `justify-content: space-between`.
         Text {
             text: root.memory;
             font-size: Theme.text-group;
@@ -106,8 +107,13 @@ export component ChartLegend {
             height: self.font-size * Theme.line-height;
             vertical-alignment: center;
             overflow: elide;
+            horizontal-stretch: 0;
+        }
+        Rectangle {
+            horizontal-stretch: 1;
         }
         Text {
+            horizontal-stretch: 0;
             text: root.cpu;
             font-size: Theme.text-group;
             color: Theme.cpu;

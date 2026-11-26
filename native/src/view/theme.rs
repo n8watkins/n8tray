@@ -1,31 +1,42 @@
 //! Which palette a window draws with: the system's app theme (light or
-//! dark), `N8TRAY_THEME` over it, and High Contrast's system colours, read
-//! when the window is created. `apply!` sets them on a window's `Theme`
-//! global (`ui/theme.slint`).
+//! dark), `N8TRAY_THEME` over it, and High Contrast's system colours. The
+//! window reads them again every time it is revealed, so a change of theme
+//! or of High Contrast shows the next time it opens.
 #![forbid(unsafe_code)]
 
 use n8tray_platform::contrast::{Rgb, SystemColors};
 
+use crate::ui::{SystemColors as UiColors, Theme};
+
 /// The palette for one window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Choice {
     pub dark: bool,
     /// The system colours while High Contrast is on.
     pub contrast: Option<SystemColors>,
+    /// "Segoe UI Variable Text" where Windows has it (Windows 11), else
+    /// "Segoe UI".
+    pub font: &'static str,
 }
 
-/// Windows 11's "Night sky" contrast theme: what `N8TRAY_THEME=contrast`
-/// shows on a PC without High Contrast, and the gallery's.
+/// Windows 11's "Night sky" contrast theme, exactly as
+/// `C:\Windows\Resources\Ease of Access Themes\hc2.theme` has it: what
+/// `N8TRAY_THEME=contrast` shows on a PC without High Contrast, and the
+/// gallery's.
 pub const NIGHT_SKY: SystemColors = SystemColors {
-    canvas: Rgb(0x00, 0x00, 0x00),
-    canvas_text: Rgb(0xff, 0xff, 0xff),
-    highlight: Rgb(0x8e, 0xe3, 0xf0),
-    highlight_text: Rgb(0x26, 0x3b, 0x50),
-    button_face: Rgb(0x00, 0x00, 0x00),
-    button_text: Rgb(0xff, 0xff, 0xff),
-    gray_text: Rgb(0xa6, 0xa6, 0xa6),
-    link_text: Rgb(0xff, 0xff, 0x00),
+    canvas: Rgb(0, 0, 0),
+    canvas_text: Rgb(255, 255, 255),
+    highlight: Rgb(214, 180, 253),
+    highlight_text: Rgb(43, 43, 43),
+    button_face: Rgb(0, 0, 0),
+    button_text: Rgb(255, 238, 50),
+    gray_text: Rgb(166, 166, 166),
+    link_text: Rgb(128, 128, 255),
 };
+
+/// The font stack of style.css: "Segoe UI Variable Text", then "Segoe UI".
+pub const FONT: &str = "Segoe UI Variable Text";
+pub const FONT_FALLBACK: &str = "Segoe UI";
 
 /// `N8TRAY_THEME=light|dark` picks the app theme, `contrast` forces High
 /// Contrast (Night sky unless it is really on); else the system's app
@@ -35,23 +46,38 @@ pub fn choose(
     system_dark: Option<bool>,
     contrast: Option<SystemColors>,
 ) -> Choice {
+    let font = font();
     match env {
         Some("light") => Choice {
             dark: false,
             contrast,
+            font,
         },
         Some("dark") => Choice {
             dark: true,
             contrast,
+            font,
         },
         Some("contrast") => Choice {
             dark: system_dark.unwrap_or(true),
             contrast: Some(contrast.unwrap_or(NIGHT_SKY)),
+            font,
         },
         _ => Choice {
             dark: system_dark.unwrap_or(true),
             contrast,
+            font,
         },
+    }
+}
+
+/// The first of the font stack this PC has. Slint takes one family, so the
+/// stack is resolved here: Segoe UI Variable ships with Windows 11 only.
+pub fn font() -> &'static str {
+    let windows = std::env::var_os("WINDIR").map(std::path::PathBuf::from);
+    match windows {
+        Some(dir) if !dir.join("Fonts").join("SegUIVar.ttf").exists() => FONT_FALLBACK,
+        _ => FONT,
     }
 }
 
@@ -59,11 +85,11 @@ pub fn choose(
 /// High Contrast as the platform reads it.
 pub fn for_window(window: &slint::Window) -> Choice {
     use slint::winit_030::WinitWindowAccessor;
-    use slint::winit_030::winit::window::Theme;
+    use slint::winit_030::winit::window::Theme as WinitTheme;
     let system_dark = window
         .with_winit_window(|w| w.theme())
         .flatten()
-        .map(|t| t == Theme::Dark);
+        .map(|t| t == WinitTheme::Dark);
     choose(
         std::env::var("N8TRAY_THEME").ok().as_deref(),
         system_dark,
@@ -76,31 +102,25 @@ pub fn color(rgb: Rgb) -> slint::Color {
     slint::Color::from_rgb_u8(rgb.0, rgb.1, rgb.2)
 }
 
-/// Sets a choice on a window's `Theme` global: `apply!(ui.global::<Theme>(),
-/// SystemColors, choice)`, with the `Theme` and `SystemColors` of the
-/// window's own generated module.
-macro_rules! apply {
-    ($theme:expr, $colors:ty, $choice:expr) => {{
-        let theme = $theme;
-        let choice: $crate::view::theme::Choice = $choice;
-        theme.set_dark(choice.dark);
-        theme.set_contrast(choice.contrast.is_some());
-        if let Some(c) = choice.contrast {
-            use $crate::view::theme::color;
-            let mut system = <$colors>::default();
-            system.canvas = color(c.canvas);
-            system.canvas_text = color(c.canvas_text);
-            system.highlight = color(c.highlight);
-            system.highlight_text = color(c.highlight_text);
-            system.button_face = color(c.button_face);
-            system.button_text = color(c.button_text);
-            system.gray_text = color(c.gray_text);
-            system.link_text = color(c.link_text);
-            theme.set_system(system);
-        }
-    }};
+/// Sets a choice on a window's `Theme` global (the shell's window or the
+/// gallery: `apply(&ui.global::<Theme>(), &choice)`).
+pub fn apply(theme: &Theme<'_>, choice: &Choice) {
+    theme.set_dark(choice.dark);
+    theme.set_contrast(choice.contrast.is_some());
+    theme.set_font_family(choice.font.into());
+    if let Some(c) = choice.contrast {
+        theme.set_system(UiColors {
+            canvas: color(c.canvas),
+            canvas_text: color(c.canvas_text),
+            highlight: color(c.highlight),
+            highlight_text: color(c.highlight_text),
+            button_face: color(c.button_face),
+            button_text: color(c.button_text),
+            gray_text: color(c.gray_text),
+            link_text: color(c.link_text),
+        });
+    }
 }
-pub(crate) use apply;
 
 #[cfg(test)]
 mod tests {
@@ -136,10 +156,15 @@ mod tests {
     }
 
     #[test]
+    fn the_font_is_one_of_the_stack() {
+        assert!([FONT, FONT_FALLBACK].contains(&font()));
+    }
+
+    #[test]
     fn colours_reach_slint_unchanged() {
         assert_eq!(
-            color(Rgb(0x8e, 0xe3, 0xf0)),
-            slint::Color::from_rgb_u8(0x8e, 0xe3, 0xf0)
+            color(Rgb(0xd6, 0xb4, 0xfd)),
+            slint::Color::from_rgb_u8(0xd6, 0xb4, 0xfd)
         );
     }
 }

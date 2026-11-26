@@ -28,17 +28,21 @@ export global Theme {
     in-out property <bool> dark: true;
     // High Contrast is on: the system's colours replace the palette.
     in-out property <bool> contrast: false;
-    // Windows' "Night sky" theme until Rust reads the real one.
+    // Windows 11's "Night sky" contrast theme (hc2.theme, exactly) until
+    // Rust reads the real colours.
     in-out property <SystemColors> system: {
         canvas: #000000,
         canvas-text: #ffffff,
-        highlight: #8ee3f0,
-        highlight-text: #263b50,
+        highlight: #d6b4fd,
+        highlight-text: #2b2b2b,
         button-face: #000000,
-        button-text: #ffffff,
+        button-text: #ffee32,
         gray-text: #a6a6a6,
-        link-text: #ffff00,
+        link-text: #8080ff,
     };
+    // The window-height setting: the most the window grows to before its
+    // list scrolls (`height-short`, `height-medium` or `height-tall`).
+    in-out property <length> height-limit: 400px;
     // Compact: one line per app (a setting; Normal by default). Widgets take
     // it as the default of their own `compact` property.
     in-out property <bool> compact: false;
@@ -69,11 +73,13 @@ export global Theme {
     out property <color> spark-fill: contrast ? transparent : dark ? #60cdff1f : #005fb81a;
     out property <color> cpu: contrast ? system.canvas-text : dark ? #f2b84b : #8f5400;
     out property <color> track: contrast ? system.canvas : dark ? #ffffff1a : #e3e6ea;
-    // High Contrast only: what CSS forces on buttons, disabled text and
-    // links, and the border a hovered control gets instead of a fill.
+    // High Contrast only: what CSS forces on buttons and disabled controls
+    // (GrayText instead of the faded look), and the border a hovered control
+    // gets instead of a fill. Links stay `--accent`, Highlight under High
+    // Contrast, as today's window has them.
     out property <color> button-text: contrast ? system.button-text : fg;
-    out property <color> disabled-text: contrast ? system.gray-text : fg;
-    out property <color> link: contrast ? system.link-text : accent;
+    out property <color> disabled-text: system.gray-text;
+    out property <color> link: accent;
     out property <color> hover-border: contrast ? system.highlight : transparent;
     // Under High Contrast, panels and banners get a real border.
     out property <color> frame: contrast ? system.canvas-text : transparent;
@@ -96,11 +102,24 @@ export global Theme {
     in-out property <float> line-factor: 1.4 / 1.33;
     out property <int> weight-normal: 400;
     out property <int> weight-bold: 600;
+    // The Compact rows' memory figure (approved 2026-11-26).
+    out property <int> weight-heavy: 700;
+    // The watch note's paragraph (`.banner.watch { line-height: 1.45 }`).
+    out property <float> line-height-note: 1.45;
+    // A disabled control: faded, or under High Contrast drawn in GrayText.
+    public pure function faded(enabled: bool, amount: float) -> float {
+        return enabled || contrast ? 1 : amount;
+    }
     // `letter-spacing: 0.02em` of the 11px headings.
     out property <length> group-spacing: 0.22px;
 
     // Sizes, radii and gaps.
     out property <length> window-width: 380px;
+    // Gaps of the window's parts: banners and sections sit 10 px from the
+    // sides; sections are 6 px apart, banners 8 px.
+    out property <length> gutter: 10px;
+    out property <length> section-gap: 6px;
+    out property <length> banner-gap: 8px;
     // The window-height setting's presets (logical pixels).
     out property <length> height-short: 400px;
     out property <length> height-medium: 500px;

@@ -10,7 +10,8 @@ import { AppIcon } from "status.slint";
 // collapse between two sections).
 export component Section inherits Rectangle {
     in property <string> label;
-    accessible-role: groupbox;
+    // A labelled region, as today's `<section aria-labelledby>`.
+    accessible-role: AccessibleRole.region;
     accessible-label: root.label;
     background: Theme.card;
     border-width: 1px;
@@ -26,9 +27,16 @@ export component Section inherits Rectangle {
 }
 
 // A section's title (`.section h2`): small capitals in the faint colour,
-// with links at the right (put `HeadLink`s as children).
+// with links at the right (put `HeadLink`s as children and set
+// `has-links`, which lines their words up with the title's, as
+// `align-items: baseline`). The History view's variant (`plain`) shows the
+// app's small icon and its name at 12 px in the text colour.
 export component SectionHeading {
     in property <string> text;
+    in property <bool> has-links;
+    in property <bool> plain;
+    in property <image> icon;
+    in property <bool> show-icon;
     accessible-role: AccessibleRole.text;
     accessible-label: root.text;
     min-height: l.preferred-height;
@@ -36,17 +44,32 @@ export component SectionHeading {
     l := HorizontalLayout {
         padding-left: 12px;
         padding-right: 12px;
-        padding-top: 9px;
+        // The links' text sits 1.5 px lower in their 1 px padded box: the
+        // row starts that much higher so both baselines meet.
+        padding-top: root.has-links && !root.plain ? 7.5px : 9px;
         padding-bottom: 4px;
-        spacing: 2px;
+        spacing: root.plain ? 8px : 2px;
 
-        Label {
-            text: root.text.to-uppercase();
-            font-size: Theme.text-group;
-            font-weight: Theme.weight-bold;
-            letter-spacing: Theme.group-spacing;
-            color: Theme.faint;
+        if root.plain && root.show-icon: VerticalLayout {
+            alignment: center;
+            AppIcon {
+                source: root.icon;
+                size: Theme.app-icon-small;
+                show-dot: false;
+                surface: Theme.card;
+            }
+        }
+        VerticalLayout {
+            alignment: root.plain ? LayoutAlignment.center : LayoutAlignment.start;
+            padding-top: root.has-links && !root.plain ? 1.5px : 0px;
             horizontal-stretch: 1;
+            Label {
+                text: root.plain ? root.text : root.text.to-uppercase();
+                font-size: root.plain ? Theme.text-small : Theme.text-group;
+                font-weight: Theme.weight-bold;
+                letter-spacing: root.plain ? 0px : Theme.group-spacing;
+                color: root.plain ? Theme.fg : Theme.faint;
+            }
         }
         @children
     }
@@ -131,13 +154,16 @@ export component Switch {
         }
 
         Rectangle {
-            opacity: root.enabled ? 1 : 0.4;
+            property <bool> gray: !root.enabled && Theme.contrast;
+            opacity: Theme.faded(root.enabled, 0.4);
             border-radius: 9px;
             border-width: 1px;
-            border-color: root.checked ? Theme.accent
+            border-color: self.gray ? Theme.disabled-text
+                : root.checked ? Theme.accent
                 : Theme.contrast ? Theme.button-text
                 : Theme.muted;
-            background: root.checked ? Theme.accent : transparent;
+            background: self.gray ? (root.checked ? Theme.disabled-text : transparent)
+                : root.checked ? Theme.accent : transparent;
 
             knob := Rectangle {
                 x: root.checked ? 20px : 4px;
@@ -145,7 +171,8 @@ export component Switch {
                 width: 10px;
                 height: 10px;
                 border-radius: 5px;
-                background: root.checked ? Theme.on-accent
+                background: parent.gray ? (root.checked ? Theme.system.canvas : Theme.disabled-text)
+                    : root.checked ? Theme.on-accent
                     : Theme.contrast ? Theme.button-text
                     : Theme.muted;
                 animate x { duration: 120ms; }

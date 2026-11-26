@@ -1,85 +1,70 @@
 // Buttons: the square glyph button (`.iconbtn`), the small text button
-// (`.small-btn`), the footer's links (`.link`) and a section heading's links
-// (`.h-links button`). An action that asks for confirmation takes a second
-// click within 4 seconds, as today's ActionButton.
+// (`.small-btn`), the bottom bar's and a panel's links (`.link`) and a
+// section heading's links (`.h-links button`).
+//
+// An action that asks for confirmation takes a second click within 4
+// seconds. The widgets only show it: whether a button is armed, its words
+// and its tooltip come from Rust (`view::action` and `view::confirm`), held
+// by app and action id, so a refresh or a reordered list never drops the
+// armed state or moves it to another app.
 import { Theme } from "../theme.slint";
 import { Glyph, GlyphName, Label, Pressable } from "base.slint";
 
-// The arming of an action that asks for confirmation: the first click arms
-// it for 4 seconds, the second runs it.
-component Confirmation {
-    in property <bool> needed;
-    out property <bool> armed: self.is-armed;
-    in-out property <bool> is-armed;
-    callback run();
-
-    // A click: arm, or run (and disarm).
-    public function click() {
-        if root.needed && !root.is-armed {
-            root.is-armed = true;
-            return;
-        }
-        root.is-armed = false;
-        root.run();
-    }
-
-    Timer {
-        interval: Theme.confirm-window;
-        running: root.is-armed;
-        triggered => {
-            root.is-armed = false;
-        }
-    }
-}
-
 // A 28 px square button with a glyph (24 px when compact). `label` is what
-// a screen reader says ("Stop VoiceDock"); `tooltip` what the mouse shows.
+// a screen reader says ("Stop VoiceDock", "Confirm: Stop VoiceDock");
+// `tooltip` what the mouse shows.
 export component IconButton {
     in property <GlyphName> glyph;
     in property <length> glyph-size: Theme.glyph;
     in property <string> label;
     in property <string> tooltip;
     in property <bool> enabled: true;
-    // Asks for a second click within 4 seconds.
-    in property <bool> confirm;
+    // Waiting for the second click (red, as `.iconbtn.confirm`).
+    in property <bool> armed;
+    // In the title bar or the bottom bar: focusing it never scrolls the list.
+    in property <bool> in-bar;
     in property <bool> compact: Theme.compact;
     in property <bool> demo-hover;
     in property <bool> demo-pressed;
     in property <bool> demo-focus;
-    in property <bool> demo-armed;
-    out property <bool> armed: c.armed || root.demo-armed;
     callback clicked();
+    callback navigate(event: KeyEvent) -> EventResult;
+    callback focus-changed(has-focus: bool);
 
     width: root.compact ? Theme.icon-button-compact : Theme.icon-button;
     height: self.width;
     forward-focus: p;
     accessible-role: button;
-    accessible-label: root.armed ? "Confirm: " + root.label : root.label;
-    accessible-description: root.armed ? "Click again to confirm" : root.tooltip;
+    accessible-label: root.label;
+    accessible-description: root.tooltip;
     accessible-enabled: root.enabled;
     accessible-action-default => {
         if root.enabled {
-            c.click();
+            root.clicked();
         }
     }
 
-    c := Confirmation {
-        needed: root.confirm;
-        run => {
-            root.clicked();
-        }
+    public function focus-me() {
+        p.focus-me();
     }
 
     p := Pressable {
         width: 100%;
         height: 100%;
         enabled: root.enabled;
-        tooltip: root.armed ? "Click again to confirm" : root.tooltip;
+        tooltip: root.tooltip;
+        reveal: !root.in-bar;
         demo-hover: root.demo-hover;
         demo-pressed: root.demo-pressed;
         demo-focus: root.demo-focus;
         clicked => {
-            c.click();
+            root.clicked();
+        }
+        navigate(event) => {
+            root.navigate(event)
+        }
+        focus-changed(has) => {
+            root.focus-changed(has);
         }
 
         Rectangle {
@@ -90,12 +75,13 @@ export component IconButton {
                 : transparent;
             border-width: Theme.contrast ? 1px : 0px;
             border-color: p.hovered ? Theme.hover-border : transparent;
-            opacity: root.enabled ? 1 : 0.4;
+            opacity: Theme.faded(root.enabled, 0.4);
 
             Glyph {
                 name: root.glyph;
                 size: root.glyph-size;
-                colorize: root.armed ? Theme.problem
+                colorize: !root.enabled && Theme.contrast ? Theme.disabled-text
+                    : root.armed ? Theme.problem
                     : Theme.contrast ? Theme.button-text
                     : p.hovered ? Theme.fg
                     : Theme.muted;
@@ -104,32 +90,37 @@ export component IconButton {
     }
 }
 
-// A small text button (`.small-btn`), plain or primary. With `confirm`, the
-// first click turns it into "Confirm" for 4 seconds.
+// A small text button (`.small-btn`): plain, primary, or a toggle whose
+// chosen state looks primary (the History range buttons, `aria-pressed`).
+// Armed, it reads "Confirm" in the problem colour.
 export component SmallButton {
     in property <string> text;
-    // What a screen reader says, when more than the text ("Stop Kokoro of
-    // VoiceDock"); the text otherwise.
+    // What a screen reader says, when more than the text ("Stop Kokoro");
+    // the text otherwise.
     in property <string> label: root.text;
     in property <string> tooltip;
     in property <bool> primary;
     in property <bool> enabled: true;
-    in property <bool> confirm;
+    in property <bool> armed;
+    // A toggle (`aria-pressed`): `checked` draws it as primary.
+    in property <bool> checkable;
+    in property <bool> checked;
     in property <bool> demo-hover;
     in property <bool> demo-pressed;
     in property <bool> demo-focus;
-    in property <bool> demo-armed;
-    out property <bool> armed: c.armed || root.demo-armed;
+    property <bool> filled: root.primary || (root.checkable && root.checked);
     callback clicked();
 
     forward-focus: p;
     accessible-role: button;
-    accessible-label: root.armed ? "Confirm: " + root.label : root.label;
-    accessible-description: root.armed ? "Click again to confirm" : root.tooltip;
+    accessible-label: root.label;
+    accessible-description: root.tooltip;
     accessible-enabled: root.enabled;
+    accessible-checkable: root.checkable;
+    accessible-checked: root.checked;
     accessible-action-default => {
         if root.enabled {
-            c.click();
+            root.clicked();
         }
     }
     horizontal-stretch: 0;
@@ -138,23 +129,16 @@ export component SmallButton {
     preferred-width: l.preferred-width;
     preferred-height: l.preferred-height;
 
-    c := Confirmation {
-        needed: root.confirm;
-        run => {
-            root.clicked();
-        }
-    }
-
     p := Pressable {
         width: 100%;
         height: 100%;
         enabled: root.enabled;
-        tooltip: root.armed ? "Click again to confirm" : root.tooltip;
+        tooltip: root.tooltip;
         demo-hover: root.demo-hover;
         demo-pressed: root.demo-pressed;
         demo-focus: root.demo-focus;
         clicked => {
-            c.click();
+            root.clicked();
         }
 
         Rectangle {
@@ -162,10 +146,11 @@ export component SmallButton {
             border-width: 1px;
             border-color: root.armed ? Theme.problem
                 : Theme.contrast && p.hovered ? Theme.hover-border
-                : root.primary ? transparent
+                : !root.enabled && Theme.contrast ? Theme.disabled-text
+                : root.filled ? transparent
                 : Theme.line;
-            background: root.primary ? Theme.accent : p.hovered ? Theme.hover : Theme.bg;
-            opacity: root.enabled ? 1 : 0.45;
+            background: root.filled ? Theme.accent : p.hovered ? Theme.hover : Theme.bg;
+            opacity: Theme.faded(root.enabled, 0.45);
 
             // 3px 10px inside a 1px border.
             l := HorizontalLayout {
@@ -179,8 +164,9 @@ export component SmallButton {
                     text: root.armed ? "Confirm" : root.text;
                     font-size: Theme.text-small;
                     horizontal-alignment: center;
-                    color: root.armed ? Theme.problem
-                        : root.primary ? Theme.on-accent
+                    color: !root.enabled && Theme.contrast ? Theme.disabled-text
+                        : root.armed ? Theme.problem
+                        : root.filled ? Theme.on-accent
                         : Theme.button-text;
                 }
             }
@@ -196,6 +182,7 @@ export component LinkButton {
     in property <string> label: root.text;
     in property <string> tooltip;
     in property <bool> enabled: true;
+    in property <bool> in-bar;
     in property <bool> demo-hover;
     in property <bool> demo-focus;
     callback clicked();
@@ -221,6 +208,7 @@ export component LinkButton {
         height: 100%;
         enabled: root.enabled;
         tooltip: root.tooltip;
+        reveal: !root.in-bar;
         demo-hover: root.demo-hover;
         demo-focus: root.demo-focus;
         clicked => {
@@ -232,7 +220,7 @@ export component LinkButton {
             background: p.hovered ? Theme.hover : transparent;
             border-width: Theme.contrast ? 1px : 0px;
             border-color: p.hovered ? Theme.hover-border : transparent;
-            opacity: root.enabled ? 1 : 0.45;
+            opacity: Theme.faded(root.enabled, 0.45);
 
             l := HorizontalLayout {
                 padding-left: 8px;
@@ -246,25 +234,27 @@ export component LinkButton {
                     alignment: center;
                     Glyph {
                         name: root.glyph;
+                        colorize: !root.enabled && Theme.contrast ? Theme.disabled-text : Theme.muted;
                     }
                 }
                 Label {
                     text: root.text;
                     font-size: Theme.text-link;
-                    color: Theme.button-text;
+                    color: !root.enabled && Theme.contrast ? Theme.disabled-text : Theme.button-text;
                 }
             }
         }
     }
 }
 
-// The footer's "Start at sign-in": a link that is a switch, its glyph a
-// check or an empty box.
+// The bottom bar's "Start at sign-in": a link that is a switch, its glyph a
+// box, ticked or empty (approved 2026-11-26).
 export component LinkSwitch {
     in property <string> text;
     in property <string> tooltip;
     in property <bool> checked;
     in property <bool> enabled: true;
+    in property <bool> in-bar;
     in property <bool> demo-hover;
     in property <bool> demo-focus;
     callback toggled();
@@ -283,15 +273,67 @@ export component LinkSwitch {
     }
 
     link := LinkButton {
-        glyph: root.checked ? GlyphName.check : GlyphName.box;
+        glyph: root.checked ? GlyphName.box-check : GlyphName.box;
         text: root.text;
         tooltip: root.tooltip;
         enabled: root.enabled;
+        in-bar: root.in-bar;
         demo-hover: root.demo-hover;
         demo-focus: root.demo-focus;
         accessible-role: none;
         clicked => {
             root.toggled();
+        }
+    }
+}
+
+// A link standing on its own (the watch note's "Learn more"): accent and
+// underlined, as `.inline-link`, with the focus ring on the link only.
+export component TextLink {
+    in property <string> text;
+    in property <string> label: root.text;
+    in property <bool> expandable;
+    in property <bool> expanded;
+    in property <bool> demo-focus;
+    callback clicked();
+
+    forward-focus: p;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-expandable: root.expandable;
+    accessible-expanded: root.expanded;
+    accessible-action-default => {
+        root.clicked();
+    }
+    accessible-action-expand => {
+        root.clicked();
+    }
+    horizontal-stretch: 0;
+    min-width: t.preferred-width;
+    preferred-width: t.preferred-width;
+    height: t.height;
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        demo-focus: root.demo-focus;
+        ring-radius: 3px;
+        clicked => {
+            root.clicked();
+        }
+
+        t := Label {
+            text: root.text;
+            font-size: Theme.text-small;
+            color: Theme.link;
+            height: self.font-size * Theme.line-height-note;
+        }
+        Rectangle {
+            x: 0;
+            y: t.height / 2 + t.font-size * 0.5;
+            width: t.preferred-width;
+            height: 1px;
+            background: Theme.link;
         }
     }
 }
@@ -331,11 +373,10 @@ export component HeadLink {
             root.clicked();
         }
 
+        // No border under High Contrast: today's heading links have none.
         Rectangle {
             border-radius: 4px;
             background: root.pressed ? Theme.off-bg : transparent;
-            border-width: Theme.contrast ? 1px : 0px;
-            border-color: Theme.contrast && (p.hovered || root.pressed) ? Theme.hover-border : transparent;
 
             l := HorizontalLayout {
                 padding-left: 6px;

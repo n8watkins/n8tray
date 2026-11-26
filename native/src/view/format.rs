@@ -91,7 +91,8 @@ pub fn memory(mb: Option<f64>) -> String {
     match mb {
         None => String::new(),
         Some(mb) if mb >= 1000.0 => format!("{} GB", to_fixed(mb / 1024.0, 1)),
-        Some(mb) => format!("{} MB", js_round(mb)),
+        // `+ 0.0`: JavaScript writes a negative zero as "0".
+        Some(mb) => format!("{} MB", js_round(mb) + 0.0),
     }
 }
 
@@ -101,7 +102,7 @@ fn share(value: f64) -> String {
         let text = to_fixed(value, 1);
         text.strip_suffix(".0").map(String::from).unwrap_or(text)
     } else {
-        format!("{}", js_round(value))
+        format!("{}", js_round(value) + 0.0)
     }
 }
 
@@ -406,9 +407,122 @@ pub fn since(started_at: Option<&str>) -> String {
         return "-".into();
     };
     match chrono::DateTime::parse_from_rfc3339(text) {
-        Ok(at) => at.with_timezone(&chrono::Local).format("%H:%M").to_string(),
+        Ok(at) => {
+            let local = at.with_timezone(&chrono::Local);
+            use chrono::Timelike;
+            clock_time(
+                local.hour(),
+                local.minute(),
+                &n8tray_platform::locale::clock(),
+            )
+        }
         Err(_) => "-".into(),
     }
+}
+
+/// An hour and minute as today's `toLocaleTimeString([], { hour:
+/// "2-digit", minute: "2-digit" })` writes them for the user's clock:
+/// "14:05", or "02:05 PM" on a 12-hour clock (the marker where the user's
+/// time format puts it).
+pub fn clock_time(hour: u32, minute: u32, clock: &n8tray_platform::locale::Clock) -> String {
+    if !clock.twelve_hour {
+        return format!("{hour:02}:{minute:02}");
+    }
+    let marker = if hour < 12 { &clock.am } else { &clock.pm };
+    let h12 = match hour % 12 {
+        0 => 12,
+        h => h,
+    };
+    let time = format!("{h12:02}:{minute:02}");
+    if marker.is_empty() {
+        time
+    } else if clock.marker_first {
+        format!("{marker} {time}")
+    } else {
+        format!("{time} {marker}")
+    }
+}
+
+/// A chart's words for a screen reader and its legend: the panel's "Last 15
+/// minutes" (`span` None) or the history's ("24 hours", "7 days").
+pub struct ChartWords {
+    pub label: String,
+    pub memory: String,
+    pub cpu: String,
+}
+
+pub fn chart_words(
+    name: &str,
+    span: Option<&str>,
+    memory_mb: &[f64],
+    cpu_percent: &[f64],
+) -> ChartWords {
+    let mem_max = memory_mb.iter().copied().fold(0.0, f64::max);
+    let cpu_max = cpu_percent.iter().copied().fold(0.0, f64::max);
+    let (m, c) = (memory(Some(mem_max)), percent(Some(cpu_max)));
+    match span {
+        None => ChartWords {
+            label: format!("Memory over the last 15 minutes, at most {m}; CPU at most {c}"),
+            memory: format!("Memory, max {m}"),
+            cpu: format!("CPU, dashed, max {c}"),
+        },
+        Some(span) => ChartWords {
+            label: format!("{name} over the last {span}: memory at most {m}, CPU at most {c}"),
+            memory: format!("Memory, max {m}"),
+            cpu: format!("CPU, max {c}"),
+        },
+    }
+}
+
+/// The panel's figures line: "643 MB · 12% CPU", and what the app reports
+/// inside WSL.
+pub fn panel_figures(app: &AppView) -> String {
+    let parts: Vec<String> = [memory(app.memory_mb), cpu(app.cpu_percent)]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut line = parts.join(" · ");
+    if !line.is_empty()
+        && let Some(reported) = app.namespaced_mb.filter(|m| *m != 0.0)
+    {
+        line.push_str(&format!(
+            " · {} reported inside WSL",
+            memory(Some(reported))
+        ));
+    }
+    line
+}
+
+/// The details table's memory cell: what the app reports inside WSL with a
+/// `*` when it measures nothing itself, else its memory, else "-".
+pub fn details_memory(app: &AppView) -> String {
+    let reported = app.memory_mb.unwrap_or(0.0) == 0.0 && app.namespaced_mb.unwrap_or(0.0) > 0.0;
+    if reported {
+        format!("{}*", memory(app.namespaced_mb))
+    } else if app.memory_mb.is_some() {
+        memory(app.memory_mb)
+    } else {
+        "-".into()
+    }
+}
+
+/// A table row's words for a screen reader (Slint has no table roles):
+/// each column's title, then its cell ("Process voicedock-hub, Memory 643
+/// MB"). Columns without a title give their cell alone.
+pub fn table_row_label(titles: &[&str], cells: &[&str]) -> String {
+    titles
+        .iter()
+        .zip(cells)
+        .filter(|(_, c)| !c.is_empty())
+        .map(|(t, c)| {
+            if t.is_empty() {
+                c.to_string()
+            } else {
+                format!("{t} {c}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// A duration in words, for "for 3 minutes" and the like: seconds under a
@@ -534,7 +648,9 @@ mod tests {
             row_action(&app("n8commentary", "busy")).map(|a| a.kind),
             Some(ActionKindView::Start)
         );
-        assert_eq!(row_action(&app("wslmemory", "busy")), None);
+        let mut none = app("voicedock", "busy");
+        none.actions.clear();
+        assert_eq!(row_action(&none), None);
     }
 
     #[test]
@@ -740,6 +856,8 @@ mod tests {
         assert_eq!(js_round(-2.5), -2.0);
         assert_eq!(memory(Some(1280.0)), "1.3 GB");
         assert_eq!(memory(Some(999.5)), "1000 MB");
+        assert_eq!(memory(Some(-0.0)), "0 MB");
+        assert_eq!(memory(Some(-0.4)), "0 MB");
         assert_eq!(memory(None), "");
         assert_eq!(cpu(Some(4.0)), "4% CPU");
         assert_eq!(
@@ -751,6 +869,56 @@ mod tests {
     }
 
     #[test]
+    fn times_follow_the_users_clock_as_to_locale_time_string_does() {
+        use n8tray_platform::locale::Clock;
+        let us = Clock {
+            twelve_hour: true,
+            am: "AM".into(),
+            pm: "PM".into(),
+            marker_first: false,
+        };
+        assert_eq!(clock_time(14, 5, &us), "02:05 PM");
+        assert_eq!(clock_time(0, 7, &us), "12:07 AM");
+        assert_eq!(clock_time(12, 0, &us), "12:00 PM");
+        let gb = Clock::twenty_four();
+        assert_eq!(clock_time(14, 5, &gb), "14:05");
+        assert_eq!(clock_time(0, 7, &gb), "00:07");
+        let first = Clock {
+            twelve_hour: true,
+            am: "上午".into(),
+            pm: "下午".into(),
+            marker_first: true,
+        };
+        assert_eq!(clock_time(9, 30, &first), "上午 09:30");
+    }
+
+    #[test]
+    fn chart_panel_and_table_words_are_todays() {
+        let w = chart_words("VoiceDock", None, &[600.0, 643.0], &[3.0, 12.4]);
+        assert_eq!(
+            w.label,
+            "Memory over the last 15 minutes, at most 643 MB; CPU at most 12%"
+        );
+        assert_eq!(w.memory, "Memory, max 643 MB");
+        assert_eq!(w.cpu, "CPU, dashed, max 12%");
+        let h = chart_words("VoiceDock", Some("24 hours"), &[], &[]);
+        assert_eq!(
+            h.label,
+            "VoiceDock over the last 24 hours: memory at most 0 MB, CPU at most 0%"
+        );
+        assert_eq!(h.cpu, "CPU, max 0%");
+        let vd = app("voicedock", "busy");
+        assert_eq!(panel_figures(&vd), "643 MB · 12% CPU");
+        let ls = app("leadscraper", "busy");
+        assert_eq!(details_memory(&ls), "1.2 GB*");
+        assert_eq!(details_memory(&vd), "643 MB");
+        assert_eq!(
+            table_row_label(&["Process", "Memory", ""], &["hub", "643 MB", "verified"]),
+            "Process hub, Memory 643 MB, verified"
+        );
+    }
+
+    #[test]
     fn the_title_bar_summary_counts_pinned_apps_and_n8s_memory() {
         assert_eq!(title_summary(3, 3, 1945.6), "3 of 3 · 1.9 GB");
         assert_eq!(title_summary(0, 0, 1945.6), "0 pinned · 1.9 GB");
@@ -758,7 +926,7 @@ mod tests {
         let s = fixture("pinned");
         assert_eq!(
             title_summary(s.pinned_running, s.pinned_total, s.memory.n8_mb),
-            "2 of 2 · 806 MB"
+            "1 of 1 · 768 MB"
         );
     }
 
@@ -779,7 +947,7 @@ mod tests {
         assert!(!has_history(None));
         assert_eq!(since(None), "-");
         assert_eq!(since(Some("not a time")), "-");
-        assert_eq!(since(Some("2026-11-25T10:05:00Z")).len(), 5);
+        assert_ne!(since(Some("2026-11-25T10:05:00Z")), "-");
         assert_eq!(duration(0), "0 seconds");
         assert_eq!(duration(1), "1 second");
         assert_eq!(duration(59), "59 seconds");

@@ -1,18 +1,27 @@
 // The scrolling part of the window (`.flyout-body`, `scrollbar-width:
 // thin`): its children are stacked; it is as tall as they are until the
-// window's height limit, then only it scrolls, with a thin scrollbar that
-// widens under the mouse, as WebView2's overlay scrollbar on Windows 11.
-// The control that takes the keyboard focus is scrolled into view.
+// window's height limit, then only it scrolls. Its thin scrollbar is hidden
+// at rest and shows while the mouse is over the list or it scrolls
+// (approved 2026-11-26), widening under the mouse as WebView2's overlay
+// scrollbar does.
+//
+// The control that takes the keyboard focus inside it is scrolled into
+// view. Controls of the title bar and the bottom bar never ask
+// (`reveal: false`), and a request from outside the content is ignored.
 import { Theme } from "../theme.slint";
 import { Reveal } from "base.slint";
 
 export component ScrollArea {
-    // The height the children want; the screen sizes the window from it.
+    // The height the children want; the window is sized from it.
     out property <length> content-height: inner.preferred-height;
     // How far it is scrolled, from 0 down.
     out property <length> scrolled: -fl.content-y;
     property <length> maximum: max(0px, root.content-height - root.height);
     property <bool> overflows: root.maximum > 0.5px;
+    // Shown: the mouse is over the list, or it scrolled a moment ago.
+    property <bool> active: area.has-hover || root.scrolling || root.demo-scrollbar;
+    property <bool> scrolling;
+    in property <bool> demo-scrollbar;
     in property <bool> demo-scrollbar-hover;
 
     accessible-role: none;
@@ -20,27 +29,48 @@ export component ScrollArea {
     min-height: 0px;
     vertical-stretch: 1;
 
-    fl := Flickable {
+    area := TouchArea {
+        // Hover only: clicks are the content's.
         width: root.width;
         height: root.height;
-        content-width: root.width;
-        content-height: max(root.height, root.content-height);
 
-        inner := VerticalLayout {
+        fl := Flickable {
             width: root.width;
-            alignment: start;
-            @children
+            height: root.height;
+            content-width: root.width;
+            content-height: max(root.height, root.content-height);
+
+            inner := VerticalLayout {
+                width: root.width;
+                alignment: start;
+                @children
+            }
         }
     }
 
-    // A control under the scroll area took the focus: bring it into view.
+    // It scrolled: show the bar for a moment.
+    property <length> offset: fl.content-y;
+    changed offset => {
+        root.scrolling = true;
+        settle.restart();
+    }
+    settle := Timer {
+        interval: 800ms;
+        running: false;
+        triggered => {
+            root.scrolling = false;
+            self.stop();
+        }
+    }
+
+    // A control in the content took the focus: bring it into view.
     property <int> reveal: Reveal.serial;
     changed reveal => {
-        // Where it is relative to the visible part (its position already
-        // includes the scrolling).
         if !root.overflows {
             return;
         }
+        // Its position already includes the scrolling: it is in the content
+        // when it lies within the content's whole height.
         let content-top = inner.absolute-position.y;
         if Reveal.top < content-top || Reveal.bottom > content-top + inner.height {
             return;
@@ -53,8 +83,8 @@ export component ScrollArea {
         }
     }
 
-    // The scrollbar: a 2 px line at rest, 6 px on a soft track under the
-    // mouse; the thumb can be dragged.
+    // The scrollbar: a 2 px line, 6 px on a soft track under the mouse; the
+    // thumb can be dragged.
     if root.overflows: bar := Rectangle {
         property <bool> wide: bar-ta.has-hover || bar-ta.pressed || root.demo-scrollbar-hover;
         property <length> track: root.height - 4px;
@@ -65,6 +95,8 @@ export component ScrollArea {
         height: self.track;
         border-radius: Theme.scrollbar / 2;
         background: self.wide && !Theme.contrast ? Theme.hover : transparent;
+        opacity: root.active || self.wide ? 1 : 0;
+        animate opacity { duration: 150ms; }
 
         thumb := Rectangle {
             width: bar.wide ? Theme.scrollbar : 2px;

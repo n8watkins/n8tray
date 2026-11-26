@@ -1,0 +1,14 @@
+// Navigation between the window's views (kit, owned by the shell): which
+// view shows, and the requests a view makes. Rust (`view::router`) handles
+// them: Back returns to the view before, Escape goes back or, in the hub,
+// hides the window.
+export enum View { hub, all-apps, panel, details, settings, about, history }
+
+export global Nav {
+    in-out property <View> view: View.hub;
+    // Open a view; `id` names the app for a panel or an app's history.
+    callback go(view: View, id: string);
+    callback back();
+    // Hide the window (Close).
+    callback close();
+}

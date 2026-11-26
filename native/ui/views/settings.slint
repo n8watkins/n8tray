@@ -1,0 +1,28 @@
+// Settings (lane: settings). A stub until that lane lands; it owns this
+// file and `src/view/settings.rs`.
+import { TitleBar, ScrollArea, Say, SayLine } from "../widgets.slint";
+import { Nav } from "../nav.slint";
+
+export global SettingsModel {
+    in-out property <string> note: "Settings come with their own lane.";
+}
+
+export component SettingsView inherits VerticalLayout {
+    TitleBar {
+        title: "Settings";
+        back: true;
+        back-clicked => {
+            Nav.back();
+        }
+        close-clicked => {
+            Nav.close();
+        }
+    }
+    ScrollArea {
+        Say {
+            SayLine {
+                text: SettingsModel.note;
+            }
+        }
+    }
+}

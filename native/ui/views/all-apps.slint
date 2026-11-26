@@ -1,0 +1,29 @@
+// All apps (lane: pinned apps): every app with Pin and Unpin, behind the
+// hub's more line. A stub until that lane lands; it owns this file and
+// `src/view/all_apps.rs`.
+import { TitleBar, ScrollArea, Say, SayLine } from "../widgets.slint";
+import { Nav } from "../nav.slint";
+
+export global AllAppsModel {
+    in-out property <string> note: "All apps comes with its own lane.";
+}
+
+export component AllAppsView inherits VerticalLayout {
+    TitleBar {
+        title: "All apps";
+        back: true;
+        back-clicked => {
+            Nav.back();
+        }
+        close-clicked => {
+            Nav.close();
+        }
+    }
+    ScrollArea {
+        Say {
+            SayLine {
+                text: AllAppsModel.note;
+            }
+        }
+    }
+}

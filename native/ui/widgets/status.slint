@@ -45,10 +45,9 @@ export component Tag inherits Rectangle {
 
     accessible-role: AccessibleRole.text;
     accessible-label: root.text;
+    // No border under High Contrast: today's tags have none.
     background: Theme.level-bg(root.level);
     border-radius: self.height / 2;
-    border-width: Theme.contrast ? 1px : 0px;
-    border-color: Theme.frame;
     horizontal-stretch: 0;
     min-width: l.preferred-width;
     max-width: l.preferred-width;
@@ -171,9 +170,13 @@ export component ProgressBar inherits Rectangle {
     border-color: Theme.frame;
     clip: true;
 
+    // Inside the High Contrast border.
     Rectangle {
-        x: 0;
-        width: parent.width * clamp(root.value, 0, 1);
+        property <length> inset: Theme.contrast ? 1px : 0px;
+        x: self.inset;
+        y: self.inset;
+        height: parent.height - 2 * self.inset;
+        width: (parent.width - 2 * self.inset) * clamp(root.value, 0, 1);
         border-radius: 2px;
         background: Theme.contrast ? Theme.system.highlight : Theme.level-color(root.level);
     }
