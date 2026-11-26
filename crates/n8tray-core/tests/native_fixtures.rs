@@ -57,6 +57,7 @@ fn every_fixture_loads_and_round_trips() {
             "busy.json",
             "empty.json",
             "healthy.json",
+            "pinned.json",
             "trouble.json",
             "updateFailed.json",
             "updating.json",

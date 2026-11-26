@@ -41,6 +41,8 @@ const base: Omit<AppView, "id" | "name"> = {
   shouldRun: true,
   enabled: true,
   hosted: true,
+  pinned: true,
+  inMainView: true,
   autoStart: true,
   pending: null,
   lastOutcome: null,
@@ -200,6 +202,7 @@ export const busy: HostSnapshot = {
   reason: "Lead Scraper is over its 1 GB warning",
   running: 3,
   total: 4,
+  more: null,
   memory: { freeGb: 4.2, totalGb: 31.1, level: "ok", n8Mb: 1950, system: "Windows", text: "Windows 4.2/31.1 GB free · N8 1.9 GB" },
   pressure: "ok",
   // The host's order: what runs first, then what is stopped; by name within.
@@ -300,4 +303,22 @@ export const watching: HostSnapshot = {
   legacyTray: true,
 };
 
-export const fixtures: Record<string, HostSnapshot> = { busy, healthy, trouble, empty, updating, updateFailed, watching };
+/**
+ * Three apps unpinned (D32): N8 Commentary is stopped and WSL Memory runs,
+ * both behind the "2 more" line; Lead Scraper needs attention, so it is in
+ * the main view until that clears. The headline counts the two pinned apps,
+ * the level and N8's memory count every app.
+ */
+const unpinned = (app: AppView, inMainView = false): AppView => ({ ...app, pinned: false, inMainView });
+export const pinned: HostSnapshot = {
+  ...busy,
+  reason: "Lead Scraper: Sweeping pool cell 14 of 40",
+  running: 2,
+  total: 2,
+  more: { count: 2, running: 1, memoryMb: 38, text: "2 more · 1 running, 38 MB" },
+  memory: { ...busy.memory, freeGb: 12.6, n8Mb: 805.9, text: "Windows 12.6/31.1 GB free · N8 806 MB" },
+  apps: [unpinned(leadscraper, true), hotkeys, voicedock, unpinned({ ...wslmemory, memoryMb: 38, privateMb: 31 }), unpinned(commentary)],
+  tooltip: "N8 Tray: Needs attention\nRunning: N8 Hotkeys, VoiceDock · 2 more running\nWindows 12.6/31.1 GB free · N8 806 MB",
+};
+
+export const fixtures: Record<string, HostSnapshot> = { busy, healthy, trouble, empty, updating, updateFailed, watching, pinned };

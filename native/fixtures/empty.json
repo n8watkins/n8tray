@@ -5,6 +5,7 @@
   "reason": null,
   "running": 0,
   "total": 0,
+  "more": null,
   "memory": {
     "freeGb": 12.6,
     "totalGb": 31.1,
