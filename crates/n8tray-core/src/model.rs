@@ -4,11 +4,11 @@
 //! `app/ui/src/bindings/` are generated from these (`cargo test` writes them,
 //! CI fails when they are out of date).
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// The host's levels, worst last (spec section 6).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(export)]
 pub enum LevelName {
@@ -32,7 +32,7 @@ impl From<n8tray_contract::status::Level> for LevelName {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct HostSnapshot {
@@ -59,7 +59,7 @@ pub struct HostSnapshot {
     pub update: UpdateView,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct MemoryView {
@@ -75,7 +75,7 @@ pub struct MemoryView {
     pub text: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct TrayUsage {
@@ -93,7 +93,7 @@ pub struct TrayUsage {
 }
 
 /// The last 15 minutes in 10 s steps, oldest first (0 where nothing ran).
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct HistoryView {
@@ -104,7 +104,7 @@ pub struct HistoryView {
     pub cpu_percent: Vec<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct AppView {
@@ -151,7 +151,7 @@ pub struct AppView {
     pub notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct OutcomeView {
@@ -161,7 +161,7 @@ pub struct OutcomeView {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(export)]
 pub enum ActionKindView {
@@ -171,7 +171,7 @@ pub enum ActionKindView {
     App,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ActionView {
@@ -185,7 +185,7 @@ pub struct ActionView {
     pub confirm: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ComponentView {
@@ -198,7 +198,7 @@ pub struct ComponentView {
     pub memory_mb: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct OpenView {
@@ -210,7 +210,7 @@ pub struct OpenView {
     pub exists: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct MenuView {
@@ -221,7 +221,7 @@ pub struct MenuView {
     pub exists: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct GpuView {
@@ -231,7 +231,7 @@ pub struct GpuView {
     pub source: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ProcessView {
@@ -249,7 +249,7 @@ pub struct ProcessView {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ProblemView {
@@ -258,7 +258,7 @@ pub struct ProblemView {
     pub message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SettingsView {
@@ -275,7 +275,7 @@ pub struct SettingsView {
     pub file: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct UpdateView {
@@ -295,7 +295,7 @@ pub struct UpdateView {
 }
 
 /// A warning or error from the tray log, for the status details.
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct WarningView {
@@ -306,4 +306,65 @@ pub struct WarningView {
     pub message: String,
     /// How many times in a row it was logged.
     pub count: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every optional field set, so the `Some` side of each round-trips too.
+    #[test]
+    fn views_round_trip_with_every_option_set() {
+        let history = HistoryView {
+            interval_seconds: 10,
+            memory_mb: vec![1.5, 2.0],
+            cpu_percent: vec![0.25, 0.5],
+        };
+        let gpu = GpuView {
+            mem_mb: Some(512.0),
+            percent: Some(37.5),
+            source: "measured".into(),
+        };
+        let outcome = OutcomeView {
+            action: "start".into(),
+            outcome: "failed".into(),
+            message: Some("no".into()),
+        };
+        let update = UpdateView {
+            channel: "stable".into(),
+            available: Some("1.2.3".into()),
+            url: Some("https://example.test/r".into()),
+            checked_at: Some("2026-11-25T10:00:00Z".into()),
+            error: Some("offline".into()),
+            install: "failed".into(),
+            progress: Some(42),
+            install_error: Some("bad signature".into()),
+        };
+        let warning = WarningView {
+            at: "10:00".into(),
+            level: "warn".into(),
+            message: "slow".into(),
+            count: 3,
+        };
+
+        assert_round_trip(&history);
+        assert_round_trip(&gpu);
+        assert_round_trip(&outcome);
+        assert_round_trip(&update);
+        assert_round_trip(&warning);
+        assert_eq!(
+            serde_json::to_value(&update).unwrap()["installError"],
+            "bad signature"
+        );
+    }
+
+    fn assert_round_trip<T>(value: &T)
+    where
+        T: Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug,
+    {
+        let json = serde_json::to_string(value).unwrap();
+        let back: T = serde_json::from_str(&json).unwrap();
+        assert_eq!(&back, value);
+        assert_eq!(serde_json::to_string(&back).unwrap(), json);
+    }
 }
