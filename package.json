@@ -14,6 +14,7 @@
     "build": "cargo build --workspace --locked",
     "release": "release-kit release",
     "check:no-app": "cargo fmt --all --check && node scripts/check-text.mjs && cargo clippy --workspace --exclude n8tray --all-targets --locked -- -D warnings && cargo test --workspace --exclude n8tray --locked && cargo build --workspace --exclude n8tray --locked",
+    "check:native": "cargo update --manifest-path native/Cargo.toml -p n8tray-core -p n8tray-platform -p n8tray-contract && cargo fmt --manifest-path native/Cargo.toml --check && cargo clippy --manifest-path native/Cargo.toml --all-targets --locked -- -D warnings && cargo test --manifest-path native/Cargo.toml --locked && node native/scripts/check-release.mjs --self-test && node native/scripts/check-release.mjs",
     "release:check": "release-kit check && npm run check:no-app",
     "prepare": "git config core.hooksPath .githooks || true"
   },

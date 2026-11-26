@@ -1,4 +1,6 @@
 /target/
+# The native shell's own workspace (D33).
+/native/target/
 node_modules/
 /release-artifacts/
 /app/ui/dist/

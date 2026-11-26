@@ -5,6 +5,7 @@
 pub mod gpu;
 pub mod job;
 pub mod process;
+pub mod single;
 pub mod system;
 pub mod theme;
 pub mod window;

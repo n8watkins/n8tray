@@ -1,0 +1,50 @@
+// The native shell's placeholder window (lane N0): the host's level,
+// headline and app names as plain text. The real screens (hub, app panel,
+// details, settings, history) come in later lanes and must look exactly
+// like today's window (app/ui).
+
+export struct AppLine {
+    name: string,
+    words: string,
+}
+
+export component HubWindow inherits Window {
+    in property <string> level;
+    in property <string> headline;
+    in property <[AppLine]> apps;
+    in property <bool> dark: true;
+    // The height the content wants, in logical pixels: the shell sizes the
+    // native window to it, as the Tauri window's fit_window did.
+    out property <length> content-height: layout.preferred-height;
+
+    title: "N8 Tray";
+    no-frame: true;
+    always-on-top: true;
+    // style.css: --bg and --fg.
+    background: root.dark ? #202020 : #f9f9f9;
+    default-font-size: 13px;
+
+    layout := VerticalLayout {
+        padding: 16px;
+        spacing: 8px;
+        alignment: start;
+
+        Text {
+            text: "N8 Tray";
+            font-size: 15px;
+            font-weight: 600;
+            color: root.dark ? #ffffff : #1b1b1b;
+        }
+
+        Text {
+            text: root.headline + " (" + root.level + ")";
+            color: root.dark ? #ffffff : #1b1b1b;
+        }
+
+        for app in root.apps: Text {
+            text: app.name + ": " + app.words;
+            color: root.dark ? #c8c8c8 : #444444;
+            overflow: elide;
+        }
+    }
+}

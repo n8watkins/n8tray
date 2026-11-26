@@ -1,0 +1,68 @@
+# The native shell is a workspace of its own, with its own Cargo.lock, until
+# it replaces the Tauri app: its dependencies (Slint, a newer tray-icon) never
+# change the lockfile or the features of the app that ships (D33). Its path
+# dependencies stay members of the root workspace.
+[workspace]
+
+[package]
+name = "n8tray-native"
+description = "N8 Tray's native shell: the tray icon, its menu and a Slint window around n8tray-core's host, with no WebView."
+# Not released on its own: the exe's version resource takes the root
+# workspace's version, which release-kit keeps (build.rs).
+version = "0.0.0"
+edition = "2024"
+# Slint 1.19 needs 1.95.
+rust-version = "1.95"
+license = "MIT"
+repository = "https://github.com/n8watkins/n8tray"
+publish = false
+
+# Slint's generated code allows unsafe code where it needs it, which `forbid`
+# at the crate level would refuse; the crate denies it, and each of its own
+# modules forbids it, so only the generated module is exempt (D11: the OS
+# calls stay in n8tray-platform).
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[[bin]]
+name = "n8tray-native"
+path = "src/main.rs"
+
+# Both renderers are in the default build so one binary can be measured with
+# either (`N8TRAY_RENDERER`); a build with one of them only is the way to see
+# what linking the other costs (docs/DECISIONS.md, D33).
+[features]
+default = ["software", "skia-software"]
+software = ["slint/renderer-software"]
+skia-software = ["slint/renderer-skia-software"]
+
+[dependencies]
+n8tray-core = { path = "../crates/n8tray-core" }
+n8tray-platform = { path = "../crates/n8tray-platform" }
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
+png = "0.18.1"
+# Pinned to Pulse's version, the owner's all-Slint app (D33).
+slint = { version = "=1.19.1", default-features = false, features = ["std", "backend-winit", "accessibility", "compat-1-2", "raw-window-handle-06", "unstable-winit-030"] }
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "ansi", "registry"] }
+# Pulse's version (D33).
+tray-icon = "0.27.0"
+
+[dev-dependencies]
+serde_json = "1.0.154"
+
+[build-dependencies]
+slint-build = "=1.19.1"
+
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "3.0.12"
+
+# As the root workspace's: the tray stays resident all day.
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
