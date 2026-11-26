@@ -184,10 +184,13 @@ pub fn main_view_apps(apps: &[AppView]) -> Vec<&AppView> {
 pub fn all_apps_groups(apps: &[AppView]) -> Vec<(&'static str, Vec<&AppView>)> {
     let (inside, outside): (Vec<&AppView>, Vec<&AppView>) =
         hub_apps(apps).into_iter().partition(|a| a.in_main_view);
-    [("In the main view", inside), ("Not in the main view", outside)]
-        .into_iter()
-        .filter(|(_, apps)| !apps.is_empty())
-        .collect()
+    [
+        ("In the main view", inside),
+        ("Not in the main view", outside),
+    ]
+    .into_iter()
+    .filter(|(_, apps)| !apps.is_empty())
+    .collect()
 }
 
 /// The row's one action: Stop while running, Start while not.
@@ -666,7 +669,10 @@ mod tests {
             .map(|a| a.id.as_str())
             .collect();
         assert!(main.len() < all.len(), "{main:?} of {all:?}");
-        assert!(s.more.is_some(), "the line shows exactly when apps are left out");
+        assert!(
+            s.more.is_some(),
+            "the line shows exactly when apps are left out"
+        );
         let groups = all_apps_groups(&s.apps);
         assert_eq!(groups[0].0, "In the main view");
         assert_eq!(groups[1].0, "Not in the main view");

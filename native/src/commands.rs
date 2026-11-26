@@ -97,10 +97,6 @@ pub fn set_setting(key: &str, on: bool, app: Option<String>) -> Result<Command, 
 /// (D35). Anything else is refused, never guessed; it is a separate function
 /// from `set_setting` because its value is a name, not an on-off switch.
 /// Like `compact`, the Tauri app does not take it.
-#[allow(
-    dead_code,
-    reason = "the window's settings view calls it (a later lane)"
-)]
 pub fn set_window_height(name: &str) -> Result<Command, String> {
     WindowHeight::from_name(name)
         .map(Command::SetWindowHeight)

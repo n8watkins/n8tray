@@ -74,7 +74,9 @@ pub fn set_text(text: &str) -> Result<(), String> {
         if SetClipboardData(CF_UNICODETEXT, block).is_null() {
             let error = std::io::Error::last_os_error();
             GlobalFree(block);
-            return Err(format!("the text could not be put on the clipboard: {error}"));
+            return Err(format!(
+                "the text could not be put on the clipboard: {error}"
+            ));
         }
     }
     Ok(())

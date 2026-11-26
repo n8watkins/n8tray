@@ -489,7 +489,10 @@ mod tests {
             history_ids(&s, &HistoryOf::App("voicedock".into())),
             ["voicedock"]
         );
-        assert_eq!(history_ids(&s, &HistoryOf::App("n8tray".into())), ["n8tray"]);
+        assert_eq!(
+            history_ids(&s, &HistoryOf::App("n8tray".into())),
+            ["n8tray"]
+        );
         assert!(history_ids(&s, &HistoryOf::App("../../etc".into())).is_empty());
         assert_eq!(Range::from_name("day"), Some(Range::Day));
         assert_eq!(Range::from_name("week"), Some(Range::Week));

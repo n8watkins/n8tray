@@ -395,13 +395,7 @@ mod tests {
                 .collect()
         };
         let chain = [
-            "hub",
-            "all-apps",
-            "panel",
-            "details",
-            "settings",
-            "about",
-            "history",
+            "hub", "all-apps", "panel", "details", "settings", "about", "history",
         ];
         assert_eq!(star(&read("main.slint")), ["views/hub-model.slint"]);
         for (i, name) in chain.iter().enumerate() {

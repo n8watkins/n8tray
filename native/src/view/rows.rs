@@ -179,10 +179,19 @@ mod tests {
             "VoiceDock, Running, 643 MB, 12% CPU"
         );
         assert_eq!(
-            row_label("VoiceDock", "Running", "Over its 1 GB warning", "1.2 GB", ""),
+            row_label(
+                "VoiceDock",
+                "Running",
+                "Over its 1 GB warning",
+                "1.2 GB",
+                ""
+            ),
             "VoiceDock, Running, Over its 1 GB warning, 1.2 GB"
         );
-        assert_eq!(row_label("Lead Scraper", "Off", "Off", "", ""), "Lead Scraper, Off");
+        assert_eq!(
+            row_label("Lead Scraper", "Off", "Off", "", ""),
+            "Lead Scraper, Off"
+        );
     }
 
     /// Arm Stop on app A, reorder the list: the armed state stays on A's
