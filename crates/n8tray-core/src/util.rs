@@ -70,6 +70,11 @@ mod tests {
     fn memory_reads_in_mb_then_gb() {
         assert_eq!(mb_text(40.4), "40 MB");
         assert_eq!(mb_text(999.0), "999 MB");
+        // Just under the line it rounds to "1000 MB", as the window's
+        // `format.ts` does; from 1000 it is GB.
+        assert_eq!(mb_text(999.4), "999 MB");
+        assert_eq!(mb_text(999.6), "1000 MB");
+        assert_eq!(mb_text(1000.0), "1.0 GB");
         assert_eq!(mb_text(1950.0), "1.9 GB");
     }
 

@@ -5,6 +5,9 @@
   "reason": "VoiceDock: Stopped: crashed",
   "running": 1,
   "total": 3,
+  "pinnedRunning": 1,
+  "pinnedTotal": 3,
+  "pinnedText": "1 of 3 running",
   "more": null,
   "memory": {
     "freeGb": 1.3,

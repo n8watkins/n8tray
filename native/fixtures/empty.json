@@ -5,6 +5,9 @@
   "reason": null,
   "running": 0,
   "total": 0,
+  "pinnedRunning": 0,
+  "pinnedTotal": 0,
+  "pinnedText": "No apps",
   "more": null,
   "memory": {
     "freeGb": 12.6,

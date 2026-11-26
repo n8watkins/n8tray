@@ -5,6 +5,9 @@
   "reason": "Lead Scraper is over its 1 GB warning",
   "running": 3,
   "total": 4,
+  "pinnedRunning": 4,
+  "pinnedTotal": 5,
+  "pinnedText": "4 of 5 running",
   "more": null,
   "memory": {
     "freeGb": 4.2,

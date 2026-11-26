@@ -5,6 +5,9 @@
   "reason": null,
   "running": 2,
   "total": 3,
+  "pinnedRunning": 2,
+  "pinnedTotal": 3,
+  "pinnedText": "2 of 3 running",
   "more": null,
   "memory": {
     "freeGb": 12.6,

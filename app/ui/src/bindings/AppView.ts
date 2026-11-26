@@ -36,7 +36,8 @@ hosted: boolean,
 pinned: boolean, 
 /**
  * In the main view: shown in N8 Tray, not hidden, and pinned or in
- * trouble (attention or problem). The others are in the snapshot's `more`.
+ * trouble (degraded, failed, a problem or an alert; not starting or busy),
+ * and for 30 s after the trouble clears. The others are in `more`.
  */
 inMainView: boolean, autoStart: boolean, 
 /**

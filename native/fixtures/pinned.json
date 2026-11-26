@@ -2,9 +2,12 @@
   "version": "0.2.0",
   "level": "attention",
   "headline": "Needs attention",
-  "reason": "Lead Scraper: Sweeping pool cell 14 of 40",
-  "running": 2,
-  "total": 2,
+  "reason": "Lead Scraper: Over its 1 GB warning",
+  "running": 4,
+  "total": 5,
+  "pinnedRunning": 2,
+  "pinnedTotal": 2,
+  "pinnedText": "2 of 2 running",
   "more": {
     "count": 2,
     "running": 1,
@@ -27,9 +30,9 @@
       "icon": "icons/leadscraper.svg",
       "version": "2.0.0",
       "level": "attention",
-      "state": "ready",
-      "words": "Ready",
-      "summary": "Sweeping pool cell 14 of 40",
+      "state": "degraded",
+      "words": "Ready, with a problem",
+      "summary": "Over its 1 GB warning",
       "detail": null,
       "running": true,
       "shouldRun": true,
@@ -1209,7 +1212,7 @@
       ]
     }
   },
-  "tooltip": "N8 Tray: Needs attention\nRunning: N8 Hotkeys, VoiceDock · 2 more running\nWindows 12.6/31.1 GB free · N8 806 MB",
+  "tooltip": "N8 Tray: Needs attention\nRunning: Lead Scraper, N8 Hotkeys, VoiceDock · 1 more running\nWindows 12.6/31.1 GB free · N8 806 MB",
   "legacyTray": false,
   "settings": {
     "launchAtSignIn": true,

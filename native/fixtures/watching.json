@@ -5,6 +5,9 @@
   "reason": "Low memory",
   "running": 1,
   "total": 4,
+  "pinnedRunning": 1,
+  "pinnedTotal": 4,
+  "pinnedText": "1 of 4 running",
   "more": null,
   "memory": {
     "freeGb": 1.4,

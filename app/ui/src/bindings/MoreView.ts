@@ -9,7 +9,8 @@ export type MoreView = {
  */
 count: number, running: number, 
 /**
- * Their memory, in MiB (0 when none runs).
+ * The memory of those that run, in MiB, as their rows show it (measured
+ * plus reported inside WSL); 0 when none runs.
  */
 memoryMb: number, 
 /**

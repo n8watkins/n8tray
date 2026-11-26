@@ -526,7 +526,7 @@ impl AppRuntime {
             ));
         }
 
-        AppView {
+        let mut view = AppView {
             id: m.id.clone(),
             name: m.name.clone(),
             group: m.group.clone(),
@@ -552,7 +552,7 @@ impl AppRuntime {
             enabled: settings.enabled,
             hosted: !settings.own_icon,
             pinned: settings.pinned,
-            in_main_view: crate::pins::in_main_view(!settings.own_icon, settings.pinned, level),
+            in_main_view: false,
             auto_start: self.auto_start(settings),
             pending: self
                 .pending
@@ -576,7 +576,10 @@ impl AppRuntime {
             alert: alert.and_then(|a| a.text.clone()),
             history: ctx.history.clone(),
             notes,
-        }
+        };
+        // Without the host's 30 s hold, which the snapshot adds (D32).
+        view.in_main_view = crate::pins::in_main_view(&view, false);
+        view
     }
 
     /// State, summary and detail (spec section 6).

@@ -273,14 +273,29 @@ Nothing is deleted and the app's settings stay.
 
 Hiding is about what is seen, never about what runs:
 
-- An unpinned app that runs is on the line: "2 more · 1 running, 40 MB" (memory as the rest of N8 Tray writes it, GB from 1000 MB), or "2 more · 1 running" while its memory is not measured yet, and "2 more" while none runs.
-- An unpinned app in trouble (attention or problem) is back in the main view with its warning until it clears (`AppView.inMainView`), and is then not counted on the line.
+- An unpinned app that runs is on the line: "2 more · 1 running, 40 MB", or "2 more · 1 running" while its memory is not measured yet, and "2 more" while none runs.
+  The memory is what each row shows (measured plus what the app reports inside WSL), written as the rest of N8 Tray writes memory (GB from 1000 MB).
+- An unpinned app in trouble is back in the main view with its warning (`AppView.inMainView`), and is then not counted on the line.
+  Trouble is read from the state, not the level: degraded, failed, a problem such as stopped while it should run, or an active resource alert.
+  Starting and busy are normal work and pull nothing in, although their level is attention too.
+  A turned-off app is never in trouble.
+- An app pulled in by trouble stays in the main view for 30 s after the trouble clears, counted from the last snapshot that saw it, so a flapping app does not jump in and out.
+  The host keeps this hold (`pins::TroubleHold` in the host's state) and drives it with the snapshot's clock, which tests pass in.
 - The level, its reason, the tray icon's dot and N8's memory total count every app, pinned or not.
-- The headline counts pinned apps only ("2 of 2 running"): `HostSnapshot.running` and `total`.
-- The tooltip names the pinned apps that run and counts the unpinned ones: "Running: N8 Hotkeys · 2 more running", or "2 more running" alone; the count stays whole when the names are cut.
+- `HostSnapshot.running` and `total` stay the hub's figures, every app pinned or not, as before: the shipped window and the copied status read them.
+  The new window's headline uses `pinnedRunning` and `pinnedTotal`, pinned apps only; an app pulled in by trouble is shown but not counted there.
+  `pinnedText` is that headline ready-made: "2 of 2 running", "Nothing pinned" when no app in the hub is pinned, or "No apps", never "0 of 0 running".
+- The tooltip names the running apps the main view shows, pinned or pulled in by trouble, and counts the rest: "Running: N8 Hotkeys · 2 more running", or "2 more running" alone.
+  That count is always `more.running`, and it stays whole when the names are cut.
 
 `HostSnapshot.more` is `null` when every app is in the main view, never a line with a count of 0, so a view shows the line exactly when it has something to say.
-Pinned applies only to apps shown in N8 Tray: "Show in N8 Tray" (`ownIcon`) and "Turned on" (`enabled`) keep their meaning, and an app with its own icon is in no view of the hub at all.
+Pinned applies only to apps shown in N8 Tray: "Show in N8 Tray" (`ownIcon`) and "Turned on" (`enabled`) keep their meaning.
+An app with its own icon, or one hidden because it cannot run on this computer, is in no view of the hub and never on the line.
+A turned-off app is still in the hub, as it is today, so unpinned it is counted on the line ("1 more") and listed behind it.
+`SetPinned` for an id no manifest has saves an entry for it, as `SetOwnIcon` does, and shows nothing.
+
+N8's memory total counts what N8 Tray measures, not memory an app reports inside WSL, while a row and the line add the reported part.
+So the line's figure can be larger than its share of the total for an app that runs inside WSL; the total was left as it is, because the shipped window shows it.
 Keeping an unused app stopped is the existing "Start with N8 Tray" switch (`autoStart`), not part of the pin.
 
 A settings file without the key reads as pinned, so no migration was needed and the settings schema stays at version 1.

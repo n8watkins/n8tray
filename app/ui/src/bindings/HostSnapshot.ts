@@ -22,13 +22,26 @@ headline: string,
  */
 reason: string | null, 
 /**
- * Pinned apps running ("2 of 2 running"); unpinned apps are in `more`.
+ * Apps in the hub that run, pinned or not.
  */
 running: number, 
 /**
- * Pinned apps shown in N8 Tray.
+ * Apps in the hub (shown in N8 Tray, not hidden), pinned or not.
  */
 total: number, 
+/**
+ * Pinned apps that run, for the pinned headline (D32). An unpinned app
+ * pulled into the main view by trouble is shown but not counted.
+ */
+pinnedRunning: number, 
+/**
+ * Pinned apps in the hub.
+ */
+pinnedTotal: number, 
+/**
+ * The pinned headline: "2 of 2 running", "Nothing pinned" or "No apps".
+ */
+pinnedText: string, 
 /**
  * The apps outside the main view, behind one "N more" line; `None` when
  * every app is in it (D32).

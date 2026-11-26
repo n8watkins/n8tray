@@ -16,9 +16,10 @@ fn cut(text: &str, max: usize) -> String {
     out
 }
 
-/// `status` such as "N8 Tray: Healthy", `running` the names of running pinned
-/// apps, `more_running` how many unpinned apps run (named only as "N more
-/// running", D32), `memory` lines such as "Windows 4.2/31.1 GB free".
+/// `status` such as "N8 Tray: Healthy", `running` the names of running apps in
+/// the main view, `more_running` how many apps outside it run (the snapshot's
+/// `more.running`, said only as "N more running", D32), `memory` lines such as
+/// "Windows 4.2/31.1 GB free".
 pub fn format(status: &str, running: &[String], more_running: usize, memory: &[String]) -> String {
     let status = cut(status, STATUS_LIMIT);
     let mut memory: Vec<String> = memory.to_vec();
@@ -96,6 +97,21 @@ mod tests {
         assert_eq!(
             format("N8 Tray: Healthy", &[], 1, &memory),
             "N8 Tray: Healthy\n1 more running\nWindows 4.2/31.1 GB free · N8 310 MB"
+        );
+
+        // The `pinned` interface fixture's tooltip.
+        assert_eq!(
+            format(
+                "N8 Tray: Needs attention",
+                &[
+                    "Lead Scraper".into(),
+                    "N8 Hotkeys".into(),
+                    "VoiceDock".into()
+                ],
+                1,
+                &["Windows 12.6/31.1 GB free · N8 806 MB".into()]
+            ),
+            "N8 Tray: Needs attention\nRunning: Lead Scraper, N8 Hotkeys, VoiceDock · 1 more running\nWindows 12.6/31.1 GB free · N8 806 MB"
         );
 
         // A long list is cut, the count is not.

@@ -434,6 +434,9 @@ struct Host {
     update: UpdateState,
     sign_in_foreign: bool,
     window_open: bool,
+    /// Keeps an unpinned app in the main view 30 s after its trouble (D32),
+    /// on the snapshot's clock.
+    trouble_hold: crate::pins::TroubleHold,
     cpus: u32,
     gpu_sampler: Option<GpuSampler>,
     gpu: HashMap<u32, GpuUse>,
@@ -516,6 +519,7 @@ impl Host {
             update: UpdateState::default(),
             sign_in_foreign: false,
             window_open: false,
+            trouble_hold: crate::pins::TroubleHold::default(),
             cpus: n8tray_platform::process::logical_cpus(),
             gpu_sampler: GpuSampler::new(),
             gpu: HashMap::new(),
@@ -1776,7 +1780,7 @@ impl Host {
         }
     }
 
-    fn snapshot(&self, now: DateTime<Utc>) -> HostSnapshot {
+    fn snapshot(&mut self, now: DateTime<Utc>) -> HostSnapshot {
         let mut apps = Vec::new();
         for app in self.apps.values() {
             let ctx = Context {
@@ -1791,6 +1795,7 @@ impl Host {
             apps.push(app.view(&ctx));
         }
         apps.sort_by(list_order);
+        self.trouble_hold.apply(&mut apps, now);
 
         // The tray itself: its process, and its window's processes (the
         // WebView runs as its children).
@@ -1824,9 +1829,9 @@ impl Host {
             history: self.history.view("n8tray", now),
         };
 
-        // Every app in the hub, pinned or not: the level, the reason and N8's
-        // memory count them all; only the headline's counts and the tooltip's
-        // names follow the pins (D32).
+        // Every app in the hub, pinned or not: the level, the reason, N8's
+        // memory, `running` and `total` count them all; only the pinned
+        // figures, `more` and the tooltip's names follow the pins (D32).
         let hosted: Vec<_> = apps.iter().filter(|a| crate::pins::in_hub(a)).collect();
         let counts = crate::pins::counts(&hosted);
         // The tray and its window count what they cost the system (private
@@ -1894,8 +1899,8 @@ impl Host {
         }
         let tooltip = crate::tooltip::format(
             &format!("N8 Tray: {headline}"),
-            &counts.running_names,
-            counts.more_running,
+            &counts.shown_running,
+            counts.more.as_ref().map_or(0, |m| m.running as usize),
             &notes,
         );
         let settings = &self.settings.settings;
@@ -1926,8 +1931,11 @@ impl Host {
             level,
             headline,
             reason,
-            running: counts.running_names.len() as u32,
-            total: counts.total,
+            running: hosted.iter().filter(|a| a.running).count() as u32,
+            total: hosted.len() as u32,
+            pinned_running: counts.pinned_running,
+            pinned_total: counts.pinned_total,
+            pinned_text: counts.pinned_text,
             more: counts.more,
             pressure: self.push_pressure.level().unwrap_or(LevelName::Ok),
             memory,

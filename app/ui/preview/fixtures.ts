@@ -195,6 +195,13 @@ const settings = {
   file: "C:\\Users\\someone\\AppData\\Local\\N8Tray\\settings.json",
 };
 
+/** The pinned headline's figures, as the host writes them (D32). */
+const pinnedCounts = (running: number, total: number, apps = total) => ({
+  pinnedRunning: running,
+  pinnedTotal: total,
+  pinnedText: apps === 0 ? "No apps" : total === 0 ? "Nothing pinned" : `${running} of ${total} running`,
+});
+
 export const busy: HostSnapshot = {
   version: "0.2.0",
   level: "attention",
@@ -202,6 +209,8 @@ export const busy: HostSnapshot = {
   reason: "Lead Scraper is over its 1 GB warning",
   running: 3,
   total: 4,
+  // From the apps below (the older `running` and `total` above are not).
+  ...pinnedCounts(4, 5),
   more: null,
   memory: { freeGb: 4.2, totalGb: 31.1, level: "ok", n8Mb: 1950, system: "Windows", text: "Windows 4.2/31.1 GB free · N8 1.9 GB" },
   pressure: "ok",
@@ -222,6 +231,7 @@ export const healthy: HostSnapshot = {
   reason: null,
   running: 2,
   total: 3,
+  ...pinnedCounts(2, 3),
   memory: { ...busy.memory, n8Mb: 780, text: "Windows 12.6/31.1 GB free · N8 0.8 GB", freeGb: 12.6 },
   apps: [hotkeys, voicedock, commentary],
 };
@@ -233,6 +243,7 @@ export const trouble: HostSnapshot = {
   reason: "VoiceDock: Stopped: crashed",
   running: 1,
   total: 3,
+  ...pinnedCounts(1, 3),
   memory: { ...busy.memory, freeGb: 1.3, level: "problem", text: "Windows 1.3/31.1 GB free · N8 0.1 GB" },
   apps: [
     { ...hotkeys, pending: "Restarting" },
@@ -264,6 +275,7 @@ export const empty: HostSnapshot = {
   reason: null,
   running: 0,
   total: 0,
+  ...pinnedCounts(0, 0),
   apps: [],
   memory: { ...busy.memory, n8Mb: 15, text: "Windows 12.6/31.1 GB free · N8 0.0 GB", freeGb: 12.6 },
 };
@@ -292,6 +304,7 @@ export const watching: HostSnapshot = {
   reason: "Low memory",
   running: 1,
   total: 4,
+  ...pinnedCounts(1, 4),
   memory: { freeGb: 1.4, totalGb: 31.1, level: "problem", n8Mb: 117, system: "Windows", text: "Windows 1.4/31.1 GB free · N8 0.1 GB" },
   apps: [
     watched({ ...hotkeys, summary: "6 of 6 hotkeys registered", memoryMb: 2.3, history: null }),
@@ -305,20 +318,28 @@ export const watching: HostSnapshot = {
 
 /**
  * Three apps unpinned (D32): N8 Commentary is stopped and WSL Memory runs,
- * both behind the "2 more" line; Lead Scraper needs attention, so it is in
- * the main view until that clears. The headline counts the two pinned apps,
- * the level and N8's memory count every app.
+ * both behind the "2 more" line; Lead Scraper is degraded and over its
+ * warning, so it is in the main view until 30 s after that clears. The pinned
+ * headline counts the two pinned apps; the level, N8's memory, `running` and
+ * `total` count every app. The tooltip names what the main view shows.
  */
 const unpinned = (app: AppView, inMainView = false): AppView => ({ ...app, pinned: false, inMainView });
 export const pinned: HostSnapshot = {
   ...busy,
-  reason: "Lead Scraper: Sweeping pool cell 14 of 40",
-  running: 2,
-  total: 2,
+  reason: "Lead Scraper: Over its 1 GB warning",
+  running: 4,
+  total: 5,
+  ...pinnedCounts(2, 2, 5),
   more: { count: 2, running: 1, memoryMb: 38, text: "2 more · 1 running, 38 MB" },
   memory: { ...busy.memory, freeGb: 12.6, n8Mb: 805.9, text: "Windows 12.6/31.1 GB free · N8 806 MB" },
-  apps: [unpinned(leadscraper, true), hotkeys, voicedock, unpinned({ ...wslmemory, memoryMb: 38, privateMb: 31 }), unpinned(commentary)],
-  tooltip: "N8 Tray: Needs attention\nRunning: N8 Hotkeys, VoiceDock · 2 more running\nWindows 12.6/31.1 GB free · N8 806 MB",
+  apps: [
+    unpinned({ ...leadscraper, state: "degraded", words: "Ready, with a problem", summary: "Over its 1 GB warning" }, true),
+    hotkeys,
+    voicedock,
+    unpinned({ ...wslmemory, memoryMb: 38, privateMb: 31 }),
+    unpinned(commentary),
+  ],
+  tooltip: "N8 Tray: Needs attention\nRunning: Lead Scraper, N8 Hotkeys, VoiceDock · 1 more running\nWindows 12.6/31.1 GB free · N8 806 MB",
 };
 
 export const fixtures: Record<string, HostSnapshot> = { busy, healthy, trouble, empty, updating, updateFailed, watching, pinned };
