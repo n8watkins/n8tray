@@ -275,6 +275,61 @@ jobs:
             hub-shots/
           if-no-files-found: ignore
 
+  # The native shell (n8tray-native, D33): lint, tests and a release build on
+  # each OS. It runs on Windows only for now and ships nowhere: App release
+  # builds the Tauri app alone, which the last step checks.
+  native:
+    name: Native (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.checks == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Linux packages for the tray icon and the window
+        if: runner.os == 'Linux'
+        # The package mirrors' DNS fails now and then: retry the whole step.
+        run: |
+          for attempt in 1 2 3 4 5; do
+            sudo apt-get -o Acquire::Retries=3 update --error-on=any \
+              && sudo apt-get -o Acquire::Retries=3 install -y libgtk-3-dev libayatana-appindicator3-dev libfontconfig1-dev libxkbcommon-dev \
+              && exit 0
+            echo "::warning::apt failed (attempt $attempt of 5)"; sleep $((attempt * 15))
+          done
+          exit 1
+      - run: rustup toolchain install # the version in rust-toolchain.toml
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: native
+      - run: cargo clippy -p n8tray-native -p n8tray-platform --all-targets --locked -- -D warnings
+      - run: cargo test -p n8tray-native -p n8tray-platform --locked
+      - run: cargo build --release --locked -p n8tray-native
+      - if: runner.os == 'Windows'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: n8tray-native-windows
+          path: target/release/n8tray-native.exe
+          if-no-files-found: error
+      - name: App release does not build the native shell
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # App release must build and sign the Tauri app only (D27, D33):
+          # no native shell, no whole-workspace build that would include it.
+          file=.github/workflows/app-release.yml
+          if grep -n -E 'n8tray-native|native/|--workspace|cargo (build|install|run)' "$file"; then
+            echo "::error file=$file::App release must not build n8tray-native (D33)."
+            exit 1
+          fi
+          grep -q 'tauri build' "$file" || { echo "::error file=$file::App release no longer runs tauri build; update this guard."; exit 1; }
+          echo "App release builds the Tauri app only."
+
   # npm run release:check exactly as release-kit's Release workflow runs it:
   # on a bare Ubuntu runner, without the GTK and WebKit packages the app
   # needs (D28). A tag is only published when this passes, so a pull request
@@ -390,7 +445,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, kit, lint, lint-windows, test, ui, app, update, release-check]
+    needs: [changes, kit, lint, lint-windows, test, ui, app, native, update, release-check]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

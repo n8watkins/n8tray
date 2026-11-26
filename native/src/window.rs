@@ -101,10 +101,6 @@ impl Hub {
         }
     }
 
-    pub fn is_visible(&self) -> bool {
-        self.visible
-    }
-
     /// A left click on the tray icon: open, or close when open.
     pub fn toggle(&mut self, anchor: Option<Rect>, snapshot: Option<&HostSnapshot>) {
         let just_hidden = self
