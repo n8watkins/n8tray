@@ -1,6 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "app/src-tauri", "native"]
+members = ["crates/*", "app/src-tauri"]
+# The native shell has a workspace and a lockfile of its own until it
+# replaces the Tauri app, so its dependencies never change what ships (D33).
+exclude = ["native"]
 
 [workspace.package]
 version = "0.5.0"

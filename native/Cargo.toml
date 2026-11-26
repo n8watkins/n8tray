@@ -1,17 +1,26 @@
+# The native shell is a workspace of its own, with its own Cargo.lock, until
+# it replaces the Tauri app: its dependencies (Slint, a newer tray-icon) never
+# change the lockfile or the features of the app that ships (D33). Its path
+# dependencies stay members of the root workspace.
+[workspace]
+
 [package]
 name = "n8tray-native"
 description = "N8 Tray's native shell: the tray icon, its menu and a Slint window around n8tray-core's host, with no WebView."
-version.workspace = true
-edition.workspace = true
+# Not released on its own: the exe's version resource takes the root
+# workspace's version, which release-kit keeps (build.rs).
+version = "0.0.0"
+edition = "2024"
 # Slint 1.19 needs 1.95.
 rust-version = "1.95"
-license.workspace = true
-repository.workspace = true
+license = "MIT"
+repository = "https://github.com/n8watkins/n8tray"
 publish = false
 
-# Slint's generated code allows unsafe code where it needs it, which the
-# workspace's `forbid` refuses; this crate denies it instead, so its own code
-# has none (D11: the OS calls stay in n8tray-platform).
+# Slint's generated code allows unsafe code where it needs it, which `forbid`
+# at the crate level would refuse; the crate denies it, and each of its own
+# modules forbids it, so only the generated module is exempt (D11: the OS
+# calls stay in n8tray-platform).
 [lints.rust]
 unsafe_code = "deny"
 
@@ -40,10 +49,8 @@ slint = { version = "=1.19.1", default-features = false, features = ["std", "bac
 tracing = "0.1.44"
 tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "ansi", "registry"] }
-# The version Tauri's tray uses (and its muda): one GTK in the workspace on
-# Linux, where 0.27 needs a newer one than Tauri's.
-# Without libxdo, which only Linux's predefined Copy and Paste items use.
-tray-icon = { version = "0.25.1", default-features = false, features = ["libappindicator"] }
+# Pulse's version (D33).
+tray-icon = "0.27.0"
 
 [dev-dependencies]
 serde_json = "1.0.154"
@@ -53,3 +60,9 @@ slint-build = "=1.19.1"
 
 [target.'cfg(windows)'.build-dependencies]
 embed-resource = "3.0.12"
+
+# As the root workspace's: the tray stays resident all day.
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true

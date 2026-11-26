@@ -15,7 +15,7 @@ fn embed_windows_resources() {
 
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    let version = std::env::var("CARGO_PKG_VERSION").unwrap();
+    let version = root_version(&manifest_dir.join("../Cargo.toml"));
     let mut numbers = version
         .split(['.', '-', '+'])
         .map(|part| part.parse::<u16>().unwrap_or(0));
@@ -73,3 +73,22 @@ END
 
 #[cfg(not(windows))]
 fn embed_windows_resources() {}
+
+/// N8 Tray's version: `[workspace.package] version` in the root Cargo.toml,
+/// which release-kit keeps (this crate is a workspace of its own, D33).
+#[cfg(windows)]
+fn root_version(path: &std::path::Path) -> String {
+    println!("cargo:rerun-if-changed={}", path.display());
+    let text = std::fs::read_to_string(path).expect("the root Cargo.toml is readable");
+    let mut in_package = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_package = line == "[workspace.package]";
+        } else if in_package && let Some(value) = line.strip_prefix("version") {
+            let value = value.trim_start().trim_start_matches('=').trim();
+            return value.trim_matches('"').to_string();
+        }
+    }
+    panic!("no [workspace.package] version in {}", path.display());
+}

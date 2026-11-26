@@ -307,28 +307,27 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: native
-      - run: cargo clippy -p n8tray-native -p n8tray-platform --all-targets --locked -- -D warnings
-      - run: cargo test -p n8tray-native -p n8tray-platform --locked
-      - run: cargo build --release --locked -p n8tray-native
+          workspaces: native
+      # The native crate is a workspace of its own (D33): the root jobs never
+      # compile Slint, so its format, lint and tests run here.
+      - run: cargo fmt --manifest-path native/Cargo.toml --check
+      - run: cargo clippy --manifest-path native/Cargo.toml --all-targets --locked -- -D warnings
+      - run: cargo test --manifest-path native/Cargo.toml --locked
+      - run: cargo build --manifest-path native/Cargo.toml --release --locked
       - if: runner.os == 'Windows'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: n8tray-native-windows
-          path: target/release/n8tray-native.exe
+          path: native/target/release/n8tray-native.exe
           if-no-files-found: error
-      - name: App release does not build the native shell
+      # What keeps the native shell out of the installer: the Tauri bundle's
+      # files and build step, and App release's commands. The check is tested
+      # against bad samples first.
+      - name: The installer and App release leave the native shell out
         if: runner.os == 'Linux'
-        shell: bash
         run: |
-          # App release must build and sign the Tauri app only (D27, D33):
-          # no native shell, no whole-workspace build that would include it.
-          file=.github/workflows/app-release.yml
-          if grep -n -E 'n8tray-native|native/|--workspace|cargo (build|install|run)' "$file"; then
-            echo "::error file=$file::App release must not build n8tray-native (D33)."
-            exit 1
-          fi
-          grep -q 'tauri build' "$file" || { echo "::error file=$file::App release no longer runs tauri build; update this guard."; exit 1; }
-          echo "App release builds the Tauri app only."
+          node native/scripts/check-release.mjs --self-test
+          node native/scripts/check-release.mjs
 
   # npm run release:check exactly as release-kit's Release workflow runs it:
   # on a bare Ubuntu runner, without the GTK and WebKit packages the app
