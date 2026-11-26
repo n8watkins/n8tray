@@ -444,7 +444,8 @@ This entry records how the kit answers it; `native/ui/README.md` is the rulebook
 - One way for a view to reach N8 Tray, `view::intent`: settings and host commands by key, Start at sign-in, an app's actions (armed through `view::confirm`), N8 Tray's own targets by name, an app's `open` and `menu` items, installing an update, a history read on a worker thread with the reply on the UI thread, recent warnings, the status text and the clipboard.
   Views still pass only ids and keys (D18); `view::intent::resolve` maps each request through the same validation as the tray menu and the Tauri commands, and refuses the rest.
   Until the native shell installs updates in place, "install" and "try again" open the release page, as the tray menu's Install update does (D27).
-  The clipboard is Win32's (`n8tray_platform::clipboard`); elsewhere copying says it is not available yet.
+  The clipboard is Win32's (`n8tray_platform::clipboard`), opened with the window's own handle as its owner, and read only within the block's size; elsewhere copying says it is not available yet.
+  `press_action` refuses an action that is not possible now or an app busy with another action, as its button shows, so a stale click or key does nothing.
   Copy status copies the same text as today: `native/src/report.rs` is a copy of the Tauri app's, kept equal by a test until the switch removes that one.
 - A view's types live in its model file, `views/<name>-model.slint`, exported whole through a chain of `export *` from `main.slint` (Slint allows one per file).
   A struct a view declares is then a plain Rust type; one a model file did not export would reach Rust only as a deprecated alias, which `-D warnings` refuses.

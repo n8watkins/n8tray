@@ -15,7 +15,7 @@ use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 use n8tray_core::host::Command;
-use n8tray_core::model::HostSnapshot;
+use n8tray_core::model::{ActionView, AppView, HostSnapshot};
 use n8tray_core::placement::{self, Rect};
 use slint::ComponentHandle;
 use tracing::{info, warn};
@@ -99,6 +99,11 @@ impl Hub {
         }
     }
 
+    /// The native window's handle, while it exists.
+    pub fn native(&self) -> Option<isize> {
+        self.hwnd
+    }
+
     /// Runs `f` with the window's models, if the window exists (a reply to
     /// a view's request, `view::intent`).
     pub fn with_models(&self, f: impl FnOnce(&dyn Models)) {
@@ -146,15 +151,25 @@ impl Hub {
     /// until the view changes or the window hides. Views reach it through
     /// `view::intent::send(Intent::Action { .. })`.
     pub fn press_action(&mut self, app: &str, action: &str, component: Option<&str>) {
-        let Some(found) = self
+        let Some(found_app) = self
             .latest
             .as_ref()
             .and_then(|s| s.apps.iter().find(|a| a.id == app))
-            .and_then(|a| a.actions.iter().find(|x| x.id == action))
         else {
+            warn!("No app {app}");
+            return;
+        };
+        let Some(found) = found_app.actions.iter().find(|x| x.id == action) else {
             warn!("No action {action} for {app}");
             return;
         };
+        // As the button shows it (`view::action::action_ui`): an action that
+        // is not possible now, or any action while the app is busy with
+        // another, does nothing, even from a stale click or a key.
+        if let Err(why) = pressable(found_app, found) {
+            info!("{action} of {app} not run: {why}");
+            return;
+        }
         let now = Instant::now();
         let key = confirm::key(app, action, component);
         match self.router.confirms.press(key, found.confirm, now) {
@@ -492,6 +507,18 @@ impl Hub {
     }
 }
 
+/// Whether an app's action may run now: it is possible (`enabled`) and the
+/// app is not busy with another (`pending`), as its button says.
+fn pressable(app: &AppView, action: &ActionView) -> Result<(), &'static str> {
+    if app.pending.is_some() {
+        Err("the app is busy")
+    } else if !action.enabled {
+        Err("not possible now")
+    } else {
+        Ok(())
+    }
+}
+
 /// Why the window is placed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Place {
@@ -628,6 +655,85 @@ mod tests {
         arrived(&ui);
         assert!(!ui.global::<RowFocus>().get_pending());
         ui.hide().unwrap();
+    }
+
+    /// A hub with no window yet, its host a channel the test reads.
+    fn hub_with(snapshot: &HostSnapshot) -> (Hub, std::sync::mpsc::Receiver<Command>) {
+        crate::view::gallery::headless().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut hub = Hub::new(WhenHidden::Drop);
+        hub.set_host(tx);
+        hub.latest = Some(snapshot.clone());
+        (hub, rx)
+    }
+
+    /// An app with Stop, which asks to confirm.
+    fn confirming_stop(s: &mut HostSnapshot) -> (String, String) {
+        let app = s
+            .apps
+            .iter_mut()
+            .find(|a| crate::view::format::row_action(a).is_some())
+            .expect("an app with an action");
+        app.pending = None;
+        let id = app.id.clone();
+        let action = crate::view::format::row_action(app).unwrap().id.clone();
+        for a in &mut app.actions {
+            if a.id == action {
+                a.enabled = true;
+                a.confirm = true;
+            }
+        }
+        (id, action)
+    }
+
+    /// Hiding the window disarms: a second press after it opens again
+    /// arms again, it does not run what was armed before.
+    #[test]
+    fn hiding_clears_armed_actions() {
+        let mut s = fixture("busy");
+        let (app, action) = confirming_stop(&mut s);
+        let (mut hub, rx) = hub_with(&s);
+        hub.press_action(&app, &action, None);
+        let key = confirm::key(&app, &action, None);
+        assert!(hub.router.confirms.is_armed(&key, Instant::now()));
+        hub.hide(false);
+        assert!(!hub.router.confirms.is_armed(&key, Instant::now()));
+        hub.press_action(&app, &action, None);
+        assert!(rx.try_recv().is_err(), "armed again, not run");
+    }
+
+    /// A press on an action that is not possible now, or while the app is
+    /// busy, sends nothing and arms nothing.
+    #[test]
+    fn a_disabled_action_or_a_busy_app_runs_nothing() {
+        let mut s = fixture("busy");
+        let (app, action) = confirming_stop(&mut s);
+        let key = confirm::key(&app, &action, None);
+        let set = |s: &mut HostSnapshot, enabled: bool, pending: Option<&str>| {
+            let a = s.apps.iter_mut().find(|a| a.id == app).unwrap();
+            a.pending = pending.map(String::from);
+            for x in &mut a.actions {
+                x.confirm = false;
+                if x.id == action {
+                    x.enabled = enabled;
+                }
+            }
+        };
+        let mut disabled = s.clone();
+        set(&mut disabled, false, None);
+        let mut busy = s.clone();
+        set(&mut busy, true, Some("Stopping"));
+        for snapshot in [disabled, busy] {
+            let (mut hub, rx) = hub_with(&snapshot);
+            hub.press_action(&app, &action, None);
+            assert!(rx.try_recv().is_err());
+            assert!(!hub.router.confirms.is_armed(&key, Instant::now()));
+        }
+        let mut fine = s.clone();
+        set(&mut fine, true, None);
+        let (mut hub, rx) = hub_with(&fine);
+        hub.press_action(&app, &action, None);
+        assert!(matches!(rx.try_recv(), Ok(Command::Action { .. })));
     }
 
     /// Compact and the window height come from the snapshot's settings
