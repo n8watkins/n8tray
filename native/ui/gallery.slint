@@ -68,36 +68,16 @@ component Gutter inherits VerticalLayout {
     spacing: 6px;
 }
 
-export component Gallery inherits Window {
-    // Empty: every family; else one of: title, rows, compact, more, status,
-    // buttons, switches, banners, sections, charts, scroll, tooltip.
+// The gallery's content: the theme links, then the cards in columns.
+component GalleryPage inherits VerticalLayout {
     in property <string> only;
-    // Drawings from Rust (view::format::spark and chart), from the fixtures.
     in property <[string]> spark-lines;
     in property <[string]> spark-fills;
     in property <string> chart-memory-line;
     in property <string> chart-memory-fill;
     in property <string> chart-cpu-line;
     property <bool> all: root.only == "";
-
-    // Its full size: a headless render uses it, a window scrolls to it.
-    out property <length> content-width: page.preferred-width;
-    out property <length> content-height: page.preferred-height;
-
-    title: "N8 Tray widgets";
-    background: Theme.contrast ? Theme.system.canvas : Theme.dark ? #141414 : #e9e9ec;
-    default-font-size: Theme.text-body;
-    default-font-family: Theme.font-family;
-    preferred-width: min(root.content-width, 1600px);
-    preferred-height: min(root.content-height, 1000px);
-
-    fl := Flickable {
-        content-width: root.content-width;
-        content-height: root.content-height;
-
-    page := VerticalLayout {
-        width: root.content-width;
-        height: root.content-height;
+    alignment: start;
 
     // The theme, for a look on screen.
     if root.all: HorizontalLayout {
@@ -480,6 +460,10 @@ export component Gallery inherits Window {
                         SmallButton { text: "What's new"; }
                         SmallButton { text: "Check now"; demo-hover: true; }
                         SmallButton { text: "Install"; primary: true; }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
                         SmallButton { text: "Check now"; enabled: false; }
                         SmallButton { text: "Stop Kokoro"; confirm: true; demo-armed: true; }
                         SmallButton { text: "Restart"; demo-focus: true; }
@@ -525,7 +509,7 @@ export component Gallery inherits Window {
 
         // Column 3: settings, banners, sections and charts, scrolling,
         // tooltips, the bottom bar.
-        if root.all || root.only == "switches" || root.only == "banners" || root.only == "sections" || root.only == "charts" || root.only == "scroll" || root.only == "tooltip": VerticalLayout {
+        if root.all || root.only == "switches" || root.only == "banners" || root.only == "sections" || root.only == "charts": VerticalLayout {
             spacing: 20px;
             alignment: start;
 
@@ -566,15 +550,15 @@ export component Gallery inherits Window {
                     Banner {
                         glyph: GlyphName.info;
                         text: "Your PowerShell N8 Tray is managing these apps. This app is watching only; nothing here starts or stops apps.";
-                        link: "Learn more";
-                        link-open: "Show less";
+                        link: "Learn\u{a0}more";
+                        link-open: "Show\u{a0}less";
                         more: "Both trays read the same apps. Until this one replaces the PowerShell tray, it only shows their state and memory, so the two never fight over an app. Exit the PowerShell N8 Tray and this one manages them.";
                     }
                     Banner {
                         glyph: GlyphName.info;
                         text: "Your PowerShell N8 Tray is managing these apps. This app is watching only; nothing here starts or stops apps.";
-                        link: "Learn more";
-                        link-open: "Show less";
+                        link: "Learn\u{a0}more";
+                        link-open: "Show\u{a0}less";
                         more: "Both trays read the same apps. Until this one replaces the PowerShell tray, it only shows their state and memory, so the two never fight over an app. Exit the PowerShell N8 Tray and this one manages them.";
                         expanded: true;
                         demo-link-focus: true;
@@ -671,7 +655,7 @@ export component Gallery inherits Window {
             alignment: start;
 
             if root.all || root.only == "scroll": Card {
-                caption: "Scroll area: 12 apps in 220 px; the scrollbar at rest and hovered";
+                caption: "Scroll area (at rest, hovered) and bottom bar";
                 HorizontalLayout {
                     spacing: 0px;
                     for hovered in [false, true]: ScrollArea {
@@ -718,7 +702,42 @@ export component Gallery inherits Window {
             }
         }
     }
-    }
+}
+
+export component Gallery inherits Window {
+    // Empty: every family; else one of: title, rows, compact, more, status,
+    // buttons, switches, banners, sections, charts, scroll, tooltip.
+    in property <string> only;
+    // Drawings from Rust (view::format::spark and chart), from the fixtures.
+    in property <[string]> spark-lines;
+    in property <[string]> spark-fills;
+    in property <string> chart-memory-line;
+    in property <string> chart-memory-fill;
+    in property <string> chart-cpu-line;
+
+    // Its full size: a headless render uses it, a window scrolls to it.
+    out property <length> content-width: page.preferred-width;
+    out property <length> content-height: page.preferred-height;
+
+    title: "N8 Tray widgets";
+    background: Theme.contrast ? Theme.system.canvas : Theme.dark ? #141414 : #e9e9ec;
+    default-font-size: Theme.text-body;
+    default-font-family: Theme.font-family;
+    preferred-width: min(root.content-width, 1600px);
+    preferred-height: min(root.content-height, 1000px);
+
+    Flickable {
+        content-width: root.content-width;
+        content-height: root.content-height;
+
+        page := GalleryPage {
+            only: root.only;
+            spark-lines: root.spark-lines;
+            spark-fills: root.spark-fills;
+            chart-memory-line: root.chart-memory-line;
+            chart-memory-fill: root.chart-memory-fill;
+            chart-cpu-line: root.chart-cpu-line;
+        }
     }
 
     TooltipLayer { }

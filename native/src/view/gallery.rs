@@ -110,7 +110,10 @@ fn fill(ui: &Gallery) {
         .collect();
     let strings = |pick: fn(&format::Drawing) -> &String| -> ModelRc<SharedString> {
         ModelRc::from(Rc::new(VecModel::from(
-            sparks.iter().map(|d| SharedString::from(pick(d).as_str())).collect::<Vec<_>>(),
+            sparks
+                .iter()
+                .map(|d| SharedString::from(pick(d).as_str()))
+                .collect::<Vec<_>>(),
         )))
     };
     ui.set_spark_lines(strings(|d| &d.line));
@@ -205,7 +208,11 @@ impl Picture {
         let mut buffer = vec![0; reader.output_buffer_size().ok_or("too large")?];
         let info = reader.next_frame(&mut buffer).map_err(|e| e.to_string())?;
         if info.color_type != png::ColorType::Rgb {
-            return Err(format!("{} is {:?}, not RGB", path.display(), info.color_type));
+            return Err(format!(
+                "{} is {:?}, not RGB",
+                path.display(),
+                info.color_type
+            ));
         }
         buffer.truncate(info.buffer_size());
         Ok(Picture {
@@ -219,8 +226,11 @@ impl Picture {
 /// The software renderer with no window system, one window per component:
 /// set once per thread (Slint's platform is per thread).
 struct Headless {
-    windows: Rc<RefCell<Vec<Rc<MinimalSoftwareWindow>>>>,
+    windows: Windows,
 }
+
+/// The windows the headless platform made, the latest last.
+type Windows = Rc<RefCell<Vec<Rc<MinimalSoftwareWindow>>>>;
 
 impl Platform for Headless {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
@@ -231,11 +241,10 @@ impl Platform for Headless {
 }
 
 thread_local! {
-    static WINDOWS: RefCell<Option<Rc<RefCell<Vec<Rc<MinimalSoftwareWindow>>>>>> =
-        const { RefCell::new(None) };
+    static WINDOWS: RefCell<Option<Windows>> = const { RefCell::new(None) };
 }
 
-fn headless() -> Result<Rc<RefCell<Vec<Rc<MinimalSoftwareWindow>>>>, String> {
+fn headless() -> Result<Windows, String> {
     WINDOWS.with(|cell| {
         if let Some(windows) = cell.borrow().as_ref() {
             return Ok(windows.clone());
@@ -265,6 +274,14 @@ pub fn render(look: Look, only: &str, scale: f32, font: Font) -> Result<Picture,
     ui.set_only(only.into());
     window.dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged {
         scale_factor: scale,
+    });
+    // A first frame brings the conditional parts up to date, so the size
+    // read next is the one family's, not the whole gallery's.
+    window.set_size(slint::PhysicalSize::new(16, 16));
+    ui.show().map_err(|e| e.to_string())?;
+    let mut scratch = vec![Rgb8Pixel::new(0, 0, 0); 16 * 16];
+    window.draw_if_needed(|renderer| {
+        renderer.render(&mut scratch, 16);
     });
     let width = (ui.get_content_width() * scale).ceil() as u32;
     let height = (ui.get_content_height() * scale).ceil() as u32;
@@ -332,7 +349,10 @@ mod tests {
         let mut different = 0;
         let mut rgb = Vec::with_capacity(golden.rgb.len());
         for (g, a) in golden.rgb.chunks(3).zip(actual.rgb.chunks(3)) {
-            let far = g.iter().zip(a).any(|(x, y)| x.abs_diff(*y) > CHANNEL_TOLERANCE);
+            let far = g
+                .iter()
+                .zip(a)
+                .any(|(x, y)| x.abs_diff(*y) > CHANNEL_TOLERANCE);
             if far {
                 different += 1;
                 rgb.extend([255, 0, 0]);

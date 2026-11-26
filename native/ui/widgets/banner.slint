@@ -24,6 +24,8 @@ export component Banner {
     in property <string> secondary;
     in property <string> primary;
     // The inline link's words while closed and open, and what it opens.
+    // Join their words with a no-break space ("Learn\u{a0}more"): today's
+    // link is a button, which never breaks across lines.
     in property <string> link;
     in property <string> link-open;
     in property <string> more;

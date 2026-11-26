@@ -402,10 +402,7 @@ pub fn since(started_at: Option<&str>) -> String {
         return "-".into();
     };
     match chrono::DateTime::parse_from_rfc3339(text) {
-        Ok(at) => at
-            .with_timezone(&chrono::Local)
-            .format("%H:%M")
-            .to_string(),
+        Ok(at) => at.with_timezone(&chrono::Local).format("%H:%M").to_string(),
         Err(_) => "-".into(),
     }
 }
@@ -606,7 +603,10 @@ mod tests {
 
     #[test]
     fn points_scale_into_the_box_from_zero() {
-        assert_eq!(points(&[0.0, 10.0], 10.0, 10.0, None, 2.0, 0), "0.0,9.0 10.0,2.9");
+        assert_eq!(
+            points(&[0.0, 10.0], 10.0, 10.0, None, 2.0, 0),
+            "0.0,9.0 10.0,2.9"
+        );
         assert_eq!(points(&[], 10.0, 10.0, None, 2.0, 0), "");
         assert_eq!(
             points(&[0.0, 0.0, 10.0], 10.0, 10.0, None, 2.0, 2),
@@ -619,14 +619,30 @@ mod tests {
         // Under a minute: nothing.
         assert_eq!(spark(&[0.0, 0.0, 5.0, 6.0]), Drawing::default());
         let s = spark(&[0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-        let today = points(&[0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 44.0, 20.0, None, 2.0, 2);
-        let as_commands = today.replace(',', " ").split(' ').collect::<Vec<_>>().chunks(2).map(|p| p.join(" ")).collect::<Vec<_>>();
+        let today = points(
+            &[0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            44.0,
+            20.0,
+            None,
+            2.0,
+            2,
+        );
+        let as_commands = today
+            .replace(',', " ")
+            .split(' ')
+            .collect::<Vec<_>>()
+            .chunks(2)
+            .map(|p| p.join(" "))
+            .collect::<Vec<_>>();
         assert_eq!(s.line, format!("M {}", as_commands.join(" L ")));
         assert!(s.fill.starts_with("M 12.6 20.0 L "), "{}", s.fill);
         assert!(s.fill.ends_with(" L 44.0 20.0 Z"), "{}", s.fill);
         let c = chart(&[1.0, 2.0], &[0.0, 5.0]);
         assert_eq!(c.memory.line, "M 0.0 37.3 L 336.0 11.7");
-        assert_eq!(c.memory.fill, "M 0.0 64.0 L 0.0 37.3 L 336.0 11.7 L 336.0 64.0 Z");
+        assert_eq!(
+            c.memory.fill,
+            "M 0.0 64.0 L 0.0 37.3 L 336.0 11.7 L 336.0 64.0 Z"
+        );
         // CPU against at least 10%: 5% of a 10% top (x 1.15).
         assert_eq!(c.cpu, "M 0.0 63.0 L 336.0 37.3");
         assert_eq!(chart(&[], &[]), ChartDrawing::default());
@@ -722,7 +738,11 @@ mod tests {
         assert_eq!(memory(Some(999.5)), "1000 MB");
         assert_eq!(memory(None), "");
         assert_eq!(cpu(Some(4.0)), "4% CPU");
-        assert_eq!(cpu(Some(9.96)), "10% CPU", "as today: \"10.0\" loses its \".0\"");
+        assert_eq!(
+            cpu(Some(9.96)),
+            "10% CPU",
+            "as today: \"10.0\" loses its \".0\""
+        );
         assert_eq!(percent(Some(55.5)), "56%");
     }
 

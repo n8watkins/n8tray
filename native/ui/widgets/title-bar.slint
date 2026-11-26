@@ -24,7 +24,9 @@ component Summary {
         root.clicked();
     }
     horizontal-stretch: 0;
-    min-width: l.preferred-width;
+    // The first thing to give way when the bar is full.
+    min-width: 0px;
+    preferred-width: l.preferred-width;
     height: 20px;
 
     p := Pressable {
@@ -86,7 +88,6 @@ export component TitleBar {
         padding-right: root.compact ? 8px : 10px;
         padding-left: root.back ? 8px : root.compact ? 12px : 14px;
         spacing: 8px;
-        alignment: start;
 
         if root.back: VerticalLayout {
             alignment: center;
@@ -120,12 +121,14 @@ export component TitleBar {
         VerticalLayout {
             alignment: center;
             horizontal-stretch: 0;
-            min-width: 0px;
             Label {
                 text: root.title;
                 font-size: Theme.text-title;
                 font-weight: Theme.weight-bold;
                 height: 20px;
+                // The hub's "N8 Tray" never shortens (`white-space: nowrap`);
+                // a panel's app name does.
+                min-width: root.back ? 0px : self.preferred-width;
                 accessible-role: AccessibleRole.text;
                 accessible-label: self.text;
             }
