@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 - 2026-11-25
+
+### New
+
+- Simpler summary, without the Windows memory bar ([#38](https://github.com/n8watkins/n8tray/pull/38))
+
+### Fixed
+
+- Escape works right after opening a panel ([#40](https://github.com/n8watkins/n8tray/pull/40))
+
 ## 0.5.0 - 2026-11-25
 
 ### New
