@@ -108,6 +108,12 @@ pub enum Command {
         app: String,
         on: bool,
     },
+    /// Pinned apps are in the main view; unpinned ones sit behind one "N more"
+    /// line. What is seen only: it never starts or stops the app (D32).
+    SetPinned {
+        app: String,
+        pinned: bool,
+    },
     SetLaunchAtSignIn(bool),
     SetNotifications(bool),
     /// Low-memory notifications (they also need `SetNotifications` on).
@@ -272,7 +278,7 @@ fn run_supervised(
             shown.level = LevelName::Problem;
             shown.headline = "Problem".into();
             shown.reason = Some(reason.clone());
-            shown.tooltip = crate::tooltip::format("N8 Tray: Problem", &[], &[note]);
+            shown.tooltip = crate::tooltip::format("N8 Tray: Problem", &[], 0, &[note]);
             emit(Event::Snapshot(Arc::new(shown)));
         }
         if settings::load(&options.folders.settings_file)
@@ -1596,6 +1602,7 @@ impl Host {
                 self.change(|s| s.app_mut(&app).auto_start = Some(on))
             }
             Command::SetOwnIcon { app, on } => self.change(|s| s.app_mut(&app).own_icon = on),
+            Command::SetPinned { app, pinned } => self.change(|s| s.app_mut(&app).pinned = pinned),
             Command::SetLaunchAtSignIn(on) => {
                 self.change(|s| s.startup.launch_at_sign_in = on);
                 self.apply_sign_in();
@@ -1817,10 +1824,11 @@ impl Host {
             history: self.history.view("n8tray", now),
         };
 
-        let hosted: Vec<_> = apps
-            .iter()
-            .filter(|a| a.hosted && a.level != LevelName::Hidden)
-            .collect();
+        // Every app in the hub, pinned or not: the level, the reason and N8's
+        // memory count them all; only the headline's counts and the tooltip's
+        // names follow the pins (D32).
+        let hosted: Vec<_> = apps.iter().filter(|a| crate::pins::in_hub(a)).collect();
+        let counts = crate::pins::counts(&hosted);
         // The tray and its window count what they cost the system (private
         // memory, D24), not the WebView2 runtime code they share with Edge.
         let n8_mb = tray.private_mb.unwrap_or(tray.rss_mb)
@@ -1877,11 +1885,6 @@ impl Host {
             LevelName::Off | LevelName::Hidden => "Nothing running",
         }
         .to_string();
-        let running_names: Vec<String> = hosted
-            .iter()
-            .filter(|a| a.running)
-            .map(|a| a.name.clone())
-            .collect();
         let mut notes = vec![memory.text.clone()];
         if self.legacy {
             notes.push("Watching only: the PowerShell N8 Tray manages apps".into());
@@ -1889,8 +1892,12 @@ impl Host {
         if failed_at.is_some() {
             notes.push(FAILURE_NOTE.into());
         }
-        let tooltip =
-            crate::tooltip::format(&format!("N8 Tray: {headline}"), &running_names, &notes);
+        let tooltip = crate::tooltip::format(
+            &format!("N8 Tray: {headline}"),
+            &counts.running_names,
+            counts.more_running,
+            &notes,
+        );
         let settings = &self.settings.settings;
         let update = UpdateView {
             channel: channel_name(settings.updates.channel).into(),
@@ -1919,8 +1926,9 @@ impl Host {
             level,
             headline,
             reason,
-            running: running_names.len() as u32,
-            total: hosted.len() as u32,
+            running: counts.running_names.len() as u32,
+            total: counts.total,
+            more: counts.more,
             pressure: self.push_pressure.level().unwrap_or(LevelName::Ok),
             memory,
             problems: self
@@ -1967,13 +1975,7 @@ impl Host {
             (Some(f), Some(t)) => format!("{os} {f:.1}/{t:.1} GB free"),
             _ => format!("{os} memory unknown"),
         };
-        // As the window and the menu write memory: MB below 1000, GB from there.
-        let n8 = if n8_mb >= 1000.0 {
-            format!("{:.1} GB", n8_mb / 1024.0)
-        } else {
-            format!("{n8_mb:.0} MB")
-        };
-        text.push_str(&format!(" · N8 {n8}"));
+        text.push_str(&format!(" · N8 {}", crate::util::mb_text(n8_mb)));
         MemoryView {
             free_gb: free.map(|f| (f * 10.0).round() / 10.0),
             total_gb: total.map(|t| (t * 10.0).round() / 10.0),

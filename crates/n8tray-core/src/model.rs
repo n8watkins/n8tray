@@ -43,8 +43,13 @@ pub struct HostSnapshot {
     pub headline: String,
     /// The first reason for the level, such as "VoiceDock: Stopped: crashed".
     pub reason: Option<String>,
+    /// Pinned apps running ("2 of 2 running"); unpinned apps are in `more`.
     pub running: u32,
+    /// Pinned apps shown in N8 Tray.
     pub total: u32,
+    /// The apps outside the main view, behind one "N more" line; `None` when
+    /// every app is in it (D32).
+    pub more: Option<MoreView>,
     pub memory: MemoryView,
     /// The memory pressure level pushed to apps (10 s in, 60 s out).
     pub pressure: LevelName,
@@ -72,6 +77,20 @@ pub struct MemoryView {
     /// The system's name for the memory line: `Windows`, `macOS` or `Linux`.
     pub system: String,
     /// "Windows 4.2/31.1 GB free · N8 310 MB" (GB from 1000 MB).
+    pub text: String,
+}
+
+/// The apps outside the main view (unpinned and not in trouble), as one line.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MoreView {
+    /// At least 1.
+    pub count: u32,
+    pub running: u32,
+    /// Their memory, in MiB (0 when none runs).
+    pub memory_mb: f64,
+    /// "2 more", or "2 more · 1 running, 40 MB" while some run.
     pub text: String,
 }
 
@@ -128,6 +147,11 @@ pub struct AppView {
     pub enabled: bool,
     /// Shown in N8 Tray (false: the app uses its own icon).
     pub hosted: bool,
+    /// The user's pin: pinned apps are in the main view (D32).
+    pub pinned: bool,
+    /// In the main view: shown in N8 Tray, not hidden, and pinned or in
+    /// trouble (attention or problem). The others are in the snapshot's `more`.
+    pub in_main_view: bool,
     pub auto_start: bool,
     /// What is happening now, such as "Stopping".
     pub pending: Option<String>,
@@ -352,6 +376,14 @@ mod tests {
         assert_round_trip(&outcome);
         assert_round_trip(&update);
         assert_round_trip(&warning);
+        let more = MoreView {
+            count: 2,
+            running: 1,
+            memory_mb: 40.0,
+            text: "2 more · 1 running, 40 MB".into(),
+        };
+        assert_round_trip(&more);
+        assert_eq!(serde_json::to_value(&more).unwrap()["memoryMb"], 40.0);
         assert_eq!(
             serde_json::to_value(&update).unwrap()["installError"],
             "bad signature"

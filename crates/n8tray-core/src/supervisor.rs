@@ -551,6 +551,8 @@ impl AppRuntime {
             should_run,
             enabled: settings.enabled,
             hosted: !settings.own_icon,
+            pinned: settings.pinned,
+            in_main_view: crate::pins::in_main_view(!settings.own_icon, settings.pinned, level),
             auto_start: self.auto_start(settings),
             pending: self
                 .pending

@@ -652,6 +652,121 @@ fn tray_with_a_running_app(id: &str) -> Tray {
     tray
 }
 
+/// Unpinning hides an app from the main view and the headline, never from
+/// what runs, the level or N8's memory; the choice is saved (D32).
+#[test]
+fn an_unpinned_app_keeps_running_behind_the_more_line() {
+    let mut tray = tray_with_a_running_app("pinme");
+    let pinned = tray.wait("the app measured", |s| {
+        s.apps
+            .iter()
+            .any(|a| a.id == "pinme" && a.memory_mb.is_some_and(|m| m > 0.0))
+    });
+    let app = pinned.apps.iter().find(|a| a.id == "pinme").unwrap();
+    assert!(app.pinned && app.in_main_view, "pinned by default");
+    assert_eq!((pinned.running, pinned.total), (1, 1));
+    assert_eq!(pinned.more, None);
+    assert!(
+        !pinned.tooltip.contains("more running"),
+        "{}",
+        pinned.tooltip
+    );
+
+    tray.send(HostCommand::SetPinned {
+        app: "pinme".into(),
+        pinned: false,
+    });
+    let unpinned = tray.wait("the app unpinned and measured", |s| {
+        s.apps.iter().any(|a| a.id == "pinme" && !a.pinned)
+            && s.more.as_ref().is_some_and(|m| m.memory_mb > 0.0)
+    });
+    let app = unpinned.apps.iter().find(|a| a.id == "pinme").unwrap();
+    assert!(!app.in_main_view);
+    assert!(app.running && app.state == "ready", "still runs");
+    assert_eq!(
+        (unpinned.running, unpinned.total),
+        (0, 0),
+        "headline: pinned only"
+    );
+    let more = unpinned.more.as_ref().unwrap();
+    assert_eq!((more.count, more.running), (1, 1));
+    assert_eq!(
+        more.text,
+        format!(
+            "1 more · 1 running, {}",
+            n8tray_core::util::mb_text(more.memory_mb)
+        )
+    );
+    assert!(
+        unpinned.tooltip.contains("1 more running"),
+        "{}",
+        unpinned.tooltip
+    );
+    // The level and N8's memory still count it (the level's real test is the
+    // app in trouble below; system memory can move it here).
+    assert!(unpinned.level >= app.level);
+    assert!(
+        unpinned.memory.n8_mb >= app.memory_mb.unwrap(),
+        "{} MB in all, the app alone {:?}",
+        unpinned.memory.n8_mb,
+        app.memory_mb
+    );
+    let saved = std::fs::read_to_string(&tray.folders.settings_file).unwrap();
+    assert!(saved.contains("\"pinned\": false"), "{saved}");
+
+    // An unpinned app in trouble is back in the main view and raises the level.
+    tray.write_manifest(
+        "broken",
+        fake_manifest(
+            "broken",
+            json!({ "type": "file", "intervalSeconds": 1 }),
+            &[],
+            json!({ "run": { "program": "no-such-program" }, "autoStartDefault": true }),
+        ),
+    );
+    tray.send(HostCommand::SetPinned {
+        app: "broken".into(),
+        pinned: false,
+    });
+    let trouble = tray.wait("the unpinned app in trouble", |s| {
+        s.apps
+            .iter()
+            .any(|a| a.id == "broken" && !a.pinned && a.level == LevelName::Problem)
+    });
+    let broken = trouble.apps.iter().find(|a| a.id == "broken").unwrap();
+    assert!(broken.in_main_view, "{broken:?}");
+    assert_eq!(trouble.level, LevelName::Problem);
+    assert_eq!(
+        trouble.more.as_ref().map(|m| m.count),
+        Some(1),
+        "pinme only"
+    );
+
+    // A restart reads the choice back.
+    tray.stop_host();
+    *tray.latest.lock().unwrap() = None;
+    tray.start_host();
+    tray.wait_app("pinme", "still unpinned and running after a restart", |a| {
+        !a.pinned && a.state == "ready"
+    });
+
+    tray.send(HostCommand::SetPinned {
+        app: "pinme".into(),
+        pinned: true,
+    });
+    let again = tray.wait("the app pinned again, broken in trouble", |s| {
+        s.apps.iter().any(|a| a.id == "pinme" && a.pinned)
+            && s.apps
+                .iter()
+                .any(|a| a.id == "broken" && a.level == LevelName::Problem)
+    });
+    assert_eq!(again.total, 1);
+    assert_eq!(
+        again.more, None,
+        "broken is in the main view, pinme is pinned"
+    );
+}
+
 #[test]
 fn a_failure_in_the_host_is_shown_and_the_host_starts_again() {
     let tray = tray_with_a_running_app("steady");
