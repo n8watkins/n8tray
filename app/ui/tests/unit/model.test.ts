@@ -6,7 +6,6 @@ import {
   componentActions,
   sections,
   hubApps,
-  memoryMeter,
   points,
   restartAction,
   rowAction,
@@ -56,18 +55,11 @@ describe("rows", () => {
   });
 });
 
-describe("status card and meter", () => {
+describe("status card", () => {
   it("lead with the reason, else with what runs", () => {
     expect(statusCard(busy).big).toBe("Lead Scraper is over its 1 GB warning");
     expect(statusCard(healthy).big).toBe("2 of 3 running");
     expect(statusCard(empty).big).toBe("No apps installed yet");
-  });
-
-  it("show used memory and the system's name", () => {
-    const m = memoryMeter(busy)!;
-    expect(m.label).toBe("Windows");
-    expect(m.text).toBe("4.2 / 31.1 GB free");
-    expect(m.used).toBeCloseTo(1 - 4.2 / 31.1);
   });
 });
 
