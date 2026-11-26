@@ -1,11 +1,8 @@
-// About N8 Tray (lane: settings, which owns it with Settings). A stub until
-// that lane lands; it owns this file and `src/view/about.rs`.
+// About N8 Tray (lane: settings and about). A stub until that lane lands;
+// it owns this file, `about-model.slint` and `src/view/about.rs`.
 import { TitleBar, ScrollArea, Say, SayLine } from "../widgets.slint";
 import { Nav } from "../nav.slint";
-
-export global AboutModel {
-    in-out property <string> version;
-}
+import { AboutModel } from "about-model.slint";
 
 export component AboutView inherits VerticalLayout {
     TitleBar {

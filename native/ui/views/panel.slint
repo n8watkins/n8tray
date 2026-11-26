@@ -1,15 +1,8 @@
 // One app's panel (lane: app panel). A stub until that lane lands; it owns
-// this file and `src/view/panel.rs`.
-import { Level, TitleBar, ScrollArea, Say, SayLine } from "../widgets.slint";
+// this file, `panel-model.slint` and `src/view/panel.rs`.
+import { TitleBar, ScrollArea, Say, SayLine } from "../widgets.slint";
 import { Nav } from "../nav.slint";
-
-export global PanelModel {
-    in-out property <string> name;
-    in-out property <image> icon;
-    in-out property <Level> level: Level.off;
-    in-out property <string> words;
-    in-out property <string> note: "The app's panel comes with its own lane.";
-}
+import { PanelModel } from "panel-model.slint";
 
 export component PanelView inherits VerticalLayout {
     TitleBar {

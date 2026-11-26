@@ -1,16 +1,18 @@
-// What the shell's Rust code sees (`crate::ui`). Every view is already
-// listed: a view lane edits only its own `views/<name>.slint`, never this
-// file.
-export { Theme, Level, Tone, SystemColors, RowAction, RowData, RowFocus, GlyphName, BarAction, BarLink, OpenItem, KeyValue, WarningItem, TableColumn, TableRow } from "widgets.slint";
+// What the shell's Rust code sees (`crate::ui`) in a release build. Every
+// view file is exported whole, so a struct, enum or global a view declares
+// in its own `.slint` file is a plain Rust type in `crate::ui` (anything not
+// exported here would reach Rust only as a deprecated alias, which
+// `-D warnings` refuses). A view keeps those types in its model file,
+// `views/<name>-model.slint`, which holds no component (an exported
+// component that is not a window is a build warning). Slint allows one
+// `export *` per file, so the model files form a chain: this file exports
+// the hub's, the hub's exports All apps', and so on to History's (README,
+// "Your types reach Rust"; `view::router`'s tests check the chain). A view
+// lane edits only its own files, never this one.
+//
+// Debug and test builds compile `debug.slint` instead, which adds the widget
+// gallery (build.rs): release builds do not carry it.
+export { Theme, Level, Tone, SystemColors, RowAction, RowData, RowFocus, GlyphName, BarAction, BarLink, BannerKind, OpenItem, KeyValue, WarningItem, TableColumn, TableRow } from "widgets.slint";
 export { Nav, View } from "nav.slint";
 export { FlyoutWindow } from "shell.slint";
-export { HubModel } from "views/hub.slint";
-export { AllAppsModel } from "views/all-apps.slint";
-export { PanelModel } from "views/panel.slint";
-export { DetailsModel } from "views/details.slint";
-export { SettingsModel } from "views/settings.slint";
-export { AboutModel } from "views/about.slint";
-export { HistoryModel } from "views/history.slint";
-// The widget gallery: compiled into every build, opened only by debug and
-// test builds (`--gallery`, `--gallery-png`, the golden image tests).
-export { Gallery } from "gallery.slint";
+export * from "views/hub-model.slint";

@@ -1,0 +1,23 @@
+// What Rust fills for the hub (lane: hub screen, which owns this file with
+// `hub.slint`): the `HubModel` global and every struct or enum it uses.
+// Everything here is a plain Rust type in `crate::ui`; put no component in
+// a model file (README, "Your types reach Rust").
+
+// The kit's export chain: keep this line as it is.
+export * from "all-apps-model.slint";
+
+import { Level } from "../widgets.slint";
+
+// One line of the placeholder, a struct of the view's own: Rust sees it as
+// `crate::ui::HubLine` with no deprecation warning (`view::hub` tests it).
+export struct HubLine {
+    text: string,
+    strong: bool,
+}
+
+export global HubModel {
+    in-out property <Level> level: Level.off;
+    in-out property <string> level-text: "Idle";
+    in-out property <string> summary;
+    in-out property <[HubLine]> lines: [{ text: "Starting", strong: true }];
+}

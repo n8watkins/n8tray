@@ -17,7 +17,8 @@ pub mod action;
 #[allow(dead_code, reason = "the kit for the view lanes")]
 pub mod confirm;
 pub mod format;
-#[cfg(any(debug_assertions, test))]
+// Only where build.rs compiled the gallery (`ui/debug.slint`).
+#[cfg(debug_assertions)]
 pub mod gallery;
 #[allow(dead_code, reason = "the kit for the view lanes")]
 pub mod icons;

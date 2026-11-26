@@ -12,7 +12,7 @@ use n8tray_core::model::HostSnapshot;
 use super::confirm::Confirms;
 use super::icons::Icons;
 use super::{about, all_apps, details, history, hub, panel, settings};
-#[cfg(any(debug_assertions, test))]
+#[cfg(debug_assertions)]
 use crate::ui::Gallery;
 use crate::ui::{
     AboutModel, AllAppsModel, DetailsModel, FlyoutWindow, HistoryModel, HubModel, Nav, PanelModel,
@@ -72,7 +72,7 @@ macro_rules! models {
     };
 }
 models!(FlyoutWindow);
-#[cfg(any(debug_assertions, test))]
+#[cfg(debug_assertions)]
 models!(Gallery);
 
 /// What a view's `fill` gets.

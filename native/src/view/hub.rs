@@ -6,24 +6,28 @@
 use std::rc::Rc;
 
 use n8tray_core::model::HostSnapshot;
-use slint::{ModelRc, SharedString, VecModel};
+use slint::{ModelRc, VecModel};
 
 use super::format;
 use super::router::{Ctx, Models};
 use super::rows;
+use crate::ui::HubLine;
 
-/// The placeholder's lines: the headline, then each hosted app.
-pub fn lines(snapshot: &HostSnapshot) -> Vec<String> {
-    format::hub_apps(&snapshot.apps)
-        .iter()
-        .map(|a| {
-            format!(
-                "{}: {}",
-                a.name,
-                a.pending.clone().unwrap_or(a.words.clone())
-            )
-        })
-        .collect()
+/// The placeholder's lines: the headline, then each app in the main view.
+pub fn lines(snapshot: &HostSnapshot) -> Vec<HubLine> {
+    let apps = format::main_view_apps(&snapshot.apps).into_iter().map(|a| {
+        let words = a.pending.as_deref().unwrap_or(&a.words);
+        HubLine {
+            text: format!("{}: {words}", a.name).into(),
+            strong: false,
+        }
+    });
+    std::iter::once(HubLine {
+        text: snapshot.headline.as_str().into(),
+        strong: true,
+    })
+    .chain(apps)
+    .collect()
 }
 
 pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
@@ -34,33 +38,39 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
     model.set_summary(
         format::title_summary(s.pinned_running, s.pinned_total, s.memory.n8_mb).into(),
     );
-    model.set_headline(s.headline.as_str().into());
-    let lines: Vec<SharedString> = lines(s).into_iter().map(SharedString::from).collect();
-    model.set_lines(ModelRc::from(Rc::new(VecModel::from(lines))));
+    model.set_lines(ModelRc::from(Rc::new(VecModel::from(lines(s)))));
 }
 
 pub fn wire(_ui: &dyn Models) {}
 
 #[cfg(test)]
 mod tests {
-    use n8tray_core::model::LevelName;
-
     use super::*;
     use crate::tests::fixture;
 
+    /// `HubLine` is declared in `ui/views/hub.slint`, not in the kit: a
+    /// view's own struct is a plain Rust type (this module compiles under
+    /// `-D warnings`, which refuses Slint's deprecated aliases).
     #[test]
-    fn the_placeholder_shows_each_hosted_app() {
-        let s = fixture("trouble");
-        let hosted: Vec<&str> = s
+    fn the_placeholder_shows_the_headline_then_each_app_in_the_main_view() {
+        let s = fixture("pinned");
+        let shown: Vec<&str> = s
             .apps
             .iter()
-            .filter(|a| a.hosted && a.level != LevelName::Hidden)
+            .filter(|a| n8tray_core::pins::in_hub(a) && a.in_main_view)
             .map(|a| a.name.as_str())
             .collect();
+        assert!(
+            shown.len() < s.apps.iter().filter(|a| a.hosted).count(),
+            "the pinned fixture has apps outside the main view"
+        );
         let lines = lines(&s);
-        assert_eq!(lines.len(), hosted.len());
-        for (line, name) in lines.iter().zip(hosted) {
-            assert!(line.starts_with(name), "{line}");
+        assert_eq!(lines[0].text, s.headline.as_str());
+        assert!(lines[0].strong);
+        assert_eq!(lines.len(), shown.len() + 1);
+        for (line, name) in lines[1..].iter().zip(shown) {
+            assert!(line.text.starts_with(name), "{}", line.text);
+            assert!(!line.strong);
         }
     }
 }
