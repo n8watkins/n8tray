@@ -49,7 +49,7 @@ test("Tab reaches every control in order, Space works the start-at-sign-in switc
 
 test("notifications are a plain switch; the PC's memory has none (D34)", async ({ page }) => {
   await open(page, "busy", "settings");
-  const toggle = page.getByRole("switch", { name: "Notifications", exact: true });
+  const toggle = page.getByRole("switch", { name: /^Notifications/ });
   await expect(toggle).toBeChecked();
   await expect(toggle).toBeEnabled();
   await toggle.focus();
