@@ -6,11 +6,7 @@ use std::fmt::Write as _;
 use n8tray_core::model::{HostSnapshot, WarningView};
 
 fn mb(value: Option<f64>) -> String {
-    match value {
-        Some(mb) if mb >= 1000.0 => format!("{:.1} GB", mb / 1024.0),
-        Some(mb) => format!("{mb:.0} MB"),
-        None => "-".into(),
-    }
+    value.map_or_else(|| "-".into(), n8tray_core::util::mb_text)
 }
 
 pub fn status_text(s: &HostSnapshot, warnings: &[WarningView]) -> String {
@@ -73,4 +69,21 @@ pub fn status_text(s: &HostSnapshot, warnings: &[WarningView]) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mb;
+
+    /// The figures read as they did with the report's own formatter.
+    #[test]
+    fn memory_figures_read_as_before() {
+        assert_eq!(mb(None), "-");
+        assert_eq!(mb(Some(0.0)), "0 MB");
+        assert_eq!(mb(Some(15.2)), "15 MB");
+        assert_eq!(mb(Some(999.4)), "999 MB");
+        assert_eq!(mb(Some(999.6)), "1000 MB");
+        assert_eq!(mb(Some(1000.0)), "1.0 GB");
+        assert_eq!(mb(Some(1950.0)), "1.9 GB");
+    }
 }

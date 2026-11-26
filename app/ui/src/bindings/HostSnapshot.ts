@@ -2,6 +2,7 @@
 import type { AppView } from "./AppView";
 import type { LevelName } from "./LevelName";
 import type { MemoryView } from "./MemoryView";
+import type { MoreView } from "./MoreView";
 import type { ProblemView } from "./ProblemView";
 import type { SettingsView } from "./SettingsView";
 import type { TrayUsage } from "./TrayUsage";
@@ -19,7 +20,33 @@ headline: string,
 /**
  * The first reason for the level, such as "VoiceDock: Stopped: crashed".
  */
-reason: string | null, running: number, total: number, memory: MemoryView, 
+reason: string | null, 
+/**
+ * Apps in the hub that run, pinned or not.
+ */
+running: number, 
+/**
+ * Apps in the hub (shown in N8 Tray, not hidden), pinned or not.
+ */
+total: number, 
+/**
+ * Pinned apps that run, for the pinned headline (D32). An unpinned app
+ * pulled into the main view by trouble is shown but not counted.
+ */
+pinnedRunning: number, 
+/**
+ * Pinned apps in the hub.
+ */
+pinnedTotal: number, 
+/**
+ * The pinned headline: "2 of 2 running", "Nothing pinned" or "No apps".
+ */
+pinnedText: string, 
+/**
+ * The apps outside the main view, behind one "N more" line; `None` when
+ * every app is in it (D32).
+ */
+more: MoreView | null, memory: MemoryView, 
 /**
  * The memory pressure level pushed to apps (10 s in, 60 s out).
  */

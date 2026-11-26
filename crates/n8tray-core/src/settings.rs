@@ -129,6 +129,10 @@ pub struct AppSettings {
     pub auto_start: Option<bool>,
     /// "Use its own icon": the app is not hosted and not in the hub.
     pub own_icon: bool,
+    /// Pinned: shown in the main view. Unpinned apps sit behind one "N more"
+    /// line; what is seen only, never what runs (D32). A file without it reads
+    /// as pinned, so it needs no new schema version.
+    pub pinned: bool,
     /// The user's alert thresholds, over the manifest's budget.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub budget: Option<BudgetOverride>,
@@ -142,6 +146,7 @@ impl Default for AppSettings {
             enabled: true,
             auto_start: None,
             own_icon: false,
+            pinned: true,
             budget: None,
             other: Map::new(),
         }
@@ -425,6 +430,79 @@ mod tests {
         let loaded = load(&path);
         assert_eq!(loaded.error, None);
         assert_eq!(loaded.settings, settings);
+    }
+
+    #[test]
+    fn apps_are_pinned_unless_unpinned() {
+        assert!(AppSettings::default().pinned);
+        assert!(Settings::default().app("anything").pinned);
+
+        // A file from before the setting existed: every app reads as pinned,
+        // with no new schema version.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{ "schemaVersion": 1, "apps": { "voicedock": { "enabled": true, "ownIcon": false } } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.error, None);
+        assert_eq!(SCHEMA_VERSION, 1);
+        assert!(loaded.settings.app("voicedock").pinned);
+
+        // Unpinned, it is saved and read back.
+        let mut settings = loaded.settings;
+        settings.app_mut("voicedock").pinned = false;
+        save(&path, &settings).unwrap();
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("\"pinned\": false")
+        );
+        let again = load(&path);
+        assert!(!again.settings.app("voicedock").pinned);
+        assert_eq!(again.settings, settings);
+    }
+
+    /// An older N8 Tray, whose app settings have no `pinned`, keeps the key
+    /// through a load and a save, so going back a version and forward again
+    /// loses no choice.
+    #[test]
+    fn an_older_build_keeps_an_unpinned_app_unpinned() {
+        #[derive(Serialize, Deserialize)]
+        #[serde(rename_all = "camelCase", default)]
+        struct OlderAppSettings {
+            enabled: bool,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            auto_start: Option<bool>,
+            own_icon: bool,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            budget: Option<BudgetOverride>,
+            #[serde(flatten)]
+            other: Map<String, Value>,
+        }
+        impl Default for OlderAppSettings {
+            fn default() -> Self {
+                OlderAppSettings {
+                    enabled: true,
+                    auto_start: None,
+                    own_icon: false,
+                    budget: None,
+                    other: Map::new(),
+                }
+            }
+        }
+
+        let mut settings = Settings::default();
+        settings.app_mut("voicedock").pinned = false;
+        let text = serde_json::to_string(&settings.apps["voicedock"]).unwrap();
+        let older: OlderAppSettings = serde_json::from_str(&text).unwrap();
+        assert_eq!(older.other.get("pinned"), Some(&Value::Bool(false)));
+        let written = serde_json::to_string(&older).unwrap();
+        let back: AppSettings = serde_json::from_str(&written).unwrap();
+        assert!(!back.pinned);
+        assert!(!back.other.contains_key("pinned"), "read as the field");
     }
 
     #[test]

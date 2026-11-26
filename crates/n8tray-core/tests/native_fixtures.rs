@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 
 use n8tray_core::model::HostSnapshot;
+use n8tray_core::pins;
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../native/fixtures")
@@ -24,6 +25,31 @@ fn normalized(value: serde_json::Value) -> serde_json::Value {
         }
         other => other,
     }
+}
+
+/// The pin figures are what the host would write for the fixture's apps
+/// (D32), so the native window's pictures show reachable states.
+fn pins_agree(name: &str, s: &HostSnapshot) {
+    for app in &s.apps {
+        assert_eq!(
+            app.in_main_view,
+            pins::in_main_view(app, false),
+            "{name}: {} inMainView",
+            app.id
+        );
+    }
+    let hub: Vec<_> = s.apps.iter().filter(|a| pins::in_hub(a)).collect();
+    let counts = pins::counts(&hub);
+    assert_eq!(s.more, counts.more, "{name}: more");
+    assert_eq!(
+        (s.pinned_running, s.pinned_total, s.pinned_text.as_str()),
+        (
+            counts.pinned_running,
+            counts.pinned_total,
+            counts.pinned_text.as_str()
+        ),
+        "{name}: pinned figures"
+    );
 }
 
 #[test]
@@ -48,6 +74,7 @@ fn every_fixture_loads_and_round_trips() {
         );
         let reloaded: HostSnapshot = serde_json::from_value(again).expect("deserializes again");
         assert_eq!(snapshot, reloaded, "{name}: second round trip differs");
+        pins_agree(&name, &snapshot);
         names.push(name);
     }
     names.sort();
@@ -57,6 +84,7 @@ fn every_fixture_loads_and_round_trips() {
             "busy.json",
             "empty.json",
             "healthy.json",
+            "pinned.json",
             "trouble.json",
             "updateFailed.json",
             "updating.json",

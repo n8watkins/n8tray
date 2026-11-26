@@ -652,6 +652,213 @@ fn tray_with_a_running_app(id: &str) -> Tray {
     tray
 }
 
+/// Unpinning hides an app from the main view and the headline, never from
+/// what runs, the level or N8's memory; the choice is saved (D32).
+#[test]
+fn an_unpinned_app_keeps_running_behind_the_more_line() {
+    let mut tray = tray_with_a_running_app("pinme");
+    let pinned = tray.wait("the app measured", |s| {
+        s.apps
+            .iter()
+            .any(|a| a.id == "pinme" && a.memory_mb.is_some_and(|m| m > 0.0))
+    });
+    let app = pinned.apps.iter().find(|a| a.id == "pinme").unwrap();
+    assert!(app.pinned && app.in_main_view, "pinned by default");
+    assert_eq!((pinned.running, pinned.total), (1, 1));
+    assert_eq!((pinned.pinned_running, pinned.pinned_total), (1, 1));
+    assert_eq!(pinned.pinned_text, "1 of 1 running");
+    assert_eq!(pinned.more, None);
+    assert!(
+        !pinned.tooltip.contains("more running"),
+        "{}",
+        pinned.tooltip
+    );
+
+    tray.send(HostCommand::SetPinned {
+        app: "pinme".into(),
+        pinned: false,
+    });
+    let unpinned = tray.wait("the app unpinned and measured", |s| {
+        s.apps.iter().any(|a| a.id == "pinme" && !a.pinned)
+            && s.more.as_ref().is_some_and(|m| m.memory_mb > 0.0)
+    });
+    let app = unpinned.apps.iter().find(|a| a.id == "pinme").unwrap();
+    assert!(!app.in_main_view);
+    assert!(app.running && app.state == "ready", "still runs");
+    // `running` and `total` are the hub's, exactly as before unpinning; the
+    // pinned figures are the new window's headline.
+    assert_eq!(
+        (unpinned.running, unpinned.total),
+        (pinned.running, pinned.total)
+    );
+    assert_eq!((unpinned.pinned_running, unpinned.pinned_total), (0, 0));
+    assert_eq!(unpinned.pinned_text, "Nothing pinned");
+    let more = unpinned.more.as_ref().unwrap();
+    assert_eq!((more.count, more.running), (1, 1));
+    assert_eq!(more.memory_mb, app.memory_mb.unwrap());
+    assert_eq!(
+        more.text,
+        format!(
+            "1 more · 1 running, {}",
+            n8tray_core::util::mb_text(more.memory_mb)
+        )
+    );
+    // The tooltip counts what `more` counts and names nothing hidden.
+    let tooltip_line = unpinned.tooltip.lines().nth(1).unwrap();
+    assert_eq!(tooltip_line, "1 more running", "{}", unpinned.tooltip);
+    // N8's memory still counts it: the same sum as with the app pinned.
+    assert_eq!(unpinned.memory.n8_mb, n8_sum(&unpinned));
+    assert_eq!(pinned.memory.n8_mb, n8_sum(&pinned));
+    // No pin changed the level: only the app and system memory do.
+    assert_eq!(app.level, LevelName::Ok);
+    let saved = std::fs::read_to_string(&tray.folders.settings_file).unwrap();
+    assert!(saved.contains("\"pinned\": false"), "{saved}");
+
+    // An unpinned app in trouble is back in the main view and raises the level.
+    tray.write_manifest(
+        "broken",
+        fake_manifest(
+            "broken",
+            json!({ "type": "file", "intervalSeconds": 1 }),
+            &[],
+            json!({ "run": { "program": "no-such-program" }, "autoStartDefault": true }),
+        ),
+    );
+    tray.send(HostCommand::SetPinned {
+        app: "broken".into(),
+        pinned: false,
+    });
+    let trouble = tray.wait("the unpinned app in trouble", |s| {
+        s.apps
+            .iter()
+            .any(|a| a.id == "broken" && !a.pinned && a.level == LevelName::Problem)
+    });
+    let broken = trouble.apps.iter().find(|a| a.id == "broken").unwrap();
+    assert!(broken.in_main_view, "{broken:?}");
+    assert_eq!(trouble.level, LevelName::Problem);
+    assert_eq!(
+        trouble.more.as_ref().map(|m| m.count),
+        Some(1),
+        "pinme only"
+    );
+    // Shown, but not counted as pinned.
+    assert_eq!((trouble.pinned_running, trouble.pinned_total), (0, 0));
+    assert_eq!((trouble.running, trouble.total), (1, 2));
+
+    // A restart reads the choice back.
+    tray.stop_host();
+    *tray.latest.lock().unwrap() = None;
+    tray.start_host();
+    tray.wait_app("pinme", "still unpinned and running after a restart", |a| {
+        !a.pinned && a.state == "ready"
+    });
+
+    tray.send(HostCommand::SetPinned {
+        app: "pinme".into(),
+        pinned: true,
+    });
+    let again = tray.wait("the app pinned again, broken in trouble", |s| {
+        s.apps.iter().any(|a| a.id == "pinme" && a.pinned)
+            && s.apps
+                .iter()
+                .any(|a| a.id == "broken" && a.level == LevelName::Problem)
+    });
+    assert_eq!((again.pinned_running, again.pinned_total), (1, 1));
+    assert_eq!((again.running, again.total), (1, 2));
+    assert_eq!(
+        again.more, None,
+        "broken is in the main view, pinme is pinned"
+    );
+}
+
+/// N8's memory as the host adds it up: the tray and its window by private
+/// memory, then every app in the hub, pinned or not.
+fn n8_sum(s: &HostSnapshot) -> f64 {
+    let apps: f64 = s
+        .apps
+        .iter()
+        .filter(|a| a.hosted && a.level != LevelName::Hidden)
+        .filter_map(|a| a.memory_mb)
+        .sum();
+    n8tray_core::supervisor::round1(
+        s.tray.private_mb.unwrap_or(s.tray.rss_mb)
+            + s.tray.window_private_mb.unwrap_or(s.tray.window_mb)
+            + apps,
+    )
+}
+
+/// Apps that are not in the hub are in no view and never behind the "more"
+/// line; a turned-off app is in the hub, so unpinned it is counted there. An
+/// unknown id is saved as a settings entry, as `SetOwnIcon` does.
+#[test]
+fn apps_outside_the_hub_are_in_no_view() {
+    let elsewhere = if cfg!(windows) { "linux" } else { "windows" };
+    let tray = tray_with_settings(json!({
+        "schemaVersion": 1,
+        "apps": {
+            "ownicon": { "ownIcon": true, "pinned": false },
+            "turnedoff": { "enabled": false, "pinned": false },
+            "elsewhere": { "pinned": false }
+        }
+    }));
+    let status = json!({ "type": "file", "intervalSeconds": 1 });
+    let args = ["--status", "file", "--interval-seconds", "1"];
+    tray.write_manifest(
+        "ownicon",
+        fake_manifest("ownicon", status.clone(), &args, json!({})),
+    );
+    tray.write_manifest(
+        "turnedoff",
+        fake_manifest("turnedoff", status.clone(), &args, json!({})),
+    );
+    tray.write_manifest(
+        "elsewhere",
+        fake_manifest(
+            "elsewhere",
+            status,
+            &args,
+            json!({ "platforms": [elsewhere] }),
+        ),
+    );
+    let s = tray.wait("the three apps", |s| s.apps.len() == 3);
+    let get = |id: &str| s.apps.iter().find(|a| a.id == id).unwrap();
+    assert!(!get("ownicon").hosted);
+    assert_eq!(get("elsewhere").level, LevelName::Hidden);
+    assert!(!get("turnedoff").enabled);
+    for app in &s.apps {
+        assert!(!app.pinned && !app.in_main_view, "{}", app.id);
+    }
+    let more = s.more.as_ref().expect("the turned-off app");
+    assert_eq!((more.count, more.running), (1, 0));
+    assert_eq!(more.text, "1 more");
+    assert_eq!((s.running, s.total), (0, 1));
+    assert_eq!(s.pinned_text, "Nothing pinned");
+
+    // An id no manifest has: saved like `SetOwnIcon`, shown nowhere.
+    tray.send(HostCommand::SetPinned {
+        app: "ghost".into(),
+        pinned: false,
+    });
+    tray.send(HostCommand::SetOwnIcon {
+        app: "phantom".into(),
+        on: true,
+    });
+    let end = Instant::now() + DEADLINE;
+    let saved = loop {
+        let text = std::fs::read_to_string(&tray.folders.settings_file).unwrap_or_default();
+        if text.contains("\"phantom\"") {
+            break text;
+        }
+        assert!(Instant::now() < end, "the settings are saved: {text}");
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    let saved: serde_json::Value = serde_json::from_str(&saved).unwrap();
+    assert_eq!(saved["apps"]["ghost"]["pinned"], false);
+    assert_eq!(saved["apps"]["phantom"]["ownIcon"], true);
+    let s = tray.wait("a snapshot after the commands", |s| s.apps.len() == 3);
+    assert!(!s.apps.iter().any(|a| a.id == "ghost" || a.id == "phantom"));
+}
+
 #[test]
 fn a_failure_in_the_host_is_shown_and_the_host_starts_again() {
     let tray = tray_with_a_running_app("steady");

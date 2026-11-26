@@ -1,4 +1,4 @@
-//! Small helpers: atomic writes and timestamps.
+//! Small helpers: atomic writes, timestamps and memory figures.
 
 use std::fs;
 use std::io::{self, Write};
@@ -52,9 +52,31 @@ pub fn same_start(a: DateTime<Utc>, b: DateTime<Utc>) -> bool {
     (a - b).num_milliseconds().abs() <= 1001
 }
 
+/// Memory in MiB as the window and the menu write it: MB below 1000, GB from
+/// there ("310 MB", "1.9 GB").
+pub fn mb_text(mb: f64) -> String {
+    if mb >= 1000.0 {
+        format!("{:.1} GB", mb / 1024.0)
+    } else {
+        format!("{mb:.0} MB")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn memory_reads_in_mb_then_gb() {
+        assert_eq!(mb_text(40.4), "40 MB");
+        assert_eq!(mb_text(999.0), "999 MB");
+        // Just under the line it rounds to "1000 MB", as the window's
+        // `format.ts` does; from 1000 it is GB.
+        assert_eq!(mb_text(999.4), "999 MB");
+        assert_eq!(mb_text(999.6), "1000 MB");
+        assert_eq!(mb_text(1000.0), "1.0 GB");
+        assert_eq!(mb_text(1950.0), "1.9 GB");
+    }
 
     #[test]
     fn atomic_writes_leave_no_temporary_file() {
