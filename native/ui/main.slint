@@ -1,0 +1,16 @@
+// What the shell's Rust code sees (`crate::ui`). Every view is already
+// listed: a view lane edits only its own `views/<name>.slint`, never this
+// file.
+export { Theme, Level, Tone, SystemColors, RowAction, RowData, RowFocus, GlyphName, BarAction, BarLink, OpenItem, KeyValue, WarningItem, TableColumn, TableRow } from "widgets.slint";
+export { Nav, View } from "nav.slint";
+export { FlyoutWindow } from "shell.slint";
+export { HubModel } from "views/hub.slint";
+export { AllAppsModel } from "views/all-apps.slint";
+export { PanelModel } from "views/panel.slint";
+export { DetailsModel } from "views/details.slint";
+export { SettingsModel } from "views/settings.slint";
+export { AboutModel } from "views/about.slint";
+export { HistoryModel } from "views/history.slint";
+// The widget gallery: compiled into every build, opened only by debug and
+// test builds (`--gallery`, `--gallery-png`, the golden image tests).
+export { Gallery } from "gallery.slint";

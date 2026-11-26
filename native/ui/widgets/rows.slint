@@ -1,0 +1,548 @@
+// An app's row in the hub (`.app`), Normal (two lines) or Compact (one
+// line), the list that keeps rows tied to their app, a manifest problem's
+// note, and the quiet line that leads to the apps outside the main view.
+import { Theme, Level, Tone } from "../theme.slint";
+import { Glyph, GlyphName, Label, Pressable, WrapLabel } from "base.slint";
+import { IconButton } from "buttons.slint";
+import { AppIcon } from "status.slint";
+import { Spark } from "charts.slint";
+
+// The row's one action: Stop while running, Start while not (model.ts).
+export enum RowAction { none, start, stop, restart }
+
+// One app's row, as Rust gives it (`view::rows::row_data`). `id` is the
+// app's id: lists are matched by it, never by position.
+export struct RowData {
+    id: string,
+    name: string,
+    line: string,
+    tone: Tone,
+    memory: string,
+    sub: string,
+    spark-line: string,
+    spark-fill: string,
+    level: Level,
+    icon: image,
+    tooltip: string,
+    label: string,
+    action: RowAction,
+    action-label: string,
+    action-tooltip: string,
+    action-enabled: bool,
+    armed: bool,
+}
+
+// Keyboard movement between rows, as app/ui/src/keyboard.ts's `moveFocus`:
+// Up and Down go to the same part (0 the row, 1 its action) of the row
+// above or below, Home and End to the first and last row, Left and Right
+// between the parts of one row. Rows are numbered across the whole view
+// (`index`, `total`). Rust also focuses a row by app id with `to-id`, and
+// reads `focused-id` to put the focus back after the list was reordered.
+export global RowFocus {
+    in-out property <int> index: -1;
+    in-out property <int> part;
+    in-out property <string> id;
+    in-out property <int> serial;
+    // The row (app id) and part that have the focus, "" when none.
+    in-out property <string> focused-id;
+    in-out property <int> focused-part;
+
+    public function to-index(index: int, part: int) {
+        root.id = "";
+        root.index = index;
+        root.part = part;
+        root.serial += 1;
+    }
+
+    public function to-id(id: string, part: int) {
+        root.id = id;
+        root.index = -1;
+        root.part = part;
+        root.serial += 1;
+    }
+
+    // The keys of `moveFocus` from row `index` of `total`, on `part`.
+    public function key(event: KeyEvent, index: int, total: int, part: int) -> bool {
+        if total <= 0 {
+            return false;
+        }
+        if event.text == Key.DownArrow {
+            root.to-index(min(total - 1, index + 1), part);
+            return true;
+        }
+        if event.text == Key.UpArrow {
+            root.to-index(max(0, index - 1), part);
+            return true;
+        }
+        if event.text == Key.Home {
+            root.to-index(0, part);
+            return true;
+        }
+        if event.text == Key.End {
+            root.to-index(total - 1, part);
+            return true;
+        }
+        return false;
+    }
+}
+
+// The part of a row that opens the app's panel (`.app-main`).
+component RowMain {
+    in property <string> name;
+    in property <string> line;
+    in property <Tone> tone;
+    in property <string> memory;
+    in property <string> sub;
+    in property <string> spark-line;
+    in property <string> spark-fill;
+    in property <bool> show-spark;
+    in property <Level> level;
+    in property <image> icon;
+    in property <bool> show-dot;
+    in property <string> label;
+    in property <string> tooltip;
+    in property <bool> compact;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    out property <bool> hovered: p.hovered;
+    callback clicked();
+    callback navigate(event: KeyEvent) -> EventResult;
+    callback focus-changed(has-focus: bool);
+
+    forward-focus: p;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-description: root.tooltip;
+    accessible-action-default => {
+        root.clicked();
+    }
+    min-width: l.min-width;
+    min-height: l.min-height;
+    preferred-height: l.preferred-height;
+
+    public function focus-me() {
+        p.focus-me();
+    }
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        tooltip: root.tooltip;
+        demo-hover: root.demo-hover;
+        demo-focus: root.demo-focus;
+        clicked => {
+            root.clicked();
+        }
+        navigate(event) => {
+            root.navigate(event)
+        }
+        focus-changed(has) => {
+            root.focus-changed(has);
+        }
+
+        // Normal: `grid-template-columns: 28px 1fr auto; gap: 10px;
+        // padding: 7px 4px 7px 8px`. Compact: one line, `18px 1fr auto;
+        // gap: 8px; padding: 4px 8px`, 11 px from the memory figure to the
+        // action's glyph.
+        l := HorizontalLayout {
+            padding-top: root.compact ? 4px : 7px;
+            padding-bottom: root.compact ? 4px : 7px;
+            padding-left: 8px;
+            padding-right: root.compact ? 2px : 4px;
+            spacing: root.compact ? 8px : 10px;
+
+            VerticalLayout {
+                alignment: center;
+                AppIcon {
+                    source: root.icon;
+                    level: root.level;
+                    show-dot: root.show-dot;
+                    size: root.compact ? Theme.app-icon-compact : Theme.app-icon;
+                }
+            }
+            if !root.compact: VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Label {
+                    text: root.name;
+                    font-weight: Theme.weight-bold;
+                }
+                // One line, cut with an ellipsis; the full text is the
+                // row's tooltip.
+                Label {
+                    text: root.line;
+                    font-size: Theme.text-small;
+                    color: Theme.tone-color(root.tone);
+                }
+            }
+            if !root.compact && (root.show-spark || root.memory != ""): HorizontalLayout {
+                spacing: 6px;
+                alignment: end;
+                horizontal-stretch: 0;
+                if root.show-spark: VerticalLayout {
+                    alignment: center;
+                    Spark {
+                        line: root.spark-line;
+                        fill: root.spark-fill;
+                    }
+                }
+                // `.fig`: 12px, line-height 1.25, at least 50 px wide and
+                // right-aligned, so figures that change do not move the
+                // sparkline (Segoe UI's "1" is narrower than its other
+                // digits).
+                if root.memory != "": VerticalLayout {
+                    alignment: center;
+                    min-width: 50px;
+                    Text {
+                        text: root.memory;
+                        font-size: Theme.text-small;
+                        font-weight: Theme.weight-bold;
+                        color: Theme.fg;
+                        horizontal-alignment: right;
+                        height: 15px;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                    if root.sub != "": Text {
+                        text: root.sub;
+                        font-size: Theme.text-small;
+                        color: Theme.muted;
+                        horizontal-alignment: right;
+                        height: 15px;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                }
+            }
+            if root.compact: HorizontalLayout {
+                spacing: 8px;
+                horizontal-stretch: 1;
+                Label {
+                    text: root.name;
+                    font-weight: Theme.weight-bold;
+                    horizontal-stretch: 0;
+                    max-width: self.preferred-width;
+                }
+                Label {
+                    text: root.line;
+                    font-size: Theme.text-small;
+                    color: Theme.tone-color(root.tone);
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                }
+            }
+            // The approved Compact rows: memory at the body size, weight 700.
+            if root.compact && root.memory != "": Label {
+                text: root.memory;
+                font-weight: Theme.weight-heavy;
+                horizontal-alignment: right;
+                horizontal-stretch: 0;
+            }
+        }
+    }
+}
+
+// An app's row: icon with level dot, name, what it is doing (coloured by
+// tone, one line), its figures and sparkline, and its one action. Clicking
+// the row opens the app's panel; the action button runs the action. Give it
+// its place in the view's rows (`index` of `total`) for the arrow keys.
+export component AppRow {
+    in property <string> app-id;
+    in property <int> index: -1;
+    in property <int> total;
+    in property <string> name;
+    in property <string> line;
+    in property <Tone> tone: Tone.normal;
+    in property <string> memory;
+    // "12% CPU", "in WSL" or "window 88 MB"; Normal only.
+    in property <string> sub;
+    in property <string> spark-line;
+    in property <string> spark-fill;
+    in property <bool> show-spark: root.spark-line != "";
+    in property <Level> level: Level.off;
+    in property <image> icon;
+    in property <bool> show-dot: true;
+    // The app's detail or the full line, as a tooltip and a description.
+    in property <string> tooltip;
+    // What a screen reader says for the row; by default its name, line and
+    // figures.
+    in property <string> label: root.name + ", " + root.line
+        + (root.memory != "" ? ", " + root.memory : "")
+        + (root.sub != "" && !root.compact ? ", " + root.sub : "");
+    in property <RowAction> action: RowAction.none;
+    in property <string> action-label;
+    in property <string> action-tooltip: root.action-label;
+    in property <bool> action-enabled: true;
+    in property <bool> armed;
+    // Keep the action's room when there is no action, so figures line up.
+    in property <bool> reserve-action: true;
+    in property <bool> compact: Theme.compact;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    in property <bool> demo-action-focus;
+    out property <bool> hovered: row-ta.has-hover || main.hovered || root.demo-hover;
+    property <bool> has-action: root.action != RowAction.none;
+    property <bool> can-act: root.has-action && root.action-enabled;
+    callback clicked();
+    callback action-clicked();
+
+    forward-focus: main;
+    accessible-role: none;
+    min-height: l.preferred-height;
+
+    // Rust asked for a row (by id or by index): this one?
+    property <int> wanted: RowFocus.serial;
+    changed wanted => {
+        let mine = RowFocus.id != "" ? RowFocus.id == root.app-id : RowFocus.index == root.index;
+        if mine {
+            if RowFocus.part == 1 && root.can-act {
+                act.focus-me();
+            } else {
+                main.focus-me();
+            }
+        }
+    }
+
+    function focus-changed(has: bool, part: int) {
+        if has {
+            RowFocus.focused-id = root.app-id;
+            RowFocus.focused-part = part;
+        } else if RowFocus.focused-id == root.app-id && RowFocus.focused-part == part {
+            RowFocus.focused-id = "";
+        }
+    }
+
+    row-ta := TouchArea {
+        // Only for the row's hover; clicks are the parts' own.
+        enabled: true;
+    }
+
+    Rectangle {
+        border-radius: Theme.radius-card;
+        background: root.hovered ? Theme.hover : transparent;
+        border-width: Theme.contrast ? 1px : 0px;
+        border-color: root.hovered ? Theme.hover-border : transparent;
+    }
+
+    l := HorizontalLayout {
+        spacing: 4px;
+
+        main := RowMain {
+            horizontal-stretch: 1;
+            name: root.name;
+            line: root.line;
+            tone: root.tone;
+            memory: root.memory;
+            sub: root.sub;
+            spark-line: root.spark-line;
+            spark-fill: root.spark-fill;
+            show-spark: root.show-spark;
+            level: root.level;
+            icon: root.icon;
+            show-dot: root.show-dot;
+            label: root.label;
+            tooltip: root.tooltip;
+            compact: root.compact;
+            demo-focus: root.demo-focus;
+            clicked => {
+                root.clicked();
+            }
+            navigate(event) => {
+                if event.text == Key.RightArrow && root.can-act {
+                    act.focus-me();
+                    return accept;
+                }
+                RowFocus.key(event, root.index, root.total, 0) ? EventResult.accept : EventResult.reject
+            }
+            focus-changed(has) => {
+                root.focus-changed(has, 0);
+            }
+        }
+
+        // `.app .act { margin-right: 4px }`; without an action, the 26 px
+        // room today's empty `.act` keeps.
+        HorizontalLayout {
+            padding-right: 4px;
+            alignment: center;
+            visible: root.has-action || root.reserve-action;
+            width: !root.has-action && !root.reserve-action ? 0px
+                : (root.has-action ? (root.compact ? Theme.icon-button-compact : Theme.icon-button) : 26px) + 4px;
+            VerticalLayout {
+                alignment: center;
+                act := IconButton {
+                    visible: root.has-action;
+                    glyph: root.action == RowAction.stop ? GlyphName.stop
+                        : root.action == RowAction.restart ? GlyphName.restart
+                        : GlyphName.play;
+                    glyph-size: root.action == RowAction.stop ? 13px : 14px;
+                    label: root.action-label;
+                    tooltip: root.action-tooltip;
+                    enabled: root.can-act;
+                    armed: root.armed;
+                    compact: root.compact;
+                    demo-focus: root.demo-action-focus;
+                    clicked => {
+                        root.action-clicked();
+                    }
+                    navigate(event) => {
+                        if event.text == Key.LeftArrow {
+                            main.focus-me();
+                            return accept;
+                        }
+                        RowFocus.key(event, root.index, root.total, 1) ? EventResult.accept : EventResult.reject
+                    }
+                    focus-changed(has) => {
+                        root.focus-changed(has, 1);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A list of app rows from one stable model (`view::list::sync` updates it
+// in place, matched by app id). `first-index` is the first row's place in
+// the view, `total` the view's rows, for the arrow keys.
+export component RowList inherits VerticalLayout {
+    in property <[RowData]> rows;
+    in property <int> first-index;
+    in property <int> total: root.rows.length;
+    in property <bool> compact: Theme.compact;
+    callback open(id: string);
+    callback act(id: string);
+
+    for row[i] in root.rows: AppRow {
+        app-id: row.id;
+        index: root.first-index + i;
+        total: root.total;
+        name: row.name;
+        line: row.line;
+        tone: row.tone;
+        memory: row.memory;
+        sub: row.sub;
+        spark-line: row.spark-line;
+        spark-fill: row.spark-fill;
+        level: row.level;
+        icon: row.icon;
+        tooltip: row.tooltip;
+        label: row.label;
+        action: row.action;
+        action-label: row.action-label;
+        action-tooltip: row.action-tooltip;
+        action-enabled: row.action-enabled;
+        armed: row.armed;
+        compact: root.compact;
+        clicked => {
+            root.open(row.id);
+        }
+        action-clicked => {
+            root.act(row.id);
+        }
+    }
+}
+
+// A manifest that could not be read (`.app-main.static`, `role="note"`):
+// the generic icon with a problem dot, the file, and the message on up to
+// two lines. It opens nothing and takes no focus.
+export component ProblemRow {
+    in property <string> name;
+    in property <string> message;
+    in property <bool> compact: Theme.compact;
+
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.name + ": " + root.message;
+    min-height: l.preferred-height;
+
+    l := HorizontalLayout {
+        padding-top: root.compact ? 4px : 7px;
+        padding-bottom: root.compact ? 4px : 7px;
+        padding-left: 8px;
+        padding-right: 4px;
+        spacing: root.compact ? 8px : 10px;
+
+        VerticalLayout {
+            alignment: center;
+            AppIcon {
+                level: Level.problem;
+                size: root.compact ? Theme.app-icon-compact : Theme.app-icon;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Label {
+                text: root.name;
+                font-weight: Theme.weight-bold;
+            }
+            WrapLabel {
+                text: root.message;
+                font-size: Theme.text-small;
+                color: Theme.problem;
+                max-lines: root.compact ? 1 : 2;
+            }
+        }
+    }
+}
+
+// The quiet line under the main view's apps: "2 more · 1 running, 38 MB",
+// words only, with a chevron. It opens the All apps view.
+export component MoreLine {
+    in property <string> text;
+    in property <bool> compact: Theme.compact;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    callback clicked();
+
+    forward-focus: p;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-description: "Opens All apps";
+    accessible-action-default => {
+        root.clicked();
+    }
+    // 35 px tall in Normal, as the approved mock.
+    min-height: root.compact ? l.preferred-height : max(35px, l.preferred-height);
+    preferred-height: self.min-height;
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        ring-radius: Theme.focus-radius;
+        demo-hover: root.demo-hover;
+        demo-focus: root.demo-focus;
+        clicked => {
+            root.clicked();
+        }
+
+        Rectangle {
+            border-radius: Theme.radius-card;
+            background: p.hovered ? Theme.hover : transparent;
+            border-width: Theme.contrast ? 1px : 0px;
+            border-color: p.hovered ? Theme.hover-border : transparent;
+        }
+
+        l := HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            padding-top: root.compact ? 4px : 8px;
+            padding-bottom: root.compact ? 4px : 8px;
+            spacing: 8px;
+
+            Label {
+                text: root.text;
+                font-size: root.compact ? Theme.text-small : Theme.text-link;
+                color: p.hovered ? Theme.fg : Theme.muted;
+                horizontal-stretch: 1;
+            }
+            VerticalLayout {
+                alignment: center;
+                // The mock's "›": about 5 px wide.
+                Glyph {
+                    name: GlyphName.chevron;
+                    size: 11px;
+                    colorize: p.hovered ? Theme.fg : Theme.muted;
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,395 @@
+// Buttons: the square glyph button (`.iconbtn`), the small text button
+// (`.small-btn`), the bottom bar's and a panel's links (`.link`) and a
+// section heading's links (`.h-links button`).
+//
+// An action that asks for confirmation takes a second click within 4
+// seconds. The widgets only show it: whether a button is armed, its words
+// and its tooltip come from Rust (`view::action` and `view::confirm`), held
+// by app and action id, so a refresh or a reordered list never drops the
+// armed state or moves it to another app.
+import { Theme } from "../theme.slint";
+import { Glyph, GlyphName, Label, Pressable } from "base.slint";
+
+// A 28 px square button with a glyph (24 px when compact). `label` is what
+// a screen reader says ("Stop VoiceDock", "Confirm: Stop VoiceDock");
+// `tooltip` what the mouse shows.
+export component IconButton {
+    in property <GlyphName> glyph;
+    in property <length> glyph-size: Theme.glyph;
+    in property <string> label;
+    in property <string> tooltip;
+    in property <bool> enabled: true;
+    // Waiting for the second click (red, as `.iconbtn.confirm`).
+    in property <bool> armed;
+    // In the title bar or the bottom bar: focusing it never scrolls the list.
+    in property <bool> in-bar;
+    in property <bool> compact: Theme.compact;
+    in property <bool> demo-hover;
+    in property <bool> demo-pressed;
+    in property <bool> demo-focus;
+    callback clicked();
+    callback navigate(event: KeyEvent) -> EventResult;
+    callback focus-changed(has-focus: bool);
+
+    width: root.compact ? Theme.icon-button-compact : Theme.icon-button;
+    height: self.width;
+    forward-focus: p;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-description: root.tooltip;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+
+    public function focus-me() {
+        p.focus-me();
+    }
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        enabled: root.enabled;
+        tooltip: root.tooltip;
+        reveal: !root.in-bar;
+        demo-hover: root.demo-hover;
+        demo-pressed: root.demo-pressed;
+        demo-focus: root.demo-focus;
+        clicked => {
+            root.clicked();
+        }
+        navigate(event) => {
+            root.navigate(event)
+        }
+        focus-changed(has) => {
+            root.focus-changed(has);
+        }
+
+        Rectangle {
+            border-radius: Theme.radius-button;
+            background: root.armed ? Theme.problem-bg
+                : p.pressed ? Theme.press
+                : p.hovered ? Theme.hover
+                : transparent;
+            border-width: Theme.contrast ? 1px : 0px;
+            border-color: p.hovered ? Theme.hover-border : transparent;
+            opacity: Theme.faded(root.enabled, 0.4);
+
+            Glyph {
+                name: root.glyph;
+                size: root.glyph-size;
+                colorize: !root.enabled && Theme.contrast ? Theme.disabled-text
+                    : root.armed ? Theme.problem
+                    : Theme.contrast ? Theme.button-text
+                    : p.hovered ? Theme.fg
+                    : Theme.muted;
+            }
+        }
+    }
+}
+
+// A small text button (`.small-btn`): plain, primary, or a toggle whose
+// chosen state looks primary (the History range buttons, `aria-pressed`).
+// Armed, it reads "Confirm" in the problem colour.
+export component SmallButton {
+    in property <string> text;
+    // What a screen reader says, when more than the text ("Stop Kokoro");
+    // the text otherwise.
+    in property <string> label: root.text;
+    in property <string> tooltip;
+    in property <bool> primary;
+    in property <bool> enabled: true;
+    in property <bool> armed;
+    // A toggle (`aria-pressed`): `checked` draws it as primary.
+    in property <bool> checkable;
+    in property <bool> checked;
+    in property <bool> demo-hover;
+    in property <bool> demo-pressed;
+    in property <bool> demo-focus;
+    property <bool> filled: root.primary || (root.checkable && root.checked);
+    callback clicked();
+
+    forward-focus: p;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-description: root.tooltip;
+    accessible-enabled: root.enabled;
+    accessible-checkable: root.checkable;
+    accessible-checked: root.checked;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+    horizontal-stretch: 0;
+    min-width: l.preferred-width;
+    min-height: l.preferred-height;
+    preferred-width: l.preferred-width;
+    preferred-height: l.preferred-height;
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        enabled: root.enabled;
+        tooltip: root.tooltip;
+        demo-hover: root.demo-hover;
+        demo-pressed: root.demo-pressed;
+        demo-focus: root.demo-focus;
+        clicked => {
+            root.clicked();
+        }
+
+        Rectangle {
+            border-radius: Theme.radius-button;
+            border-width: 1px;
+            border-color: root.armed ? Theme.problem
+                : Theme.contrast && p.hovered ? Theme.hover-border
+                : !root.enabled && Theme.contrast ? Theme.disabled-text
+                : root.filled ? transparent
+                : Theme.line;
+            background: root.filled ? Theme.accent : p.hovered ? Theme.hover : Theme.bg;
+            opacity: Theme.faded(root.enabled, 0.45);
+
+            // 3px 10px inside a 1px border.
+            l := HorizontalLayout {
+                padding-left: 11px;
+                padding-right: 11px;
+                padding-top: 4px;
+                padding-bottom: 4px;
+                alignment: center;
+
+                Label {
+                    text: root.armed ? "Confirm" : root.text;
+                    font-size: Theme.text-small;
+                    horizontal-alignment: center;
+                    color: !root.enabled && Theme.contrast ? Theme.disabled-text
+                        : root.armed ? Theme.problem
+                        : root.filled ? Theme.on-accent
+                        : Theme.button-text;
+                }
+            }
+        }
+    }
+}
+
+// A link in the bottom bar or a panel's list of things to open (`.link`):
+// a muted glyph, then the text.
+export component LinkButton {
+    in property <GlyphName> glyph;
+    in property <string> text;
+    in property <string> label: root.text;
+    in property <string> tooltip;
+    in property <bool> enabled: true;
+    in property <bool> in-bar;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    callback clicked();
+
+    forward-focus: p;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-description: root.tooltip;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+    horizontal-stretch: 0;
+    min-width: l.min-width;
+    preferred-width: l.preferred-width;
+    min-height: l.preferred-height;
+    preferred-height: l.preferred-height;
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        enabled: root.enabled;
+        tooltip: root.tooltip;
+        reveal: !root.in-bar;
+        demo-hover: root.demo-hover;
+        demo-focus: root.demo-focus;
+        clicked => {
+            root.clicked();
+        }
+
+        Rectangle {
+            border-radius: Theme.radius-button;
+            background: p.hovered ? Theme.hover : transparent;
+            border-width: Theme.contrast ? 1px : 0px;
+            border-color: p.hovered ? Theme.hover-border : transparent;
+            opacity: Theme.faded(root.enabled, 0.45);
+
+            l := HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 6px;
+                alignment: start;
+
+                if root.glyph != GlyphName.none: VerticalLayout {
+                    alignment: center;
+                    Glyph {
+                        name: root.glyph;
+                        colorize: !root.enabled && Theme.contrast ? Theme.disabled-text : Theme.muted;
+                    }
+                }
+                Label {
+                    text: root.text;
+                    font-size: Theme.text-link;
+                    color: !root.enabled && Theme.contrast ? Theme.disabled-text : Theme.button-text;
+                }
+            }
+        }
+    }
+}
+
+// The bottom bar's "Start at sign-in": a link that is a switch, its glyph a
+// box, ticked or empty (approved 2026-11-26).
+export component LinkSwitch {
+    in property <string> text;
+    in property <string> tooltip;
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    in property <bool> in-bar;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    callback toggled();
+
+    forward-focus: link;
+    accessible-role: switch;
+    accessible-label: root.text;
+    accessible-description: root.tooltip;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.toggled();
+        }
+    }
+
+    link := LinkButton {
+        glyph: root.checked ? GlyphName.box-check : GlyphName.box;
+        text: root.text;
+        tooltip: root.tooltip;
+        enabled: root.enabled;
+        in-bar: root.in-bar;
+        demo-hover: root.demo-hover;
+        demo-focus: root.demo-focus;
+        accessible-role: none;
+        clicked => {
+            root.toggled();
+        }
+    }
+}
+
+// A link standing on its own (the watch note's "Learn more"): accent and
+// underlined, as `.inline-link`, with the focus ring on the link only.
+export component TextLink {
+    in property <string> text;
+    in property <string> label: root.text;
+    in property <bool> expandable;
+    in property <bool> expanded;
+    in property <bool> demo-focus;
+    callback clicked();
+
+    forward-focus: p;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-expandable: root.expandable;
+    accessible-expanded: root.expanded;
+    accessible-action-default => {
+        root.clicked();
+    }
+    accessible-action-expand => {
+        root.clicked();
+    }
+    horizontal-stretch: 0;
+    min-width: t.preferred-width;
+    preferred-width: t.preferred-width;
+    height: t.height;
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        demo-focus: root.demo-focus;
+        ring-radius: 3px;
+        clicked => {
+            root.clicked();
+        }
+
+        t := Label {
+            text: root.text;
+            font-size: Theme.text-small;
+            color: Theme.link;
+            height: self.font-size * Theme.line-height-note;
+        }
+        Rectangle {
+            x: 0;
+            y: t.height / 2 + t.font-size * 0.5;
+            width: t.preferred-width;
+            height: 1px;
+            background: Theme.link;
+        }
+    }
+}
+
+// A link at the right of a section's heading (`.h-links button`): "Copy
+// status", "24 hours, 7 days". `pressed` marks the chosen one of a pair.
+export component HeadLink {
+    in property <string> text;
+    in property <string> label: root.text;
+    in property <bool> pressed;
+    in property <bool> toggle;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    callback clicked();
+
+    forward-focus: p;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-checkable: root.toggle;
+    accessible-checked: root.pressed;
+    accessible-action-default => {
+        root.clicked();
+    }
+    horizontal-stretch: 0;
+    min-width: l.preferred-width;
+    min-height: l.preferred-height;
+    preferred-width: l.preferred-width;
+    preferred-height: l.preferred-height;
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        ring-radius: 4px;
+        demo-hover: root.demo-hover;
+        demo-focus: root.demo-focus;
+        clicked => {
+            root.clicked();
+        }
+
+        // No border under High Contrast: today's heading links have none.
+        Rectangle {
+            border-radius: 4px;
+            background: root.pressed ? Theme.off-bg : transparent;
+
+            l := HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                padding-top: 1px;
+                padding-bottom: 1px;
+
+                Label {
+                    text: root.text;
+                    font-size: Theme.text-pill;
+                    color: root.pressed ? Theme.fg : Theme.link;
+                }
+            }
+        }
+    }
+}

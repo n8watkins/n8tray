@@ -317,6 +317,14 @@ jobs:
       - run: cargo fmt --manifest-path native/Cargo.toml --check
       - run: cargo clippy --manifest-path native/Cargo.toml --all-targets --locked -- -D warnings
       - run: cargo test --manifest-path native/Cargo.toml --locked
+      # The widget gallery's golden images (native/tests/goldens): a failed
+      # comparison leaves the picture and a difference image here.
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: golden-diffs-${{ matrix.os }}
+          path: native/target/golden-diffs
+          if-no-files-found: ignore
       - run: cargo build --manifest-path native/Cargo.toml --release --locked
       - if: runner.os == 'Windows'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

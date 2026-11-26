@@ -1,0 +1,219 @@
+// Banners (`.banner`): the PowerShell tray note, an update and its
+// progress, a settings error; and the one amber line under the title bar
+// that says what is wrong.
+import { Theme, Level } from "../theme.slint";
+import { Glyph, GlyphName, Label, WrapLabel } from "base.slint";
+import { SmallButton, TextLink } from "buttons.slint";
+import { ProgressBar } from "status.slint";
+
+export enum BannerKind { info, attention, problem }
+
+// A banner: a glyph, the text (and a smaller detail line), a progress bar
+// while something downloads, and up to two buttons. The buttons sit beside
+// the text, 8 px from it, as today's `margin-left: auto`; when the text
+// would get less than 170 px beside them (`flex: 1 1 170px`) they go under
+// it, 8 px down, at the right. A `link` ("Learn more") is a link of its own
+// on its own line under the text, and opens `more` under it.
+export component Banner {
+    in property <BannerKind> kind: BannerKind.info;
+    in property <GlyphName> glyph: GlyphName.none;
+    in property <string> text;
+    in property <string> detail;
+    // From 0 to 1; below 0, no bar.
+    in property <float> progress: -1;
+    in property <string> progress-label: "Update download";
+    in property <string> secondary;
+    in property <string> primary;
+    // The link's words while closed and open, and the paragraph it opens.
+    in property <string> link;
+    in property <string> link-open;
+    in property <string> more;
+    in-out property <bool> expanded;
+    // Announced when it appears or its text changes: a problem at once, the
+    // rest politely.
+    in property <bool> announce: true;
+    in property <bool> demo-link-focus;
+    callback secondary-clicked();
+    callback primary-clicked();
+
+    // The buttons' width, measured from their words (each 22 px of padding
+    // and border around 12 px text, 6 px between them).
+    property <length> actions-width: (root.secondary != "" ? m1.preferred-width + 22px : 0px)
+        + (root.primary != "" ? m2.preferred-width + 22px : 0px)
+        + (root.secondary != "" && root.primary != "" ? 6px : 0px);
+    property <bool> has-actions: root.actions-width > 0;
+    property <length> beside: root.width - 24px - (root.glyph != GlyphName.none ? 14px + 8px : 0px) - 8px;
+    property <bool> wrap-actions: root.has-actions && root.beside - root.actions-width < 170px;
+    // The paragraph's line height: the watch note's 1.45, else 1.4.
+    property <float> factor: root.link != "" ? Theme.line-factor * Theme.line-height-note / Theme.line-height : Theme.line-factor;
+
+    accessible-role: groupbox;
+    accessible-label: root.text;
+    accessible-description: root.detail;
+    accessible-live-region: !root.announce ? AccessibleLiveness.off
+        : root.kind == BannerKind.problem ? AccessibleLiveness.assertive
+        : AccessibleLiveness.polite;
+    min-height: l.preferred-height;
+
+    m1 := Text {
+        visible: false;
+        text: root.secondary;
+        font-size: Theme.text-small;
+        accessible-role: none;
+    }
+    m2 := Text {
+        visible: false;
+        text: root.primary;
+        font-size: Theme.text-small;
+        accessible-role: none;
+    }
+
+    Rectangle {
+        border-radius: Theme.radius-card;
+        background: root.kind == BannerKind.problem ? Theme.problem-bg
+            : root.kind == BannerKind.attention ? Theme.attention-bg
+            : Theme.off-bg;
+        border-width: Theme.contrast ? 1px : 0px;
+        border-color: Theme.frame;
+    }
+
+    l := VerticalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+
+        HorizontalLayout {
+            spacing: 8px;
+
+            if root.glyph != GlyphName.none: VerticalLayout {
+                // The watch note reads as a paragraph: its glyph sits at the
+                // first line (`align-items: flex-start`, 2 px down).
+                alignment: root.link != "" ? LayoutAlignment.start : LayoutAlignment.center;
+                padding-top: root.link != "" ? 2px : 0px;
+                Glyph {
+                    name: root.glyph;
+                    colorize: Theme.fg;
+                }
+            }
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+
+                WrapLabel {
+                    text: root.text;
+                    font-size: Theme.text-small;
+                    line-height-factor: root.factor;
+                    min-height: self.font-size * (root.link != "" ? Theme.line-height-note : Theme.line-height);
+                }
+                if root.link != "": HorizontalLayout {
+                    alignment: start;
+                    TextLink {
+                        text: root.expanded ? root.link-open : root.link;
+                        expandable: true;
+                        expanded: root.expanded;
+                        demo-focus: root.demo-link-focus;
+                        clicked => {
+                            root.expanded = !root.expanded;
+                        }
+                    }
+                }
+                // `.more-text { margin-top: 6px }`
+                if root.link != "" && root.expanded: VerticalLayout {
+                    padding-top: 6px;
+                    WrapLabel {
+                        text: root.more;
+                        font-size: Theme.text-small;
+                        color: Theme.muted;
+                        line-height-factor: root.factor;
+                    }
+                }
+                if root.detail != "": WrapLabel {
+                    text: root.detail;
+                    font-size: Theme.text-small;
+                    color: Theme.muted;
+                }
+                if root.progress >= 0: VerticalLayout {
+                    padding-top: 5px;
+                    ProgressBar {
+                        value: root.progress;
+                        label: root.progress-label;
+                    }
+                }
+            }
+
+            if root.has-actions && !root.wrap-actions: VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                HorizontalLayout {
+                    spacing: 6px;
+                    if root.secondary != "": SmallButton {
+                        text: root.secondary;
+                        clicked => {
+                            root.secondary-clicked();
+                        }
+                    }
+                    if root.primary != "": SmallButton {
+                        text: root.primary;
+                        primary: true;
+                        clicked => {
+                            root.primary-clicked();
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.wrap-actions: HorizontalLayout {
+            alignment: end;
+            padding-top: 8px;
+            spacing: 6px;
+            if root.secondary != "": SmallButton {
+                text: root.secondary;
+                clicked => {
+                    root.secondary-clicked();
+                }
+            }
+            if root.primary != "": SmallButton {
+                text: root.primary;
+                primary: true;
+                clicked => {
+                    root.primary-clicked();
+                }
+            }
+        }
+    }
+}
+
+// The one amber line under the title bar when something is wrong: only
+// what is wrong (approved 2026-11-26; the total stays in the title bar).
+// Announced politely when the words change, which is when the reason does.
+export component AlertLine {
+    in property <string> text;
+
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.text;
+    accessible-live-region: AccessibleLiveness.polite;
+    min-height: l.preferred-height;
+
+    Rectangle {
+        border-radius: Theme.radius-card;
+        background: Theme.attention-bg;
+        border-width: Theme.contrast ? 1px : 0px;
+        border-color: Theme.frame;
+    }
+
+    l := HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+
+        Label {
+            text: root.text;
+            font-size: Theme.text-link;
+            font-weight: Theme.weight-bold;
+        }
+    }
+}

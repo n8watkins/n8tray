@@ -1,8 +1,34 @@
 fn main() {
     println!("cargo:rerun-if-changed=ui");
     println!("cargo:rerun-if-changed=assets");
-    slint_build::compile("ui/window.slint").expect("ui/window.slint compiles");
+    // What the window and the gallery draw besides `ui/`: the example apps'
+    // icons and N8 Tray's own.
+    println!("cargo:rerun-if-changed=../spec/examples/icons");
+    println!("cargo:rerun-if-changed=../app/src-tauri/icons/128x128.png");
+    slint_build::compile("ui/main.slint").expect("ui/main.slint compiles");
+    compile_test_font();
     embed_windows_resources();
+}
+
+/// The golden image tests' font, a module of its own (`OUT_DIR/test_font.rs`)
+/// that only test builds include: no other build carries the font.
+fn compile_test_font() {
+    use std::path::PathBuf;
+
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let config = slint_build::CompilerConfiguration::new()
+        .embed_resources(slint_build::EmbedResourcesKind::EmbedFiles);
+    let used = slint_build::compile_with_output_path(
+        manifest_dir.join("tests/test-font.slint"),
+        out_dir.join("test_font.rs"),
+        config,
+    )
+    .expect("tests/test-font.slint compiles");
+    for path in used {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
+    println!("cargo:rerun-if-changed=tests/fonts");
 }
 
 /// The exe's icon, version details (product N8 Tray, company n8builds.dev)

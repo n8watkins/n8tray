@@ -1,0 +1,182 @@
+// N8 Tray's look as tokens: every colour, size, radius and gap of today's
+// window (app/ui/src/style.css), light and dark, and the system's own colours
+// under High Contrast. Rust sets `dark`, `contrast` and `system` when a
+// window is created (src/view/theme.rs); every widget reads the tokens here,
+// never a colour of its own.
+
+// A level of the host (n8tray_core::model::LevelName).
+export enum Level { hidden, off, ok, attention, problem }
+
+// How a line of text is coloured (`Tone` in src/view/format.rs).
+export enum Tone { normal, attention, problem }
+
+// The system colours under High Contrast, read by Rust from Windows
+// (GetSysColor), as CSS names them under `forced-colors`.
+export struct SystemColors {
+    canvas: color,
+    canvas-text: color,
+    highlight: color,
+    highlight-text: color,
+    button-face: color,
+    button-text: color,
+    gray-text: color,
+    link-text: color,
+}
+
+export global Theme {
+    // The app theme: dark unless the system says light (or N8TRAY_THEME).
+    in-out property <bool> dark: true;
+    // High Contrast is on: the system's colours replace the palette.
+    in-out property <bool> contrast: false;
+    // Windows 11's "Night sky" contrast theme (hc2.theme, exactly) until
+    // Rust reads the real colours.
+    in-out property <SystemColors> system: {
+        canvas: #000000,
+        canvas-text: #ffffff,
+        highlight: #d6b4fd,
+        highlight-text: #2b2b2b,
+        button-face: #000000,
+        button-text: #ffee32,
+        gray-text: #a6a6a6,
+        link-text: #8080ff,
+    };
+    // The window-height setting: the most the window grows to before its
+    // list scrolls (`height-short`, `height-medium` or `height-tall`).
+    in-out property <length> height-limit: 400px;
+    // Compact: one line per app (a setting; Normal by default). Widgets take
+    // it as the default of their own `compact` property.
+    in-out property <bool> compact: false;
+    // The font; the golden image tests set a font they bundle.
+    in-out property <string> font-family: "Segoe UI Variable Text";
+
+    // Colours (style.css :root and its dark block).
+    out property <color> bg: contrast ? system.canvas : dark ? #202020 : #f9f9f9;
+    out property <color> card: contrast ? system.canvas : dark ? #2b2b2b : #ffffff;
+    out property <color> fg: contrast ? system.canvas-text : dark ? #f3f3f3 : #1b1b1b;
+    out property <color> muted: contrast ? system.canvas-text : dark ? #b4b8bf : #5f6368;
+    out property <color> faint: contrast ? system.canvas-text : dark ? #9a9fa8 : #6e737b;
+    out property <color> line: contrast ? system.canvas-text : dark ? #ffffff12 : #00000014;
+    out property <color> hover: contrast ? transparent : dark ? #ffffff0d : #0000000a;
+    out property <color> press: contrast ? transparent : dark ? #ffffff14 : #00000012;
+    out property <color> ok: contrast ? system.canvas-text : dark ? #6ccb8f : #0f7b45;
+    out property <color> ok-bg: contrast ? system.canvas : dark ? #6ccb8f24 : #dff3e7;
+    out property <color> attention: contrast ? system.canvas-text : dark ? #f2b84b : #8f5400;
+    out property <color> attention-bg: contrast ? system.canvas : dark ? #f2b84b24 : #fdf0d5;
+    out property <color> problem: contrast ? system.canvas-text : dark ? #ff99a4 : #c42b1c;
+    out property <color> problem-bg: contrast ? system.canvas : dark ? #ff99a424 : #fde7e9;
+    out property <color> off: contrast ? system.canvas-text : dark ? #9aa0a8 : #61666e;
+    out property <color> off-bg: contrast ? system.canvas : dark ? #ffffff12 : #eceef1;
+    out property <color> accent: contrast ? system.highlight : dark ? #60cdff : #005fb8;
+    out property <color> on-accent: contrast ? system.highlight-text : dark ? #003049 : #ffffff;
+    out property <color> spark: contrast ? system.canvas-text : dark ? #8fb3dc : #5f7fa6;
+    // Under High Contrast the fills go (`.spark polygon { fill: none }`).
+    out property <color> spark-fill: contrast ? transparent : dark ? #60cdff1f : #005fb81a;
+    out property <color> cpu: contrast ? system.canvas-text : dark ? #f2b84b : #8f5400;
+    out property <color> track: contrast ? system.canvas : dark ? #ffffff1a : #e3e6ea;
+    // High Contrast only: what CSS forces on buttons and disabled controls
+    // (GrayText instead of the faded look), and the border a hovered control
+    // gets instead of a fill. Links stay `--accent`, Highlight under High
+    // Contrast, as today's window has them.
+    out property <color> button-text: contrast ? system.button-text : fg;
+    out property <color> disabled-text: system.gray-text;
+    out property <color> link: accent;
+    out property <color> hover-border: contrast ? system.highlight : transparent;
+    // Under High Contrast, panels and banners get a real border.
+    out property <color> frame: contrast ? system.canvas-text : transparent;
+
+    // Type (13px/1.4 "Segoe UI Variable Text"; the window's other sizes).
+    out property <length> text-body: 13px;
+    out property <length> text-title: 14px;
+    out property <length> text-small: 12px;
+    out property <length> text-link: 12.5px;
+    out property <length> text-pill: 11.5px;
+    out property <length> text-group: 11px;
+    out property <length> text-tag: 10.5px;
+    // CSS line boxes are 1.4 times the font size; single lines are given
+    // that height and centred in it, as a browser does.
+    out property <float> line-height: 1.4;
+    // For wrapped text: Slint multiplies the font's own line height (ascent
+    // plus descent), so 1.4 times the size is this factor for the font in
+    // use. Segoe UI's own line is 1.33 times its size; Rust sets the factor
+    // for the test font.
+    in-out property <float> line-factor: 1.4 / 1.33;
+    out property <int> weight-normal: 400;
+    out property <int> weight-bold: 600;
+    // The Compact rows' memory figure (approved 2026-11-26).
+    out property <int> weight-heavy: 700;
+    // The watch note's paragraph (`.banner.watch { line-height: 1.45 }`).
+    out property <float> line-height-note: 1.45;
+    // A disabled control: faded, or under High Contrast drawn in GrayText.
+    public pure function faded(enabled: bool, amount: float) -> float {
+        return enabled || contrast ? 1 : amount;
+    }
+    // `letter-spacing: 0.02em` of the 11px headings.
+    out property <length> group-spacing: 0.22px;
+
+    // Sizes, radii and gaps.
+    out property <length> window-width: 380px;
+    // Gaps of the window's parts: banners and sections sit 10 px from the
+    // sides; sections are 6 px apart, banners 8 px.
+    out property <length> gutter: 10px;
+    out property <length> section-gap: 6px;
+    out property <length> banner-gap: 8px;
+    // The window-height setting's presets (logical pixels).
+    out property <length> height-short: 400px;
+    out property <length> height-medium: 500px;
+    out property <length> height-tall: 600px;
+    out property <length> radius-button: 5px;
+    out property <length> radius-card: 6px;
+    out property <length> radius-icon: 6px;
+    out property <length> radius-tag: 4px;
+    out property <length> focus-width: 2px;
+    out property <length> focus-radius: 5px;
+    out property <length> icon-button: 28px;
+    out property <length> icon-button-compact: 24px;
+    out property <length> app-icon: 28px;
+    out property <length> app-icon-small: 24px;
+    out property <length> app-icon-compact: 18px;
+    out property <length> logo: 22px;
+    out property <length> glyph: 14px;
+    out property <length> scrollbar: 6px;
+    // The pause before a tooltip shows, as a browser's `title`.
+    out property <duration> tooltip-delay: 600ms;
+    // How long a button that asks to confirm waits for the second click.
+    out property <duration> confirm-window: 4s;
+
+    // A level's text colour (pills, lines).
+    public pure function level-color(level: Level) -> color {
+        if level == Level.ok { return ok; }
+        if level == Level.attention { return attention; }
+        if level == Level.problem { return problem; }
+        return off;
+    }
+
+    // A level's soft background (pills, tags).
+    public pure function level-bg(level: Level) -> color {
+        if level == Level.ok { return ok-bg; }
+        if level == Level.attention { return attention-bg; }
+        if level == Level.problem { return problem-bg; }
+        return off-bg;
+    }
+
+    // The level dot on an app icon. Under High Contrast the dot keeps its
+    // colour (`forced-color-adjust: none`) with fixed, strong values.
+    public pure function dot-color(level: Level) -> color {
+        if contrast {
+            if level == Level.ok { return #3ff23f; }
+            if level == Level.attention { return #ffff00; }
+            if level == Level.problem { return #ff4040; }
+            return #9a9a9a;
+        }
+        if level == Level.ok { return ok; }
+        if level == Level.attention { return attention; }
+        if level == Level.problem { return problem; }
+        return off;
+    }
+
+    public pure function tone-color(tone: Tone) -> color {
+        if tone == Tone.attention { return attention; }
+        if tone == Tone.problem { return problem; }
+        return muted;
+    }
+}

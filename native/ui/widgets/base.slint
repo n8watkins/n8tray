@@ -1,0 +1,252 @@
+// The pieces every widget is made of: glyphs, text in CSS line boxes, the
+// focus ring, the press-and-focus behaviour of every control, and the
+// window-wide hand-offs (scrolling the focused control into view,
+// tooltips).
+import { Theme } from "../theme.slint";
+
+// The window's own small glyphs (app/ui/src/components/Glyph.tsx), 16 x 16,
+// recoloured with `colorize`. Decorative only: every control that shows
+// one has its own accessible label. `box-check` is the bottom bar's ticked
+// box (approved 2026-11-26).
+export enum GlyphName {
+    none, play, stop, restart, back, close, gear, check, box, box-check,
+    history, file, folder, web, copy, info, update, chevron,
+}
+
+export component Glyph inherits Image {
+    in property <GlyphName> name;
+    in property <length> size: Theme.glyph;
+    width: root.size;
+    height: root.size;
+    accessible-role: none;
+    source: root.name == GlyphName.play ? @image-url("../glyphs/play.svg")
+        : root.name == GlyphName.stop ? @image-url("../glyphs/stop.svg")
+        : root.name == GlyphName.restart ? @image-url("../glyphs/restart.svg")
+        : root.name == GlyphName.back ? @image-url("../glyphs/back.svg")
+        : root.name == GlyphName.close ? @image-url("../glyphs/close.svg")
+        : root.name == GlyphName.gear ? @image-url("../glyphs/gear.svg")
+        : root.name == GlyphName.check ? @image-url("../glyphs/check.svg")
+        : root.name == GlyphName.box ? @image-url("../glyphs/box.svg")
+        : root.name == GlyphName.box-check ? @image-url("../glyphs/box-check.svg")
+        : root.name == GlyphName.history ? @image-url("../glyphs/history.svg")
+        : root.name == GlyphName.file ? @image-url("../glyphs/file.svg")
+        : root.name == GlyphName.folder ? @image-url("../glyphs/folder.svg")
+        : root.name == GlyphName.web ? @image-url("../glyphs/web.svg")
+        : root.name == GlyphName.copy ? @image-url("../glyphs/copy.svg")
+        : root.name == GlyphName.info ? @image-url("../glyphs/info.svg")
+        : root.name == GlyphName.update ? @image-url("../glyphs/update.svg")
+        : @image-url("../glyphs/chevron.svg");
+    visible: root.name != GlyphName.none;
+    colorize: Theme.muted;
+}
+
+// One line of text in a CSS line box (font size x 1.4), elided at the end,
+// as the window's `white-space: nowrap; text-overflow: ellipsis`.
+export component Label inherits Text {
+    font-size: Theme.text-body;
+    color: Theme.fg;
+    height: self.font-size * Theme.line-height;
+    vertical-alignment: center;
+    overflow: elide;
+    wrap: no-wrap;
+    accessible-role: none;
+}
+
+// Text that wraps (`white-space: normal`), up to `max-lines` lines, at the
+// window's line height.
+export component WrapLabel inherits Text {
+    font-size: Theme.text-body;
+    color: Theme.fg;
+    wrap: word-wrap;
+    overflow: elide;
+    vertical-alignment: top;
+    line-height-factor: Theme.line-factor;
+    min-height: self.font-size * Theme.line-height;
+    accessible-role: none;
+}
+
+// The focus ring: `outline: 2px solid var(--accent); outline-offset: -2px;
+// border-radius: 5px`, drawn over the control, inside its edge.
+export component FocusRing inherits Rectangle {
+    in property <bool> shown;
+    border-width: root.shown ? Theme.focus-width : 0px;
+    border-color: Theme.accent;
+    border-radius: Theme.focus-radius;
+    background: transparent;
+}
+
+// Where the control that last took the keyboard focus is, so the window's
+// scroll area can bring it into view (Slint does not scroll a Flickable to
+// a focused child by itself). Controls in the title bar and the bottom bar
+// never report (`reveal: false`), so focusing them never scrolls the list.
+export global Reveal {
+    in-out property <length> top;
+    in-out property <length> bottom;
+    in-out property <int> serial;
+}
+
+// The tooltip the window shows: set by a hovered control after a pause,
+// drawn by the window's `TooltipLayer`.
+export global Tip {
+    in-out property <string> text;
+    in-out property <length> x;
+    in-out property <length> y;
+    // The top of the control, for a tooltip that does not fit below it.
+    in-out property <length> above;
+    in-out property <bool> shown;
+}
+
+// A tooltip on something that is not a control (a table row, `title`):
+// once per hover, after the pause.
+export component TipArea inherits TouchArea {
+    in property <string> tooltip;
+    property <bool> tip-done;
+    accessible-role: none;
+
+    changed has-hover => {
+        if !self.has-hover {
+            root.tip-done = false;
+            if Tip.text == root.tooltip {
+                Tip.shown = false;
+            }
+        }
+    }
+
+    Timer {
+        interval: Theme.tooltip-delay;
+        running: root.has-hover && root.tooltip != "" && !root.tip-done;
+        triggered => {
+            Tip.text = root.tooltip;
+            Tip.x = root.absolute-position.x + root.mouse-x;
+            Tip.y = root.absolute-position.y + root.height + 4px;
+            Tip.above = root.absolute-position.y;
+            Tip.shown = true;
+            root.tip-done = true;
+        }
+    }
+}
+
+// What every control does: hover, press, a click from the mouse or from
+// Enter or Space, keyboard focus with the ring, being scrolled into view
+// when it takes the focus, and its tooltip. A control puts this inside
+// itself (`width: 100%; height: 100%`), sets its own accessible role and
+// label, and forwards its focus here (`forward-focus: p;`).
+//
+// A disabled control takes no clicks and no focus, but still shows its
+// tooltip ("Stop: not possible now"), as a disabled button's `title` does.
+export component Pressable {
+    in property <bool> enabled: true;
+    // False: the keyboard only (the mouse goes through to what is under it).
+    in property <bool> mouse: true;
+    in property <string> tooltip;
+    // False for the title bar's and the bottom bar's controls: focusing
+    // them never scrolls the list.
+    in property <bool> reveal: true;
+    in property <length> ring-radius: Theme.focus-radius;
+    // A ring around the control (`outline-offset: 2px`, the switch) rather
+    // than inside its edge.
+    in property <length> ring-outset: 0px;
+    in property <bool> show-ring: true;
+    // The gallery's way to show a state without a mouse or keyboard.
+    in property <bool> demo-hover;
+    in property <bool> demo-pressed;
+    in property <bool> demo-focus;
+    out property <bool> hovered: (ta.has-hover && root.enabled) || root.demo-hover;
+    out property <bool> pressed: (ta.pressed && root.enabled) || root.demo-pressed;
+    out property <bool> focused: fs.has-focus || root.demo-focus;
+    callback clicked();
+    // Any key but Enter and Space (arrows between rows); `reject` passes it on.
+    callback navigate(event: KeyEvent) -> EventResult;
+    callback focus-changed(has-focus: bool);
+    // The tooltip has shown once during this hover: not again until the
+    // mouse leaves (and not after a click).
+    property <bool> tip-done;
+
+    forward-focus: fs;
+
+    public function focus-me() {
+        fs.focus();
+    }
+
+    ta := TouchArea {
+        // Enabled even for a disabled control: its tooltip still shows.
+        mouse-cursor: root.enabled && root.mouse ? MouseCursor.pointer : MouseCursor.default;
+        enabled: root.mouse;
+        clicked => {
+            Tip.shown = false;
+            root.tip-done = true;
+            if root.enabled {
+                root.clicked();
+            }
+        }
+        changed has-hover => {
+            if !self.has-hover {
+                root.tip-done = false;
+                if Tip.text == root.tooltip {
+                    Tip.shown = false;
+                }
+            }
+        }
+    }
+
+    fs := FocusScope {
+        x: 0;
+        // Clicks go to the touch area; the focus comes from the keyboard.
+        width: 0;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return {
+                root.clicked();
+                return accept;
+            }
+            if event.text == Key.Space {
+                return accept;
+            }
+            root.navigate(event)
+        }
+        key-released(event) => {
+            if event.text == Key.Space {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+        focus-gained(reason) => {
+            if root.reveal {
+                Reveal.top = root.absolute-position.y;
+                Reveal.bottom = root.absolute-position.y + root.height;
+                Reveal.serial += 1;
+            }
+            root.focus-changed(true);
+        }
+        focus-lost(reason) => {
+            root.focus-changed(false);
+        }
+    }
+
+    // Once per hover, where the mouse was when it showed; it does not follow
+    // the mouse.
+    Timer {
+        interval: Theme.tooltip-delay;
+        running: ta.has-hover && root.tooltip != "" && !root.tip-done && !ta.pressed;
+        triggered => {
+            Tip.text = root.tooltip;
+            Tip.x = root.absolute-position.x + ta.mouse-x;
+            Tip.y = root.absolute-position.y + root.height + 4px;
+            Tip.above = root.absolute-position.y;
+            Tip.shown = true;
+            root.tip-done = true;
+        }
+    }
+
+    @children
+
+    FocusRing {
+        x: -root.ring-outset;
+        y: -root.ring-outset;
+        width: root.width + 2 * root.ring-outset;
+        height: root.height + 2 * root.ring-outset;
+        border-radius: root.ring-radius;
+        shown: root.show-ring && root.focused && root.enabled;
+    }
+}

@@ -1,0 +1,43 @@
+// The window (kit, owned by the shell; views never edit it): one window
+// showing one view at a time, as Nav says, with the tooltip layer over it.
+// Rust (`window.rs`, `view::router`) sizes it to `content-height` up to the
+// height-limit setting (the view's scroll area then scrolls), places it,
+// applies the theme on every reveal, and drops it 10 s after it hides.
+import { Theme, TooltipLayer } from "widgets.slint";
+import { Nav, View } from "nav.slint";
+import { HubView } from "views/hub.slint";
+import { AllAppsView } from "views/all-apps.slint";
+import { PanelView } from "views/panel.slint";
+import { DetailsView } from "views/details.slint";
+import { SettingsView } from "views/settings.slint";
+import { AboutView } from "views/about.slint";
+import { HistoryView } from "views/history.slint";
+
+export component FlyoutWindow inherits Window {
+    // The height the view wants, in logical pixels.
+    out property <length> content-height: frame.preferred-height;
+
+    title: "N8 Tray";
+    no-frame: true;
+    always-on-top: true;
+    background: Theme.bg;
+    default-font-size: Theme.text-body;
+    default-font-family: Theme.font-family;
+
+    frame := VerticalLayout {
+        if Nav.view == View.hub: HubView { }
+        if Nav.view == View.all-apps: AllAppsView { }
+        if Nav.view == View.panel: PanelView { }
+        if Nav.view == View.details: DetailsView { }
+        if Nav.view == View.settings: SettingsView { }
+        if Nav.view == View.about: AboutView { }
+        if Nav.view == View.history: HistoryView { }
+    }
+
+    TooltipLayer {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+    }
+}

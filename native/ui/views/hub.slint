@@ -1,0 +1,44 @@
+// The hub (lane: hub screen). Until that lane lands, the placeholder of
+// lane N0: the level, the headline and each app as plain text, in the kit's
+// title bar. The hub lane owns this file and `src/view/hub.rs`, and
+// replaces both.
+import { Theme, Level, TitleBar, ScrollArea, Say, SayLine } from "../widgets.slint";
+import { Nav, View } from "../nav.slint";
+
+export global HubModel {
+    in-out property <Level> level: Level.off;
+    in-out property <string> level-text: "Idle";
+    in-out property <string> summary;
+    in-out property <string> headline: "Starting";
+    in-out property <[string]> lines;
+}
+
+export component HubView inherits VerticalLayout {
+    TitleBar {
+        show-pill: true;
+        level: HubModel.level;
+        level-text: HubModel.level-text;
+        summary: HubModel.summary;
+        show-settings: true;
+        summary-clicked => {
+            Nav.go(View.details, "");
+        }
+        settings-clicked => {
+            Nav.go(View.settings, "");
+        }
+        close-clicked => {
+            Nav.close();
+        }
+    }
+    ScrollArea {
+        Say {
+            SayLine {
+                text: HubModel.headline;
+                color: Theme.fg;
+            }
+            for line in HubModel.lines: SayLine {
+                text: line;
+            }
+        }
+    }
+}

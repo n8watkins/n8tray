@@ -18,12 +18,16 @@
 //! - [`window`]: the tray window's native style (no Alt-Tab entry, rounded corners),
 //!   showing and placing it, and the monitors.
 //! - [`single`]: one running copy, and requests from a later copy.
+//! - [`contrast`]: whether High Contrast is on, and its system colours.
+//! - [`locale`]: the user's clock (12 or 24 hours, AM and PM).
 
 pub mod autostart;
 pub mod container;
+pub mod contrast;
 pub mod folders;
 pub mod gpu;
 pub mod legacy;
+pub mod locale;
 pub mod memory;
 pub mod process;
 pub mod signal;

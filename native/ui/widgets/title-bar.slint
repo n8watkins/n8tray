@@ -1,0 +1,283 @@
+// The window's title bar (`.head`) and bottom bar (`.foot`).
+//
+// The hub's title bar carries the summary next to the level pill ("3 of 3 ·
+// 1.9 GB", approved 2026-11-25), also when something is wrong: pinned apps
+// that run of those pinned, then N8's memory in all; it opens the status
+// details. Everything in it shares one vertical centre line.
+//
+// Both bars take data, not child controls: their controls never scroll the
+// list when they take the focus, and a screen never adds a control to them.
+import { Theme, Level } from "../theme.slint";
+import { Glyph, GlyphName, Label, Pressable } from "base.slint";
+import { IconButton, LinkButton, LinkSwitch } from "buttons.slint";
+import { AppIcon, Pill } from "status.slint";
+
+// One of a panel's buttons in its title bar (Stop, Restart), from Rust
+// (`view::action`): its words, tooltip, state and whether it is armed.
+export struct BarAction {
+    id: string,
+    glyph: GlyphName,
+    glyph-size: length,
+    label: string,
+    tooltip: string,
+    enabled: bool,
+    armed: bool,
+}
+
+// The summary, a quiet button.
+component Summary {
+    in property <string> text;
+    in property <bool> demo-hover;
+    in property <bool> demo-focus;
+    callback clicked();
+
+    forward-focus: p;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-description: "Opens status details";
+    accessible-action-default => {
+        root.clicked();
+    }
+    horizontal-stretch: 0;
+    // The first thing to give way when the bar is full.
+    min-width: 0px;
+    preferred-width: l.preferred-width;
+    height: 20px;
+
+    p := Pressable {
+        width: 100%;
+        height: 100%;
+        tooltip: "Status details";
+        reveal: false;
+        ring-radius: 4px;
+        demo-hover: root.demo-hover;
+        demo-focus: root.demo-focus;
+        clicked => {
+            root.clicked();
+        }
+
+        l := HorizontalLayout {
+            Label {
+                text: root.text;
+                font-size: Theme.text-small;
+                color: p.hovered ? Theme.fg : Theme.muted;
+                height: 20px;
+            }
+        }
+    }
+}
+
+// The title bar. The hub's has the N8 logo, "N8 Tray", the level pill and
+// the summary; a panel's has Back, the app's small icon, its name (elided),
+// its pill and its `actions`; other views Back and their title.
+export component TitleBar {
+    in property <string> title: "N8 Tray";
+    // Back instead of the logo.
+    in property <bool> back;
+    // An app's small icon after Back (a panel).
+    in property <bool> show-icon;
+    in property <image> icon;
+    in property <Level> icon-level: Level.off;
+    in property <bool> show-pill;
+    in property <Level> level: Level.ok;
+    in property <string> level-text;
+    in property <string> summary;
+    in property <bool> show-settings;
+    in property <[BarAction]> actions;
+    in property <bool> compact: Theme.compact;
+    in property <bool> demo-summary-hover;
+    in property <bool> demo-close-hover;
+    callback back-clicked();
+    callback settings-clicked();
+    callback close-clicked();
+    callback summary-clicked();
+    callback action-clicked(id: string);
+
+    accessible-role: window-title-bar;
+    accessible-label: root.title;
+    min-height: l.preferred-height;
+
+    l := HorizontalLayout {
+        // `.head { padding: 12px 10px 8px 14px; gap: 10px }`, a crumb from
+        // 8px; the hub's bar 8 px apart (the approved summary); compact
+        // 8px 8px 6px 12px and 8 px apart.
+        padding-top: root.compact ? 8px : 12px;
+        padding-bottom: root.compact ? 6px : 8px;
+        padding-right: root.compact ? 8px : 10px;
+        padding-left: root.back ? 8px : root.compact ? 12px : 14px;
+        spacing: root.back && !root.compact ? 10px : 8px;
+
+        if root.back: VerticalLayout {
+            alignment: center;
+            IconButton {
+                glyph: GlyphName.back;
+                label: "Back";
+                tooltip: "Back";
+                compact: false;
+                in-bar: true;
+                clicked => {
+                    root.back-clicked();
+                }
+            }
+        }
+        if !root.back: VerticalLayout {
+            alignment: center;
+            Image {
+                source: @image-url("../../../app/src-tauri/icons/128x128.png");
+                width: Theme.logo;
+                height: Theme.logo;
+                accessible-role: none;
+            }
+        }
+        if root.show-icon: VerticalLayout {
+            alignment: center;
+            AppIcon {
+                source: root.icon;
+                level: root.icon-level;
+                size: Theme.app-icon-small;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            Label {
+                text: root.title;
+                font-size: Theme.text-title;
+                font-weight: Theme.weight-bold;
+                height: 20px;
+                // The hub's "N8 Tray" never shortens (`white-space: nowrap`);
+                // a panel's app name does.
+                min-width: root.back ? 0px : self.preferred-width;
+                accessible-role: AccessibleRole.text;
+                accessible-label: self.text;
+            }
+        }
+        if root.show-pill: VerticalLayout {
+            alignment: center;
+            Pill {
+                level: root.level;
+                text: root.level-text;
+            }
+        }
+        if root.summary != "": VerticalLayout {
+            alignment: center;
+            Summary {
+                text: root.summary;
+                demo-hover: root.demo-summary-hover;
+                clicked => {
+                    root.summary-clicked();
+                }
+            }
+        }
+        // The room between the title and the buttons.
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        for action in root.actions: VerticalLayout {
+            alignment: center;
+            IconButton {
+                glyph: action.glyph;
+                glyph-size: action.glyph-size;
+                label: action.label;
+                tooltip: action.tooltip;
+                enabled: action.enabled;
+                armed: action.armed;
+                compact: false;
+                in-bar: true;
+                clicked => {
+                    root.action-clicked(action.id);
+                }
+            }
+        }
+        if root.show-settings: VerticalLayout {
+            alignment: center;
+            IconButton {
+                glyph: GlyphName.gear;
+                label: "Settings";
+                tooltip: "Settings";
+                compact: false;
+                in-bar: true;
+                clicked => {
+                    root.settings-clicked();
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                glyph: GlyphName.close;
+                glyph-size: 12px;
+                label: "Hide N8 Tray";
+                tooltip: "Hide";
+                compact: false;
+                in-bar: true;
+                demo-hover: root.demo-close-hover;
+                clicked => {
+                    root.close-clicked();
+                }
+            }
+        }
+    }
+}
+
+// A link of the bottom bar.
+export struct BarLink {
+    key: string,
+    glyph: GlyphName,
+    text: string,
+    tooltip: string,
+    enabled: bool,
+}
+
+// The bottom bar (`.foot`): a line above, the switch link at the left
+// ("Start at sign-in", when `switch-text` is set), the links at the right.
+export component BottomBar {
+    in property <string> switch-text;
+    in property <bool> switch-checked;
+    in property <bool> switch-enabled: true;
+    in property <string> switch-tooltip;
+    in property <[BarLink]> links;
+    callback switch-toggled();
+    callback link-clicked(key: string);
+
+    accessible-role: none;
+    min-height: l.preferred-height;
+
+    Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.line;
+    }
+
+    l := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        padding-top: 6px;
+        padding-bottom: 5px;
+        spacing: 2px;
+
+        if root.switch-text != "": LinkSwitch {
+            text: root.switch-text;
+            checked: root.switch-checked;
+            enabled: root.switch-enabled;
+            tooltip: root.switch-tooltip;
+            in-bar: true;
+            toggled => {
+                root.switch-toggled();
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        for link in root.links: LinkButton {
+            glyph: link.glyph;
+            text: link.text;
+            tooltip: link.tooltip;
+            enabled: link.enabled;
+            in-bar: true;
+            clicked => {
+                root.link-clicked(link.key);
+            }
+        }
+    }
+}
