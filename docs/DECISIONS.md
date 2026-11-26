@@ -39,6 +39,8 @@ The schemas reject unknown fields so that `n8tray-contract check` catches typos,
 WSL Memory is Rust code inside the host, but it is described by a manifest with `status.type` `builtin`, which the host ships and never accepts from the modules folder.
 Every hub row then comes from one kind of description, and the example set covers all five apps.
 
+Note (2026-11-26): WSL Memory was dropped before it shipped (D34); the `builtin` status type stays in contract 2.
+
 ## D7. Fewer knobs than the plan's draft (2026-11-09)
 
 The plan's draft manifest had `status.tokenFile` and `run.mode`.
@@ -129,6 +131,8 @@ The level shown in the tray dwells 10 s both ways, as before.
 The level pushed to apps with the `pressure` feature enters after the same 10 s but recovers only after 60 s, so an engine is not stopped and started again every few seconds while memory hovers (plan 5.5).
 A problem notifies once per episode, as do an app's memory alerts; CPU alerts only color the row.
 
+Note (2026-11-26): D34 removes the level shown in the tray and its notification; the level pushed to apps stays as described here.
+
 ## D22. History in memory and in day files (2026-11-09)
 
 Every app and the tray itself keep 15 minutes in memory at 10 s resolution (the maximum memory and average CPU of each 10 s), sent with the snapshot for the sparklines.
@@ -162,6 +166,8 @@ This widens what is valid and makes nothing invalid, so it stays within contract
 The host never had a release that read manifests, so no installed host rejects such a manifest.
 The host reads an icon itself (at most 256 KB) and the window shows it only as an image, so an SVG's scripts or external references never run; a missing or unusable icon shows the generic app glyph.
 `spec/examples/icons/` has the icons for the five example apps, redrawn in SVG from the PowerShell tray's artwork: a speaker for VoiceDock, a keyboard for N8 Hotkeys, a camera for N8 Commentary, a briefcase for Lead Scraper and a memory chip for WSL Memory.
+
+Note (2026-11-26): the WSL Memory icon left with its example manifest (D34); four example icons remain.
 
 ## D24. The window's budget is private memory; both figures are shown (2026-11-09)
 
@@ -235,6 +241,8 @@ That state is how the two trays share the PC during the switch-over, not a fault
 While watching, rows show no Start or Stop button, since none would do anything.
 A low-memory reason reads "Low memory"; the meter under it shows the figures.
 
+Note (2026-11-26): D34 removes the PC's memory from the level, the pill and the tray icon, and the "Low memory" reason with it; they show the apps' health only.
+
 The hub showed the tray's window as its working set (about 290 MB on the owner's PC), most of which is WebView2 runtime code shared with Edge (D19, D24).
 The N8 Tray row and the status card's "N8 ... in all" now count the tray and its window by private memory, what they cost the system (about 115 MB with the window open); the status details still show both figures.
 
@@ -263,6 +271,8 @@ The card keeps its headline, the "N8 ... MB in all" line (N8's own apps, not the
 Only the row and its meter were removed from the interface (`memoryMeter`, its markup and its styles).
 The system memory reading itself stays, since it still feeds the status level and its "Low memory" reason, the low-memory notification, the tray tooltip, the status report and the free and total figures in "Details".
 Per-app memory is untouched.
+
+Note (2026-11-26): D34 removes everything this entry kept except the reading behind the pressure pushed to apps.
 
 ## D32. Pinned apps: hide what you do not use, never what runs (2026-11-25)
 
@@ -369,3 +379,35 @@ What the figures decide:
   The `skia-software` feature stays buildable only until the real hub screen has been compared with today's window pixel for pixel in both renderers; if `software` text matches as well, the switch builds without Skia.
 
 The memory script keeps a window on screen about a second per open, shown without activation; it never took the focus in any run.
+
+## D34. The PC's memory leaves N8 Tray (2026-11-26)
+
+The owner decided that whole-PC memory belongs in a system monitor, not in N8 Tray: "Definitely removing the low memory entirely".
+D31 had already taken the "Windows ... GB free" row off the status card; this removes the rest.
+
+For users: the tray dot no longer turns amber or red when the PC is low on memory, the "Low memory notifications" setting is gone, and "Details" no longer shows the PC's free memory.
+A system monitor is now the place to watch the whole PC's memory; N8 Tray keeps showing what its own apps use.
+
+- Low free memory no longer raises N8 Tray's level: the tray dot turns amber or red only for the apps, and the "Low memory" reason is gone (this supersedes the shown level in D21 and the reason in D29).
+- The low-memory notification and its "Low memory notifications" setting are gone.
+- The tray tooltip and the tray menu's status line no longer carry "Windows 4.2/31.1 GB free"; they carry N8's own figure, the one the status card shows, in both shells.
+  The menu line reads "N8 Tray: Healthy · 310 MB in all", so "N8" is not said twice; the tooltip's last line reads "N8 310 MB in all" and is the first line dropped when the tooltip runs out of room, before "Watching only".
+- "Details" no longer has the free and total line, and Copy status no longer has the PC's figures.
+- The snapshot's `memory` keeps only `n8Mb` and `text` ("N8 310 MB in all"); `freeGb`, `totalGb`, `level` and `system` are gone, and `settings.memoryNotifications` with them.
+  The shape `memory.n8Mb` was kept rather than moved to the top level, so the native window's lanes and the fixtures change as little as possible.
+
+What stays, because it is N8 Tray acting for its apps rather than showing the PC:
+
+- The memory pressure pushed to apps with the `pressure` feature (spec 5.4), with D21's thresholds, 10 s in and 60 s out, and the "Pressure sent" line in "Details".
+  It needs the system's free memory, so the platform sampler (`n8tray_platform::memory::system_memory`) stays, read only for this; the level only goes to apps, and the log records it with the free memory whenever it changes, since that reading is the pressure's input.
+- `memory.attentionBelowGiB` and `memory.problemBelowGiB` in the settings, which set that pressure.
+- Every app's memory, CPU and graphics figures, history, process tables, budgets and their alerts ("over its 1 GB warning"), and "N8 ... in all".
+
+WSL Memory was planned as a built-in (D6): Rust code in the host, described by a manifest with status type `builtin`, showing WSL's free memory and a count of dev servers from devguard's status file.
+The host never shipped it; only its example manifest, its icon and the interface's sample rows existed, so no user had the row.
+The owner dropped it ("do we need the wsl memory in n8tray i think not right?"), so the example, the icon and the sample rows are gone, and the PowerShell tray's `wslMemory` section is no longer imported.
+The `builtin` status type stays in contract 2: removing it would reject manifests valid today, which needs a new contract major, and it costs nothing while no built-in exists.
+
+Settings files need no new schema version.
+A file from 0.6.0 loads without an error or a warning: `memory.notify` is kept as it is under `memory`, and app settings or a `wslMemory` section for WSL Memory are kept as unknown entries, as before.
+A file this version saves still reads in 0.6.0, which takes a missing `notify` as off.

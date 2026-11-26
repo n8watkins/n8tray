@@ -954,11 +954,22 @@ fn small_figures_read_right() {
     assert!(n8 > 0.0 && n8 < 1000.0, "{n8}");
     let text = &snapshot.memory.text;
     let said: f64 = text
-        .strip_suffix(" MB")
-        .and_then(|t| t.rsplit_once("· N8 "))
-        .and_then(|(_, n)| n.parse().ok())
+        .strip_prefix("N8 ")
+        .and_then(|t| t.strip_suffix(" MB in all"))
+        .and_then(|n| n.parse().ok())
         .unwrap_or_else(|| panic!("the N8 figure in MB: {text}"));
     assert!((said - n8).abs() <= 1.0, "{text} for {n8} MB");
+    // N8's own memory is the tooltip's note; the PC's memory is not (D34).
+    assert!(
+        snapshot.tooltip.ends_with(text.as_str()),
+        "{}",
+        snapshot.tooltip
+    );
+    assert!(
+        !snapshot.tooltip.contains("GB free"),
+        "{}",
+        snapshot.tooltip
+    );
 }
 
 #[test]
@@ -1055,11 +1066,41 @@ fn tray_with_settings(settings: serde_json::Value) -> Tray {
     tray
 }
 
+/// A 0.6.0 settings file with the low-memory notification on and settings
+/// for the dropped WSL Memory built-in: the host runs with it as usual, no
+/// error and no problem row, and a change saves the file with both kept (D34).
+#[test]
+fn a_0_6_settings_file_runs_and_saves_cleanly() {
+    let tray = tray_with_settings(json!({
+        "schemaVersion": 1,
+        "notifications": true,
+        "memory": { "attentionBelowGiB": 3, "problemBelowGiB": 1.5, "notify": true },
+        "apps": { "wslmemory": { "enabled": true, "autoStart": true, "ownIcon": false, "pinned": true } },
+        "wslMemory": { "distro": "Ubuntu-24.04", "greenAboveGiB": 4 }
+    }));
+    let snapshot = tray.wait("a snapshot", |s| s.tray.rss_mb > 0.0);
+    assert_eq!(snapshot.settings.error, None);
+    assert!(snapshot.problems.is_empty(), "{:?}", snapshot.problems);
+    assert!(snapshot.apps.iter().all(|a| a.id != "wslmemory"));
+    tray.send(HostCommand::SetCheckUpdates(false));
+    tray.wait("the change", |s| !s.settings.check_updates);
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&tray.folders.settings_file).unwrap())
+            .unwrap();
+    assert_eq!(saved["updates"]["check"], false);
+    assert_eq!(saved["memory"]["notify"], true);
+    assert_eq!(saved["apps"]["wslmemory"]["autoStart"], true);
+    assert_eq!(saved["wslMemory"]["distro"], "Ubuntu-24.04");
+}
+
 #[test]
 fn pushes_memory_pressure_and_measures_cpu_and_history() {
     // Thresholds no computer meets: the first reading is a problem at once.
+    // Notifications are on, and so is 0.6.0's low-memory opt-in, which this
+    // version keeps in the file but no longer acts on (D34).
     let tray = tray_with_settings(json!({
-        "memory": { "attentionBelowGiB": 200000, "problemBelowGiB": 100000 }
+        "notifications": true,
+        "memory": { "attentionBelowGiB": 200000, "problemBelowGiB": 100000, "notify": true }
     }));
     let port = free_port().to_string();
     tray.write_manifest(
@@ -1071,23 +1112,24 @@ fn pushes_memory_pressure_and_measures_cpu_and_history() {
             json!({ "lifecycle": { "features": ["pressure"] }, "autoStartDefault": true }),
         ),
     );
-    let snapshot = tray.wait("the problem level", |s| {
-        s.memory.level == LevelName::Problem && s.pressure == LevelName::Problem
+    tray.wait("the problem pressure level", |s| {
+        s.pressure == LevelName::Problem
     });
-    assert_eq!(snapshot.level, LevelName::Problem);
     // The app hears it (its summary repeats the level it got).
     tray.wait_app("pressured", "the pushed level", |a| {
         a.summary.ends_with("pressure problem")
     });
-    assert!(
-        !tray
-            .notices
-            .lock()
-            .unwrap()
+    // Pressure is for the apps: N8 Tray's own level stays the apps', with no
+    // "Low memory" reason and no notification (D34).
+    let snapshot = tray.wait("the app's level", |s| {
+        s.apps
             .iter()
-            .any(|n| n.starts_with("Low memory")),
-        "low-memory notifications are off unless turned on"
-    );
+            .any(|a| a.id == "pressured" && a.level == LevelName::Ok)
+    });
+    assert_eq!(snapshot.level, LevelName::Ok, "{:?}", snapshot.reason);
+    assert_eq!(snapshot.reason, None);
+    assert!(!snapshot.tooltip.contains("memory"), "{}", snapshot.tooltip);
+    assert_eq!(snapshot.pressure, LevelName::Problem);
     // CPU needs two samples; history fills in 10 s steps.
     let app = tray.wait_app("pressured", "CPU and history", |a| {
         a.cpu_percent.is_some()
@@ -1098,6 +1140,11 @@ fn pushes_memory_pressure_and_measures_cpu_and_history() {
     assert_eq!(app.history.unwrap().memory_mb.len(), 90);
     let snapshot = tray.wait("the tray's own CPU", |s| s.tray.cpu_percent.is_some());
     assert!(snapshot.tray.history.is_some());
+    // All through a memory problem with notifications and the old opt-in
+    // on: no notification and no colour of N8 Tray's own.
+    assert_eq!(snapshot.level, LevelName::Ok, "{:?}", snapshot.reason);
+    let notices = tray.notices.lock().unwrap().clone();
+    assert!(notices.is_empty(), "{notices:?}");
 }
 
 #[test]

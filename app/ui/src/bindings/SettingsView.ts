@@ -4,11 +4,7 @@ export type SettingsView = { launchAtSignIn: boolean,
 /**
  * The sign-in entry exists but N8 Tray did not make it.
  */
-signInForeign: boolean, notifications: boolean, 
-/**
- * Low-memory notifications (off unless turned on).
- */
-memoryNotifications: boolean, updateChannel: string, checkUpdates: boolean, 
+signInForeign: boolean, notifications: boolean, updateChannel: string, checkUpdates: boolean, 
 /**
  * The settings file has an error: defaults in use, nothing saved.
  */

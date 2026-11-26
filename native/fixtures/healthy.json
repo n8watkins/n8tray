@@ -10,12 +10,8 @@
   "pinnedText": "2 of 3 running",
   "more": null,
   "memory": {
-    "freeGb": 12.6,
-    "totalGb": 31.1,
-    "level": "ok",
     "n8Mb": 780,
-    "system": "Windows",
-    "text": "Windows 12.6/31.1 GB free · N8 0.8 GB"
+    "text": "N8 780 MB in all"
   },
   "pressure": "ok",
   "apps": [
@@ -901,13 +897,12 @@
       ]
     }
   },
-  "tooltip": "N8 Tray: Needs attention",
+  "tooltip": "N8 Tray: Healthy\nRunning: N8 Hotkeys, VoiceDock\nN8 780 MB in all",
   "legacyTray": false,
   "settings": {
     "launchAtSignIn": true,
     "signInForeign": false,
     "notifications": true,
-    "memoryNotifications": false,
     "updateChannel": "stable",
     "checkUpdates": true,
     "error": null,

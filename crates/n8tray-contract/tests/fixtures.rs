@@ -151,7 +151,6 @@ fn examples_are_valid_manifests_named_after_their_id() {
         "n8commentary.json",
         "n8hotkeys.json",
         "leadscraper.json",
-        "wslmemory.json",
     ] {
         assert!(
             names.contains(expected),

@@ -22,7 +22,7 @@ describe("rows", () => {
   it("offer one action: Stop while running, Start while not", () => {
     expect(rowAction(app("voicedock"))?.kind).toBe("stop");
     expect(rowAction(app("n8commentary"))?.kind).toBe("start");
-    expect(rowAction(app("wslmemory"))).toBeNull();
+    expect(rowAction({ ...app("voicedock"), actions: [] })).toBeNull();
   });
 
   it("keep Restart for the panel, only while running", () => {

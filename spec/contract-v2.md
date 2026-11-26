@@ -19,7 +19,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are used as in RFC 2119
 - **Host**: N8 Tray, or the conformance kit's test tray, which plays the host in tests.
 - **App** or **module**: a program that installs a manifest.
   Apps are independent: they are installed, updated and run without the host.
-- **Built-in**: a module compiled into the host (today only WSL Memory).
+- **Built-in**: a module compiled into the host (N8 Tray ships none today).
   It is described by a manifest the host ships, with status type `builtin`.
 - **Component**: a part of an app with its own state, such as one voice engine.
 - **Owned process**: a process the app started, or a descendant of its main process.

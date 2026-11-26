@@ -15,7 +15,6 @@ export function Details({ snapshot }: { snapshot: HostSnapshot }) {
     recentWarnings().then(setWarnings).catch(() => {});
   }, [snapshot]);
   const t = snapshot.tray;
-  const m = snapshot.memory;
   const copy = async () => {
     const text = await statusText();
     if (!text) return;
@@ -46,15 +45,10 @@ export function Details({ snapshot }: { snapshot: HostSnapshot }) {
           <dd>
             {snapshot.running} of {snapshot.total} running
           </dd>
-          <dt>{m.system}</dt>
-          <dd>
-            {m.freeGb !== null && m.totalGb !== null ? `${m.freeGb.toFixed(1)} of ${m.totalGb.toFixed(1)} GB free` : "unknown"}
-            {m.level !== "ok" && m.level !== "off" ? ` · ${levelWords(m.level).toLowerCase()}` : ""}
-          </dd>
           <dt>Pressure sent</dt>
           <dd>{levelWords(snapshot.pressure)}</dd>
           <dt>N8 in all</dt>
-          <dd>{memory(m.n8Mb)}</dd>
+          <dd>{memory(snapshot.memory.n8Mb)}</dd>
           <dt>This app</dt>
           <dd>
             {memory(t.rssMb)} in use, {t.privateMb !== null ? memory(t.privateMb) : "-"} private

@@ -7,7 +7,7 @@
   - `action-result.schema.json`: the answer to an action or a pressure notice.
   - `lease.schema.json`: the host lease.
   - `modular-v1.schema.json`: contract 1, today's `modular.json`, accepted during the migration.
-- [`examples/`](examples): manifests for VoiceDock, N8 Commentary, N8 Hotkeys, Lead Scraper and the WSL Memory built-in.
+- [`examples/`](examples): manifests for VoiceDock, N8 Commentary, N8 Hotkeys and Lead Scraper.
   They describe each app as it will be once it adopts the contract, so some switches they name (such as `-Stop`) arrive with that adoption.
 - [`fixtures/`](fixtures): documents every implementation is tested against.
 

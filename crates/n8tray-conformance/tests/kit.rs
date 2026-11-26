@@ -173,7 +173,7 @@ fn check_accepts_the_examples_and_rejects_invalid_fixtures() {
     let examples = spec().join("examples");
     let output = contract(&["check", examples.to_str().unwrap()]);
     assert!(output.status.success(), "{}", text(&output));
-    assert_eq!(text(&output).matches("ok ").count(), 5);
+    assert_eq!(text(&output).matches("ok ").count(), 4);
 
     let invalid = spec().join("fixtures/manifest/invalid/budget.warn-above-max.json");
     let output = contract(&["check", "--kind", "manifest", invalid.to_str().unwrap()]);
