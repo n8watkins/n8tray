@@ -15,7 +15,8 @@ describe("native fixtures", () => {
   for (const [path, json] of Object.entries(files)) {
     const name = path.replace(/^.*\/(.+)\.json$/, "$1");
     it(`${name}.json matches the interface fixture`, () => {
-      expect(json).toEqual(fixtures[name]);
+      // After changing preview/fixtures.ts, run `npm run fixtures:json` in app/ui and commit the result.
+      expect(json, `${name}.json is out of date: run "npm run fixtures:json" in app/ui`).toEqual(fixtures[name]);
     });
   }
 });

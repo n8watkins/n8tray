@@ -77,6 +77,7 @@ cd app/ui
 npm test           # view models and keyboard (Vitest)
 npm run screens    # every view, light, dark and High Contrast, against recorded snapshots;
                    # pictures in app/ui/screens/, plus the keyboard path and an accessibility scan
+npm run fixtures:json  # after editing preview/fixtures.ts: rewrite native/fixtures/*.json from it
 npm run preview    # the same window in a browser at http://localhost:1430/?fixture=busy&view=hub
 ```
 
