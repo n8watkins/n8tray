@@ -4,15 +4,17 @@
 //! On Windows, the Win32 clipboard as Unicode text. Elsewhere, not available
 //! yet: the call says so and copies nothing.
 
-/// Puts `text` on the clipboard, replacing what was there.
-pub fn set_text(text: &str) -> Result<(), String> {
+/// Puts `text` on the clipboard, replacing what was there. `owner` is the
+/// window that copies (its native handle, an `HWND` on Windows), when there
+/// is one: the clipboard then names it as its owner, as Windows expects.
+pub fn set_text(owner: Option<isize>, text: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
-        crate::win::clipboard::set_text(text)
+        crate::win::clipboard::set_text(owner, text)
     }
     #[cfg(not(windows))]
     {
-        let _ = text;
+        let _ = (owner, text);
         Err("copying is only available on Windows".into())
     }
 }

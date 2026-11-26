@@ -254,7 +254,8 @@ impl Shell {
 
     /// `text` on the clipboard; `done` hears whether it worked.
     pub fn copy(&mut self, text: &str, done: Reply<bool>) {
-        let copied = match n8tray_platform::clipboard::set_text(text) {
+        // The window that copies owns the clipboard (null without one).
+        let copied = match n8tray_platform::clipboard::set_text(self.hub.native(), text) {
             Ok(()) => true,
             Err(e) => {
                 warn!("Could not copy: {e}");

@@ -473,21 +473,23 @@ mod tests {
             assert_eq!(HostTarget::from_name(name), None, "{name}");
         }
         // An app's item, by key, through the tray menu's validation.
-        let app = s.apps.iter().find(|a| a.open.iter().any(|o| o.exists));
-        if let Some(app) = app {
-            let entry = app.open.iter().find(|o| o.exists).unwrap();
-            assert_eq!(
-                resolved(
-                    Intent::OpenItem {
-                        app: app.id.clone(),
-                        kind: "open".into(),
-                        key: entry.key.clone()
-                    },
-                    &s
-                ),
-                Ok(Effect::Open(entry.target.clone()))
-            );
-        }
+        let app = s
+            .apps
+            .iter()
+            .find(|a| a.open.iter().any(|o| o.exists))
+            .expect("the fixture has an app with an entry that exists");
+        let entry = app.open.iter().find(|o| o.exists).unwrap();
+        assert_eq!(
+            resolved(
+                Intent::OpenItem {
+                    app: app.id.clone(),
+                    kind: "open".into(),
+                    key: entry.key.clone()
+                },
+                &s
+            ),
+            Ok(Effect::Open(entry.target.clone()))
+        );
         assert!(
             resolved(
                 Intent::OpenItem {
@@ -553,7 +555,7 @@ mod tests {
             return;
         }
         let text = format!("N8 Tray clipboard test {} · é", std::process::id());
-        n8tray_platform::clipboard::set_text(&text).unwrap();
+        n8tray_platform::clipboard::set_text(None, &text).unwrap();
         assert_eq!(n8tray_platform::clipboard::text(), Some(text));
     }
 }
