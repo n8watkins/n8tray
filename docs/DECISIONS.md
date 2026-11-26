@@ -263,3 +263,26 @@ The card keeps its headline, the "N8 ... MB in all" line (N8's own apps, not the
 Only the row and its meter were removed from the interface (`memoryMeter`, its markup and its styles).
 The system memory reading itself stays, since it still feeds the status level and its "Low memory" reason, the low-memory notification, the tray tooltip, the status report and the free and total figures in "Details".
 Per-app memory is untouched.
+
+## D32. Pinned apps: hide what you do not use, never what runs (2026-11-25)
+
+The owner approved a "pin" design so he can hide apps he does not use without deleting them.
+Every hosted app is pinned or unpinned (`pinned` in the app's settings, `Command::SetPinned`); that is separate from whether it runs.
+Pinned apps show in the main view; unpinned apps leave it and sit behind one line, such as "2 more", which opens the full list.
+Nothing is deleted and the app's settings stay.
+
+Hiding is about what is seen, never about what runs:
+
+- An unpinned app that runs is on the line: "2 more · 1 running, 40 MB" (memory as the rest of N8 Tray writes it, GB from 1000 MB), or "2 more · 1 running" while its memory is not measured yet, and "2 more" while none runs.
+- An unpinned app in trouble (attention or problem) is back in the main view with its warning until it clears (`AppView.inMainView`), and is then not counted on the line.
+- The level, its reason, the tray icon's dot and N8's memory total count every app, pinned or not.
+- The headline counts pinned apps only ("2 of 2 running"): `HostSnapshot.running` and `total`.
+- The tooltip names the pinned apps that run and counts the unpinned ones: "Running: N8 Hotkeys · 2 more running", or "2 more running" alone; the count stays whole when the names are cut.
+
+`HostSnapshot.more` is `null` when every app is in the main view, never a line with a count of 0, so a view shows the line exactly when it has something to say.
+Pinned applies only to apps shown in N8 Tray: "Show in N8 Tray" (`ownIcon`) and "Turned on" (`enabled`) keep their meaning, and an app with its own icon is in no view of the hub at all.
+Keeping an unused app stopped is the existing "Start with N8 Tray" switch (`autoStart`), not part of the pin.
+
+A settings file without the key reads as pinned, so no migration was needed and the settings schema stays at version 1.
+An older N8 Tray keeps the key through a load and a save (unknown keys are preserved), so going back a version loses no choice.
+The core publishes the data now and the native window will show it; today's window does not read the new fields, and with every app pinned (the default) the snapshot reads as before apart from the new fields themselves.
