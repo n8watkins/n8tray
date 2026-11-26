@@ -434,3 +434,31 @@ Today's Tauri window does not read or change either.
   The Tauri app's setting list has neither, as it has no `pinned`: the difference is deliberate, and a test on each side says so.
 - The Tauri window receives the same snapshot, so its data gains the three new `settings` fields, which no view reads.
   Its copied status text (`report.rs`) does not mention them.
+
+## D36. The native kit is a base six view lanes can build on alone (2026-11-26)
+
+An independent review of the native window kit (PR 45) found that a view lane could not build its screen without editing shared files, and that the shell differed from today's window in ways a lane would copy.
+This entry records how the kit answers it; `native/ui/README.md` is the rulebook the lanes follow.
+
+- One way for a view to reach N8 Tray, `view::intent`: settings and host commands by key, Start at sign-in, an app's actions (armed through `view::confirm`), N8 Tray's own targets by name, an app's `open` and `menu` items, installing an update, a history read on a worker thread with the reply on the UI thread, recent warnings, the status text and the clipboard.
+  Views still pass only ids and keys (D18); `view::intent::resolve` maps each request through the same validation as the tray menu and the Tauri commands, and refuses the rest.
+  Until the native shell installs updates in place, "install" and "try again" open the release page, as the tray menu's Install update does (D27).
+  The clipboard is Win32's (`n8tray_platform::clipboard`); elsewhere copying says it is not available yet.
+  Copy status copies the same text as today: `native/src/report.rs` is a copy of the Tauri app's, kept equal by a test until the switch removes that one.
+- A view's types live in its model file, `views/<name>-model.slint`, exported whole through a chain of `export *` from `main.slint` (Slint allows one per file).
+  A struct a view declares is then a plain Rust type; one a model file did not export would reach Rust only as a deprecated alias, which `-D warnings` refuses.
+  Model files hold no component, because exporting a component that is not a window is a build warning.
+- The router follows today's window: every open by the tray icon shows the hub (`hub.rs` emits "hub" on every show); `show_view` opens another view with only the hub behind it, so the tray's status line opens the status details; a panel or one app's history whose app leaves the snapshot falls back to the hub, and the way back forgets gone apps; any view change and hiding the window disarm every armed action, as today's buttons keep their armed state in the view that shows them; a new view puts the keyboard focus at its top, where a screen reader hears its title (`Nav.title`).
+- Compact and the window height (D35) are applied from the snapshot on every fill and every reveal, and the window is fitted after each fill.
+- A focus request by app id (`RowFocus.to-id`) stays pending until a row takes it, and a row checks for one when it is created: after a reorder, the moved rows are new instances that exist only from the next layout, which a `changed` handler never sees.
+- Each view module lists its golden pictures (`SHOTS`: fixture, app, density, height), rendered in the shell's own window, so a lane adds states without touching the gallery's lists or the shared fixtures.
+- Release builds compile `ui/main.slint` alone; debug and test builds compile `ui/debug.slint`, which adds the widget gallery in the same compilation, so both share their Rust types.
+  The Native CI job checks that the release exe holds none of the gallery's own words.
+  Measured on Windows (release, LTO, stripped): RELEASE_MEASURE.
+- The scroll area brings a focused control into view; only `in-bar` keeps a bar's control from moving the list, since the position check cannot tell a bar's control from content once the list is scrolled.
+  So every control of a view is in a bar or in its `ScrollArea`, and `view::gallery::tests::tab_through` checks a view for it.
+- Table cells wrap as `td` does, with number columns keeping their width beside a long name, and key-value values wrap instead of eliding (a fixed `height` on any text in a row capped the row at one line).
+
+The window's height changes while it shows (content that grows or shrinks) move its top and its height in one `SetWindowPos`, so a window by a bottom taskbar keeps its bottom on the taskbar, and a refresh that changes nothing no longer calls it at all.
+Whether one frame at the old size shows in between depends on when Slint draws relative to that call; it can only be seen on a real desktop with a real taskbar, which this lane did not use (headless renders only).
+Check it when the hub lane lands: open the window with a list that grows (start an app) and watch the bottom edge.

@@ -521,7 +521,7 @@ mod tests {
     /// set by CI's Windows runner): never on a PC someone is using.
     #[test]
     fn text_goes_on_the_clipboard() {
-        if std::env::var_os("N8TRAY_CLIPBOARD_TEST").is_none() {
+        if std::env::var("N8TRAY_CLIPBOARD_TEST").as_deref() != Ok("1") {
             return;
         }
         let text = format!("N8 Tray clipboard test {} · é", std::process::id());
