@@ -29,7 +29,16 @@ summary: string, detail: string | null, running: boolean, shouldRun: boolean, en
 /**
  * Shown in N8 Tray (false: the app uses its own icon).
  */
-hosted: boolean, autoStart: boolean, 
+hosted: boolean, 
+/**
+ * The user's pin: pinned apps are in the main view (D32).
+ */
+pinned: boolean, 
+/**
+ * In the main view: shown in N8 Tray, not hidden, and pinned or in
+ * trouble (attention or problem). The others are in the snapshot's `more`.
+ */
+inMainView: boolean, autoStart: boolean, 
 /**
  * What is happening now, such as "Stopping".
  */

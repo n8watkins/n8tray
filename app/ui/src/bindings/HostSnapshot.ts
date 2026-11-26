@@ -2,6 +2,7 @@
 import type { AppView } from "./AppView";
 import type { LevelName } from "./LevelName";
 import type { MemoryView } from "./MemoryView";
+import type { MoreView } from "./MoreView";
 import type { ProblemView } from "./ProblemView";
 import type { SettingsView } from "./SettingsView";
 import type { TrayUsage } from "./TrayUsage";
@@ -19,7 +20,20 @@ headline: string,
 /**
  * The first reason for the level, such as "VoiceDock: Stopped: crashed".
  */
-reason: string | null, running: number, total: number, memory: MemoryView, 
+reason: string | null, 
+/**
+ * Pinned apps running ("2 of 2 running"); unpinned apps are in `more`.
+ */
+running: number, 
+/**
+ * Pinned apps shown in N8 Tray.
+ */
+total: number, 
+/**
+ * The apps outside the main view, behind one "N more" line; `None` when
+ * every app is in it (D32).
+ */
+more: MoreView | null, memory: MemoryView, 
 /**
  * The memory pressure level pushed to apps (10 s in, 60 s out).
  */
