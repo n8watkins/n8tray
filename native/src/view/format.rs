@@ -7,6 +7,10 @@
 //! formatting rounds it to even: [`to_fixed`] and [`js_round`] keep today's
 //! digits exactly, so "1.25 GB" reads "1.3 GB" in both windows.
 #![forbid(unsafe_code)]
+#![allow(
+    dead_code,
+    reason = "the kit for the screen lanes: each helper is used once its screen lands"
+)]
 
 use n8tray_core::model::{
     ActionKindView, ActionView, AppView, ComponentView, LevelName, UpdateView,

@@ -200,6 +200,7 @@ impl Picture {
             .map_err(|e| e.to_string())
     }
 
+    #[cfg(test)]
     pub fn read_png(path: &Path) -> Result<Picture, String> {
         let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let mut decoder = png::Decoder::new(std::io::BufReader::new(file));
