@@ -1176,6 +1176,9 @@
     "notifications": true,
     "updateChannel": "stable",
     "checkUpdates": true,
+    "compact": false,
+    "windowHeight": "short",
+    "windowHeightPx": 400,
     "error": null,
     "file": "C:\\Users\\someone\\AppData\\Local\\N8Tray\\settings.json"
   },
