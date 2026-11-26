@@ -1,0 +1,10 @@
+// What Rust fills for About N8 Tray (lane: settings and about, which owns
+// this file with `about.slint`): the global and every struct or enum it
+// uses. No component in a model file (README, "Your types reach Rust").
+
+// The kit's export chain: keep this line as it is.
+export * from "history-model.slint";
+
+export global AboutModel {
+    in-out property <string> version;
+}

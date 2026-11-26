@@ -19,6 +19,8 @@ use tracing::{info, warn};
 
 use crate::commands::{self, Opened};
 use crate::tray::{Clicked, Tray};
+use crate::ui::View;
+use crate::view::intent::{self, Effect, HistoryOf, HistoryReply, Intent, Range, Reply};
 use crate::window::Hub;
 
 /// Start-up touches far more memory than an idle tray keeps (D19).
@@ -182,10 +184,84 @@ impl Shell {
         }
     }
 
-    /// Opens the window by the tray icon.
+    /// Opens the window by the tray icon, on the hub (every open shows the
+    /// hub, as today).
     pub fn show(&mut self, anchor: Option<Rect>) {
+        self.show_view(View::Hub, "", anchor);
+    }
+
+    /// Opens the window by the tray icon on `view` (`id` names the app of a
+    /// panel or of one app's history), with no way back but to the hub: the
+    /// tray's status line opens the status details this way.
+    pub fn show_view(&mut self, view: View, id: &str, anchor: Option<Rect>) {
         let anchor = anchor.or_else(|| self.tray.as_ref().and_then(Tray::rect));
-        self.hub.show(anchor, self.latest.as_deref());
+        self.hub.show_view(view, id, anchor, self.latest.as_deref());
+    }
+
+    /// What a view asked for (`view::intent::send`).
+    pub fn intent(&mut self, intent: Intent) {
+        let what = format!("{intent:?}");
+        match intent::resolve(intent, self.latest.as_deref(), &self.folders) {
+            Ok(Effect::Send(command)) => self.send(command),
+            Ok(Effect::Open(target)) => crate::open::open(&target),
+            Ok(Effect::Press {
+                app,
+                action,
+                component,
+            }) => self.hub.press_action(&app, &action, component.as_deref()),
+            Err(e) => warn!("The window asked for {what}: {e}"),
+        }
+    }
+
+    /// Reads a history on a worker thread and hands it to `done` on the UI
+    /// thread (`view::intent::history`).
+    pub fn history(&mut self, of: HistoryOf, range: Range, done: Reply<HistoryReply>) {
+        let Some(snapshot) = self.latest.clone() else {
+            warn!("History asked for before the first snapshot");
+            return;
+        };
+        let ids = intent::history_ids(&snapshot, &of);
+        if ids.is_empty() {
+            warn!("No history for {of:?}");
+        }
+        let dir = self.folders.history.clone();
+        let spawned = std::thread::Builder::new()
+            .name("n8tray-history".into())
+            .spawn(move || {
+                let items = intent::read_history(&dir, &ids, range, chrono::Utc::now());
+                let reply = HistoryReply { of, range, items };
+                if slint::invoke_from_event_loop(move || {
+                    with(|s| s.hub.with_models(|ui| done(ui, reply)));
+                })
+                .is_err()
+                {
+                    // The event loop is gone: N8 Tray is exiting.
+                }
+            });
+        if let Err(e) = spawned {
+            warn!("The history could not be read: {e}");
+        }
+    }
+
+    /// Copy status: the latest snapshot's status text on the clipboard.
+    pub fn copy_status(&mut self, done: Reply<bool>) {
+        let text = self.latest.as_deref().map(intent::status_text);
+        match text {
+            Some(text) => self.copy(&text, done),
+            None => self.hub.with_models(|ui| done(ui, false)),
+        }
+    }
+
+    /// `text` on the clipboard; `done` hears whether it worked.
+    pub fn copy(&mut self, text: &str, done: Reply<bool>) {
+        let copied = match n8tray_platform::clipboard::set_text(text) {
+            Ok(()) => true,
+            Err(e) => {
+                warn!("Could not copy: {e}");
+                false
+            }
+        };
+        self.hub.with_models(|ui| done(ui, copied));
     }
 
     fn toggle(&mut self, anchor: Option<Rect>) {
@@ -195,8 +271,8 @@ impl Shell {
     fn on_menu(&mut self, id: &str) {
         let snapshot = self.latest.clone();
         match crate::tray::clicked(id) {
-            // The details view comes with a later lane.
-            Clicked::Status => self.show(None),
+            // As today: the window opens on the status details.
+            Clicked::Status => self.show_view(View::Details, "", None),
             Clicked::SignIn => match crate::tray::sign_in_command(snapshot.as_deref()) {
                 Some(command) => self.send(command),
                 None => info!("Start at sign-in stays with the installed N8 Tray (D33)"),

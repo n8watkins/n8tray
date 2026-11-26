@@ -1,0 +1,8 @@
+// What Rust fills for the resource history (lane: history, which owns this
+// file with `history.slint`): the global and every struct or enum it uses.
+// No component in a model file (README, "Your types reach Rust"). It ends
+// the kit's export chain: it re-exports no other file.
+
+export global HistoryModel {
+    in-out property <string> note: "Resource history comes with its own lane.";
+}

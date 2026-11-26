@@ -5,7 +5,16 @@ fn main() {
     // icons and N8 Tray's own.
     println!("cargo:rerun-if-changed=../spec/examples/icons");
     println!("cargo:rerun-if-changed=../app/src-tauri/icons/128x128.png");
-    slint_build::compile("ui/main.slint").expect("ui/main.slint compiles");
+    // The widget gallery only in builds with debug assertions (debug and
+    // test builds): `debug.slint` is `main.slint` plus the gallery, one
+    // compilation, so both share the same Rust types. Release builds compile
+    // `main.slint` alone and carry no gallery (the CI Native job checks it).
+    let entry = if std::env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some() {
+        "ui/debug.slint"
+    } else {
+        "ui/main.slint"
+    };
+    slint_build::compile(entry).unwrap_or_else(|e| panic!("{entry} compiles: {e}"));
     compile_test_font();
     embed_windows_resources();
 }

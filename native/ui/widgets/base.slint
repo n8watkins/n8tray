@@ -79,10 +79,28 @@ export component FocusRing inherits Rectangle {
 // scroll area can bring it into view (Slint does not scroll a Flickable to
 // a focused child by itself). Controls in the title bar and the bottom bar
 // never report (`reveal: false`), so focusing them never scrolls the list.
+//
+// The rest is for the kit's keyboard test (`view::gallery::tests::
+// tab_through`): every control says where it is when it takes the focus,
+// whether it reveals itself, and the scroll area says its visible part and
+// how far it is scrolled.
 export global Reveal {
     in-out property <length> top;
     in-out property <length> bottom;
     in-out property <int> serial;
+    in-out property <length> focused-x;
+    in-out property <length> focused-top;
+    in-out property <length> focused-bottom;
+    in-out property <bool> focused-reveals;
+    in-out property <int> focused-serial;
+    in-out property <length> view-top;
+    in-out property <length> view-bottom;
+    in-out property <length> scrolled;
+    // Where the last revealed control is after the scroll area moved for
+    // it, and the `serial` it answered.
+    in-out property <length> revealed-top;
+    in-out property <length> revealed-bottom;
+    in-out property <int> revealed-serial;
 }
 
 // The tooltip the window shows: set by a hovered control after a pause,
@@ -212,6 +230,11 @@ export component Pressable {
             reject
         }
         focus-gained(reason) => {
+            Reveal.focused-x = root.absolute-position.x;
+            Reveal.focused-top = root.absolute-position.y;
+            Reveal.focused-bottom = root.absolute-position.y + root.height;
+            Reveal.focused-reveals = root.reveal;
+            Reveal.focused-serial += 1;
             if root.reveal {
                 Reveal.top = root.absolute-position.y;
                 Reveal.bottom = root.absolute-position.y + root.height;

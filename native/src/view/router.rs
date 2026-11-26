@@ -12,11 +12,11 @@ use n8tray_core::model::HostSnapshot;
 use super::confirm::Confirms;
 use super::icons::Icons;
 use super::{about, all_apps, details, history, hub, panel, settings};
-#[cfg(any(debug_assertions, test))]
+#[cfg(debug_assertions)]
 use crate::ui::Gallery;
 use crate::ui::{
     AboutModel, AllAppsModel, DetailsModel, FlyoutWindow, HistoryModel, HubModel, Nav, PanelModel,
-    RowFocus, SettingsModel, Theme, View,
+    Reveal, RowFocus, SettingsModel, Theme, View,
 };
 use slint::ComponentHandle;
 
@@ -31,6 +31,7 @@ pub trait Models {
     fn about(&self) -> AboutModel<'_>;
     fn history(&self) -> HistoryModel<'_>;
     fn row_focus(&self) -> RowFocus<'_>;
+    fn reveal(&self) -> Reveal<'_>;
     fn theme(&self) -> Theme<'_>;
     fn nav(&self) -> Nav<'_>;
 }
@@ -62,6 +63,9 @@ macro_rules! models {
             fn row_focus(&self) -> RowFocus<'_> {
                 self.global()
             }
+            fn reveal(&self) -> Reveal<'_> {
+                self.global()
+            }
             fn theme(&self) -> Theme<'_> {
                 self.global()
             }
@@ -72,7 +76,7 @@ macro_rules! models {
     };
 }
 models!(FlyoutWindow);
-#[cfg(any(debug_assertions, test))]
+#[cfg(debug_assertions)]
 models!(Gallery);
 
 /// What a view's `fill` gets.
@@ -83,6 +87,38 @@ pub struct Ctx<'a> {
     pub confirms: &'a Confirms,
     pub icons: &'a mut Icons,
     pub now: Instant,
+}
+
+/// One picture of a view for its golden images,
+/// `native/tests/goldens/view-<name>/<state>-<theme>.png`: the view in the
+/// shell's window, filled from a fixture by the view's own `fill`, at a
+/// density and a height limit, in light, dark and High Contrast. Each view
+/// module lists its own (`SHOTS`); adding one touches no other file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shot {
+    /// The picture's name (`busy`, `compact-tall`, `armed`).
+    pub state: &'static str,
+    /// A snapshot in `native/fixtures/<fixture>.json` (read only).
+    pub fixture: &'static str,
+    /// The app of a panel or of one app's history; "" for none.
+    pub app: &'static str,
+    /// Compact rows (D35).
+    pub compact: bool,
+    /// The window's height limit: 400, 500 or 600 (D35).
+    pub height: u32,
+}
+
+impl Shot {
+    /// A shot of `fixture` in Normal rows, with the short window.
+    pub const fn of(state: &'static str, fixture: &'static str) -> Shot {
+        Shot {
+            state,
+            fixture,
+            app: "",
+            compact: false,
+            height: 400,
+        }
+    }
 }
 
 /// What Escape does.
@@ -121,17 +157,23 @@ impl Router {
         self.app.as_deref()
     }
 
-    /// Opens a view; `id` names the app of a panel or of a history.
-    pub fn go(&mut self, view: View, id: &str) {
-        if view == self.view && self.app.as_deref() == Some(id).filter(|i| !i.is_empty()) {
-            return;
+    /// Opens a view; `id` names the app of a panel or of a history. True
+    /// when the view changed (the window then moves the focus to its top).
+    pub fn go(&mut self, view: View, id: &str) -> bool {
+        let app = (!id.is_empty()).then(|| id.to_string());
+        if view == self.view && app == self.app {
+            return false;
         }
         self.back.push((self.view, self.app.take()));
         if view == View::Hub {
             self.back.clear();
         }
         self.view = view;
-        self.app = (!id.is_empty()).then(|| id.to_string());
+        self.app = app;
+        // Armed actions belong to the view that armed them (today's
+        // ActionButton keeps its state in the view).
+        self.confirms.clear();
+        true
     }
 
     /// Back to the view before (the hub when there is none).
@@ -139,6 +181,7 @@ impl Router {
         let (view, app) = self.back.pop().unwrap_or((View::Hub, None));
         self.view = view;
         self.app = app;
+        self.confirms.clear();
     }
 
     /// Escape: back, or in the hub hide the window (today's window).
@@ -151,19 +194,69 @@ impl Router {
         }
     }
 
-    /// A new window starts at the hub (the old one was dropped).
-    pub fn reset(&mut self) {
-        *self = Router {
-            confirms: std::mem::take(&mut self.confirms),
-            icons: Icons::default(),
-            ..Router::default()
-        };
+    /// The window opens on `view` (the hub on every open by the tray icon,
+    /// the status details from the tray's status line), with nothing to go
+    /// back to but the hub, and nothing armed.
+    pub fn open_at(&mut self, view: View, id: &str) {
+        self.view = view;
+        self.app = (!id.is_empty()).then(|| id.to_string());
+        self.back.clear();
         self.confirms.clear();
     }
 
-    /// Fills the view that shows from the snapshot and sets `Nav.view`.
-    pub fn fill(&mut self, ui: &dyn Models, snapshot: &HostSnapshot) {
+    /// A new window (the old one was dropped): its icons are loaded again and
+    /// nothing is armed. The view stays the one `open_at` chose.
+    pub fn new_window(&mut self) {
+        self.icons = Icons::default();
+        self.confirms.clear();
+    }
+
+    /// The snapshot no longer has an app the router remembers: a panel (or
+    /// one app's history) whose app is gone falls back to the hub, as today
+    /// (`main.tsx` shows the hub for a panel without its app), and the way
+    /// back forgets views of gone apps. True when the view changed.
+    pub fn forget_gone(&mut self, snapshot: &HostSnapshot) -> bool {
+        let exists = |app: &Option<String>| match app {
+            None => true,
+            Some(id) => id == "n8tray" || snapshot.apps.iter().any(|a| &a.id == id),
+        };
+        self.back.retain(|(_, app)| exists(app));
+        // Two entries that were apart may now be the same view in a row.
+        self.back.dedup();
+        if exists(&self.app) {
+            return false;
+        }
+        self.open_at(View::Hub, "");
+        true
+    }
+
+    /// The title a screen reader hears when the view opens (the title bar's
+    /// words; `Nav.title`).
+    pub fn title(&self, snapshot: &HostSnapshot) -> String {
+        match self.view {
+            View::Hub => "N8 Tray".into(),
+            View::AllApps => "All apps".into(),
+            View::Panel => self
+                .app
+                .as_deref()
+                .and_then(|id| snapshot.apps.iter().find(|a| a.id == id))
+                .map(|a| a.name.clone())
+                .unwrap_or_default(),
+            View::Details => "Status details".into(),
+            View::Settings => "Settings".into(),
+            View::About => "About N8 Tray".into(),
+            View::History => "Resource history".into(),
+        }
+    }
+
+    /// Fills the view that shows from the snapshot and sets `Nav.view` and
+    /// `Nav.title`. A view whose app left the snapshot falls back first
+    /// (`forget_gone`); true then, so the window moves the focus to the
+    /// new view's top.
+    pub fn fill(&mut self, ui: &dyn Models, snapshot: &HostSnapshot) -> bool {
+        let fell_back = self.forget_gone(snapshot);
         ui.nav().set_view(self.view);
+        ui.nav().set_title(self.title(snapshot).into());
         let app = self.app.clone();
         let mut ctx = Ctx {
             snapshot,
@@ -173,6 +266,7 @@ impl Router {
             now: Instant::now(),
         };
         fill_view(self.view, ui, &mut ctx);
+        fell_back
     }
 }
 
@@ -202,7 +296,11 @@ pub fn wire(ui: &dyn Models) {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
+    use super::super::confirm;
     use super::*;
+    use crate::tests::fixture;
 
     #[test]
     fn back_and_escape_retrace_the_views() {
@@ -223,11 +321,136 @@ mod tests {
         assert_eq!(r.view(), View::Hub, "going home forgets the way");
     }
 
+    /// Every open shows the hub; the tray's status line opens the details
+    /// with only the hub behind them.
     #[test]
-    fn a_new_window_starts_at_the_hub() {
+    fn an_open_starts_over_at_its_view() {
         let mut r = Router::default();
+        r.go(View::AllApps, "");
+        r.go(View::Panel, "voicedock");
+        r.open_at(View::Hub, "");
+        assert_eq!((r.view(), r.app()), (View::Hub, None));
+        assert_eq!(r.escape(), Escape::Hide, "nothing to go back to");
         r.go(View::Settings, "");
-        r.reset();
+        r.open_at(View::Details, "");
+        assert_eq!(r.view(), View::Details);
+        r.back();
+        assert_eq!(r.view(), View::Hub, "the tray request cleared the way back");
+        // A new window keeps the view it opens on.
+        r.open_at(View::Details, "");
+        r.new_window();
+        assert_eq!(r.view(), View::Details);
+    }
+
+    fn arm(r: &mut Router, app: &str) -> confirm::Key {
+        let key = confirm::key(app, "stop", None);
+        r.confirms.press(key.clone(), true, Instant::now());
+        key
+    }
+
+    /// Armed actions belong to the view that armed them: Stop armed on a hub
+    /// row is not armed in that app's panel, nor after going back.
+    #[test]
+    fn a_view_change_disarms_everything() {
+        let now = Instant::now();
+        let mut r = Router::default();
+        let stop = arm(&mut r, "voicedock");
+        assert!(r.confirms.is_armed(&stop, now));
+        assert!(r.go(View::Panel, "voicedock"));
+        assert!(!r.confirms.is_armed(&stop, now), "not armed in the panel");
+        let stop = arm(&mut r, "voicedock");
+        r.back();
+        assert!(!r.confirms.is_armed(&stop, now), "nor back in the hub");
+        let stop = arm(&mut r, "voicedock");
+        assert!(!r.go(View::Hub, ""), "the same view is no change");
+        assert!(r.confirms.is_armed(&stop, now), "and keeps what is armed");
+        r.open_at(View::Hub, "");
+        assert!(!r.confirms.is_armed(&stop, now), "an open disarms");
+        let stop = arm(&mut r, "voicedock");
+        r.new_window();
+        assert!(!r.confirms.is_armed(&stop, now));
+    }
+
+    /// A panel whose app left the snapshot falls back to the hub, and the
+    /// way back forgets the gone app's views.
+    #[test]
+    fn a_gone_apps_views_fall_back_to_the_hub() {
+        let s = fixture("busy");
+        let mut gone = s.clone();
+        gone.apps.retain(|a| a.id != "voicedock");
+        let other = gone.apps[0].id.clone();
+
+        let mut r = Router::default();
+        r.go(View::Panel, "voicedock");
+        assert!(!r.forget_gone(&s), "still there");
+        assert!(r.forget_gone(&gone));
+        assert_eq!((r.view(), r.app()), (View::Hub, None));
+
+        r.go(View::Panel, &other);
+        r.go(View::History, "voicedock");
+        // From the gone app's history: to the hub, nothing behind.
+        assert!(r.forget_gone(&gone));
         assert_eq!(r.view(), View::Hub);
+
+        r.go(View::Panel, "voicedock");
+        r.go(View::History, "n8tray");
+        r.go(View::Details, "");
+        assert!(!r.forget_gone(&gone), "the details need no app");
+        r.back();
+        assert_eq!((r.view(), r.app()), (View::History, Some("n8tray")));
+        r.back();
+        assert_eq!(r.view(), View::Hub, "the gone panel was dropped");
+    }
+
+    #[test]
+    fn each_view_has_its_title_bars_title() {
+        let s = fixture("busy");
+        let mut r = Router::default();
+        assert_eq!(r.title(&s), "N8 Tray");
+        r.go(View::Panel, "voicedock");
+        assert_eq!(r.title(&s), "VoiceDock");
+        r.go(View::Details, "");
+        assert_eq!(r.title(&s), "Status details");
+        r.go(View::History, "");
+        assert_eq!(r.title(&s), "Resource history");
+    }
+
+    /// The view files' types reach Rust through one chain of `export *`
+    /// (Slint allows one per file): `main.slint` exports the hub's model
+    /// file, each model file the next one's, History's ends it. A model file
+    /// holds no component (an exported component that is not a window is a
+    /// build warning), and a view file exports nothing whole.
+    #[test]
+    fn the_model_files_form_one_export_chain() {
+        let ui = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui");
+        let read = |p: &str| std::fs::read_to_string(ui.join(p)).unwrap();
+        let star = |text: &str| -> Vec<String> {
+            text.lines()
+                .filter_map(|l| l.trim().strip_prefix("export * from \""))
+                .map(|l| l.trim_end_matches("\";").to_string())
+                .collect()
+        };
+        let chain = [
+            "hub", "all-apps", "panel", "details", "settings", "about", "history",
+        ];
+        assert_eq!(star(&read("main.slint")), ["views/hub-model.slint"]);
+        for (i, name) in chain.iter().enumerate() {
+            let model = read(&format!("views/{name}-model.slint"));
+            let next: Vec<String> = chain
+                .get(i + 1)
+                .map(|n| format!("{n}-model.slint"))
+                .into_iter()
+                .collect();
+            assert_eq!(star(&model), next, "{name}-model.slint");
+            assert!(
+                !model.lines().any(|l| {
+                    let l = l.trim_start();
+                    l.starts_with("component ") || l.starts_with("export component ")
+                }),
+                "{name}-model.slint has a component"
+            );
+            let view = read(&format!("views/{name}.slint"));
+            assert!(star(&view).is_empty(), "{name}.slint");
+        }
     }
 }

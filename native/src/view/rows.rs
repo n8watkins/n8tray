@@ -77,7 +77,13 @@ pub fn row_data(
         level: level(app.level),
         icon,
         tooltip: app.detail.clone().unwrap_or(line.clone()).into(),
-        label: SharedString::from(row_label(&app.name, &line, &memory, &sub)),
+        label: SharedString::from(row_label(
+            &app.name,
+            app.pending.as_deref().unwrap_or(&app.words),
+            &line,
+            &memory,
+            &sub,
+        )),
         ..RowData::default()
     };
     if let Some(action) = action {
@@ -92,9 +98,12 @@ pub fn row_data(
     data
 }
 
-/// What a screen reader says for a row: its name, line and figures.
-pub fn row_label(name: &str, line: &str, memory: &str, sub: &str) -> String {
-    [name, line, memory, sub]
+/// What a screen reader says for a row: its name, the app's words when the
+/// line says something else (today's hidden ", Running," after the name,
+/// `Hub.tsx`), the line and the figures.
+pub fn row_label(name: &str, words: &str, line: &str, memory: &str, sub: &str) -> String {
+    let words = if words == line { "" } else { words };
+    [name, words, line, memory, sub]
         .iter()
         .filter(|s| !s.is_empty())
         .copied()
@@ -103,7 +112,10 @@ pub fn row_label(name: &str, line: &str, memory: &str, sub: &str) -> String {
 }
 
 /// After a list was reordered (`list::sync` said `moved`), puts the focus
-/// back on the app that had it. Read `focused` before the sync.
+/// back on the app that had it. Read `focused` before the sync; call this
+/// right after it, in the same turn: a row the sync moved is a new instance
+/// that does not exist until the next layout, and it takes the request when
+/// it is created (`RowFocus.pending`).
 pub fn refocus(focus: &RowFocus<'_>, focused: &(SharedString, i32)) {
     if !focused.0.is_empty() {
         focus.invoke_to_id(focused.0.clone(), focused.1);
@@ -156,6 +168,30 @@ mod tests {
             Instant::now(),
         );
         assert_eq!(watching.action, RowAction::None);
+    }
+
+    /// Today's screen-reader text: the app's words after its name when the
+    /// line shows something else (a detail, an alert), not twice otherwise.
+    #[test]
+    fn a_rows_label_says_the_words_only_when_the_line_differs() {
+        assert_eq!(
+            row_label("VoiceDock", "Running", "Running", "643 MB", "12% CPU"),
+            "VoiceDock, Running, 643 MB, 12% CPU"
+        );
+        assert_eq!(
+            row_label(
+                "VoiceDock",
+                "Running",
+                "Over its 1 GB warning",
+                "1.2 GB",
+                ""
+            ),
+            "VoiceDock, Running, Over its 1 GB warning, 1.2 GB"
+        );
+        assert_eq!(
+            row_label("Lead Scraper", "Off", "Off", "", ""),
+            "Lead Scraper, Off"
+        );
     }
 
     /// Arm Stop on app A, reorder the list: the armed state stays on A's

@@ -1,11 +1,8 @@
-// Settings (lane: settings). A stub until that lane lands; it owns this
-// file and `src/view/settings.rs`.
+// Settings (lane: settings and about). A stub until that lane lands; it
+// owns this file, `settings-model.slint` and `src/view/settings.rs`.
 import { TitleBar, ScrollArea, Say, SayLine } from "../widgets.slint";
 import { Nav } from "../nav.slint";
-
-export global SettingsModel {
-    in-out property <string> note: "Settings come with their own lane.";
-}
+import { SettingsModel } from "settings-model.slint";
 
 export component SettingsView inherits VerticalLayout {
     TitleBar {

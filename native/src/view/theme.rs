@@ -4,6 +4,7 @@
 //! or of High Contrast shows the next time it opens.
 #![forbid(unsafe_code)]
 
+use n8tray_core::model::SettingsView;
 use n8tray_platform::contrast::{Rgb, SystemColors};
 
 use crate::ui::{SystemColors as UiColors, Theme};
@@ -120,6 +121,17 @@ pub fn apply(theme: &Theme<'_>, choice: &Choice) {
             link_text: color(c.link_text),
         });
     }
+}
+
+/// Compact and the window height from the snapshot's settings (D35), on a
+/// window's `Theme` global. True when either changed (the window is then
+/// fitted again; the shell places it after every fill anyway).
+pub fn apply_settings(theme: &Theme<'_>, settings: &SettingsView) -> bool {
+    let height = settings.window_height_px as f32;
+    let changed = theme.get_compact() != settings.compact || theme.get_height_limit() != height;
+    theme.set_compact(settings.compact);
+    theme.set_height_limit(height);
+    changed
 }
 
 #[cfg(test)]

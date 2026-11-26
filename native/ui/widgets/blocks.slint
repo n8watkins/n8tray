@@ -9,12 +9,13 @@ import { LinkButton } from "buttons.slint";
 import { Tag } from "status.slint";
 
 // A block of short paragraphs (`.say`: 12px, muted, 3 px apart). Put
-// `SayLine`s in it.
+// `SayLine`s in it. Each `p` keeps its 3 px margin below it, the last one
+// too: 13 px under the last line.
 export component Say inherits VerticalLayout {
     padding-left: 12px;
     padding-right: 12px;
     padding-top: 2px;
-    padding-bottom: 10px;
+    padding-bottom: 13px;
     spacing: 3px;
 }
 
@@ -61,7 +62,6 @@ export component ComponentRow {
         padding-right: 12px;
         padding-top: 7px;
         padding-bottom: 7px;
-        spacing: 4px;
 
         HorizontalLayout {
             spacing: 10px;
@@ -91,7 +91,12 @@ export component ComponentRow {
                 }
             }
         }
-        FlexboxLayout {
+        // The 4 px row gap above the buttons, only when there are some
+        // (`.comp .btns:empty { display: none }`).
+        Rectangle {
+            height: buttons.preferred-height > 0 ? 4px : 0px;
+        }
+        buttons := FlexboxLayout {
             spacing: 4px;
             @children
         }
@@ -166,21 +171,25 @@ export component KeyValues inherits VerticalLayout {
 
     for item in root.items: HorizontalLayout {
         spacing: 12px;
+        // A least height, not a fixed one: a fixed height would cap the row
+        // at one line and cut a long value with an ellipsis.
         Text {
             text: item.key;
             width: keys.preferred-width;
             font-size: Theme.text-small;
             color: Theme.faint;
             vertical-alignment: top;
-            height: self.font-size * Theme.line-height;
+            line-height-factor: Theme.line-factor;
+            min-height: self.font-size * Theme.line-height;
             accessible-role: AccessibleRole.text;
             accessible-label: item.key + ": " + item.value;
         }
+        // `overflow-wrap: anywhere`: at word boundaries, and inside a word
+        // only when it is wider than the column (Slint's `word-wrap`).
         WrapLabel {
             text: item.value;
             font-size: Theme.text-small;
             horizontal-stretch: 1;
-            wrap: char-wrap;
         }
     }
 }
@@ -193,14 +202,16 @@ export struct WarningItem {
 }
 
 // A list of warnings (`.warnings`: a 40 px time column, then the message;
-// errors in the problem colour).
+// errors in the problem colour). Each `li` has `margin: 2px 0`, which
+// collapses between items (2 px apart) and adds to the list's padding at
+// its ends (6 px above, 12 px below).
 export component WarningList inherits VerticalLayout {
     in property <[WarningItem]> items;
     padding-left: 12px;
     padding-right: 12px;
-    padding-top: 4px;
-    padding-bottom: 10px;
-    spacing: 4px;
+    padding-top: 6px;
+    padding-bottom: 12px;
+    spacing: 2px;
 
     for item in root.items: HorizontalLayout {
         spacing: 6px;
@@ -233,7 +244,8 @@ export struct TableColumn {
 // A table row: one text per column; the first may have a faint `small`
 // after it, and a `tag` (a process's verdict) replaces the last cell. Slint
 // has no table roles, so `label` carries the column names for a screen
-// reader ("Process voicedock-hub, Memory 643 MB, ..."; `view::table`).
+// reader ("Process voicedock-hub, Memory 643 MB, ..."; built by
+// `view::format::table_row_label`).
 export struct TableRow {
     cells: [string],
     small: string,
@@ -254,8 +266,12 @@ component Cell {
     in property <bool> header;
     in property <string> tooltip;
     in property <string> label;
+    // Text wraps as a `td` does; headings (`th`: nowrap), numbers and tags
+    // keep their width, so the number columns stay on screen beside a long
+    // name.
+    property <bool> wraps: !root.header && !root.numeric && root.tag == "";
     accessible-role: none;
-    min-width: l.preferred-width;
+    min-width: root.wraps ? l.min-width : l.preferred-width;
     min-height: l.preferred-height;
 
     if !root.header: Rectangle {
@@ -280,24 +296,48 @@ component Cell {
         spacing: 4px;
         alignment: root.numeric ? LayoutAlignment.end : LayoutAlignment.start;
 
-        if root.tag == "": Text {
+        // Every text sits at the top of its cell (`vertical-align: top`) in
+        // CSS line boxes, and sets a least height, never a fixed one: a
+        // fixed height in a row would cap the row at one line.
+        if root.tag == "" && !root.wraps: Text {
             text: root.text;
             font-size: Theme.text-pill;
             font-weight: root.header ? Theme.weight-bold : Theme.weight-normal;
             color: root.header ? Theme.faint : root.first ? Theme.fg : Theme.muted;
             horizontal-alignment: root.numeric ? right : left;
-            height: self.font-size * Theme.line-height;
-            vertical-alignment: center;
+            vertical-alignment: top;
+            line-height-factor: Theme.line-factor;
+            min-height: self.font-size * Theme.line-height;
             accessible-role: none;
         }
-        if root.small != "": Text {
-            // `<small>`: a size smaller.
-            text: root.small;
-            font-size: Theme.text-pill * 0.833;
-            color: Theme.faint;
-            height: Theme.text-pill * Theme.line-height;
-            vertical-alignment: center;
+        // A `td`'s text: wraps at word boundaries, and inside a word that
+        // is wider than the column (`overflow-wrap: anywhere`).
+        if root.wraps: Text {
+            text: root.text;
+            font-size: Theme.text-pill;
+            color: root.first ? Theme.fg : Theme.muted;
+            wrap: word-wrap;
+            vertical-alignment: top;
+            line-height-factor: Theme.line-factor;
+            min-height: self.font-size * Theme.line-height;
+            horizontal-stretch: 0;
             accessible-role: none;
+        }
+        // `<small>`: a size smaller, right after the text, centred on its
+        // first line; it wraps too, so a long name leaves the numbers room.
+        if root.small != "": VerticalLayout {
+            padding-top: Theme.text-pill * (1 - 0.833) * Theme.line-height / 2;
+            horizontal-stretch: 0;
+            Text {
+                text: root.small;
+                font-size: Theme.text-pill * 0.833;
+                color: Theme.faint;
+                wrap: word-wrap;
+                vertical-alignment: top;
+                line-height-factor: Theme.line-factor;
+                min-height: self.font-size * Theme.line-height;
+                accessible-role: none;
+            }
         }
         if root.tag != "": VerticalLayout {
             alignment: start;

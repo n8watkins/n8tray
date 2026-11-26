@@ -317,6 +317,10 @@ jobs:
       - run: cargo fmt --manifest-path native/Cargo.toml --check
       - run: cargo clippy --manifest-path native/Cargo.toml --all-targets --locked -- -D warnings
       - run: cargo test --manifest-path native/Cargo.toml --locked
+        env:
+          # The round trip through the real clipboard (Copy status), only on
+          # a runner: never on a PC someone is using.
+          N8TRAY_CLIPBOARD_TEST: ${{ runner.os == 'Windows' && '1' || '' }}
       # The widget gallery's golden images (native/tests/goldens): a failed
       # comparison leaves the picture and a difference image here.
       - if: failure()
@@ -326,6 +330,21 @@ jobs:
           path: native/target/golden-diffs
           if-no-files-found: ignore
       - run: cargo build --manifest-path native/Cargo.toml --release --locked
+      # Release builds compile ui/main.slint without the widget gallery
+      # (build.rs, D36): none of the gallery's own words may be in the exe.
+      - name: The release build carries no gallery
+        shell: bash
+        run: |
+          exe=native/target/release/n8tray-native
+          [ -f "$exe.exe" ] && exe="$exe.exe"
+          for marker in "N8 Tray widgets" "Bars and a scrolling list"; do
+            grep -qF "$marker" native/ui/gallery.slint || { echo "::error::$marker is not in gallery.slint any more"; exit 1; }
+            if grep -qaF "$marker" "$exe"; then
+              echo "::error::$exe contains the gallery's \"$marker\""
+              exit 1
+            fi
+          done
+          ls -l "$exe"
       - if: runner.os == 'Windows'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

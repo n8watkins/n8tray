@@ -15,6 +15,7 @@
 use n8tray_core::model::{
     ActionKindView, ActionView, AppView, ComponentView, LevelName, UpdateView,
 };
+use n8tray_core::pins;
 
 /// `value.toFixed(digits)` as JavaScript writes it: the exact decimal value,
 /// rounded half up, and never "-0.0" for a negative zero.
@@ -163,12 +164,33 @@ pub enum Tone {
     Problem,
 }
 
-/// The apps the hub lists: shown in N8 Tray and not hidden, in the
-/// snapshot's order.
+/// Every app the hub knows (`pins::in_hub`: shown in N8 Tray and not
+/// hidden), pinned or not, in the snapshot's order: what All apps lists.
 pub fn hub_apps(apps: &[AppView]) -> Vec<&AppView> {
+    apps.iter().filter(|a| pins::in_hub(a)).collect()
+}
+
+/// The apps the hub's main view shows (D32): those of `hub_apps` whose
+/// `inMainView` is true (pinned, or pulled in by trouble). The rest sit
+/// behind the snapshot's `more` line.
+pub fn main_view_apps(apps: &[AppView]) -> Vec<&AppView> {
     apps.iter()
-        .filter(|a| a.hosted && a.level != LevelName::Hidden)
+        .filter(|a| pins::in_hub(a) && a.in_main_view)
         .collect()
+}
+
+/// All apps' two groups (D32): "In the main view" and "Not in the main
+/// view", each in the snapshot's order. A group with no app is left out.
+pub fn all_apps_groups(apps: &[AppView]) -> Vec<(&'static str, Vec<&AppView>)> {
+    let (inside, outside): (Vec<&AppView>, Vec<&AppView>) =
+        hub_apps(apps).into_iter().partition(|a| a.in_main_view);
+    [
+        ("In the main view", inside),
+        ("Not in the main view", outside),
+    ]
+    .into_iter()
+    .filter(|(_, apps)| !apps.is_empty())
+    .collect()
 }
 
 /// The row's one action: Stop while running, Start while not.
@@ -634,6 +656,36 @@ mod tests {
             .into_iter()
             .find(|a| a.id == id)
             .unwrap_or_else(|| panic!("{id} in {fixture_name}"))
+    }
+
+    /// D32: the main view shows `inMainView` apps; All apps lists every app
+    /// of the hub in two groups, and nothing else.
+    #[test]
+    fn the_main_view_and_all_apps_follow_in_main_view() {
+        let s = fixture("pinned");
+        let all: Vec<&str> = hub_apps(&s.apps).iter().map(|a| a.id.as_str()).collect();
+        let main: Vec<&str> = main_view_apps(&s.apps)
+            .iter()
+            .map(|a| a.id.as_str())
+            .collect();
+        assert!(main.len() < all.len(), "{main:?} of {all:?}");
+        assert!(
+            s.more.is_some(),
+            "the line shows exactly when apps are left out"
+        );
+        let groups = all_apps_groups(&s.apps);
+        assert_eq!(groups[0].0, "In the main view");
+        assert_eq!(groups[1].0, "Not in the main view");
+        let ids = |g: &[&AppView]| g.iter().map(|a| a.id.clone()).collect::<Vec<_>>();
+        assert_eq!(ids(&groups[0].1), main);
+        assert_eq!(groups[0].1.len() + groups[1].1.len(), all.len());
+        assert!(groups[1].1.iter().all(|a| !a.in_main_view));
+        // Every app in the main view: one group, and no more line.
+        let h = fixture("healthy");
+        assert!(h.more.is_none());
+        let groups = all_apps_groups(&h.apps);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].1.len(), hub_apps(&h.apps).len());
     }
 
     // describe("rows")

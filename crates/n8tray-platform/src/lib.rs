@@ -20,8 +20,10 @@
 //! - [`single`]: one running copy, and requests from a later copy.
 //! - [`contrast`]: whether High Contrast is on, and its system colours.
 //! - [`locale`]: the user's clock (12 or 24 hours, AM and PM).
+//! - [`clipboard`]: plain text on the clipboard (Windows).
 
 pub mod autostart;
+pub mod clipboard;
 pub mod container;
 pub mod contrast;
 pub mod folders;

@@ -38,11 +38,17 @@ export struct RowData {
 // between the parts of one row. Rows are numbered across the whole view
 // (`index`, `total`). Rust also focuses a row by app id with `to-id`, and
 // reads `focused-id` to put the focus back after the list was reordered.
+//
+// A request stays `pending` until a row takes it: a row that `list::sync`
+// moved is a new instance, created only at the next layout, after the
+// request; it takes the request when it is created (`init`), since a
+// `changed` handler never fires for an instance made after the change.
 export global RowFocus {
     in-out property <int> index: -1;
     in-out property <int> part;
     in-out property <string> id;
     in-out property <int> serial;
+    in-out property <bool> pending;
     // The row (app id) and part that have the focus, "" when none.
     in-out property <string> focused-id;
     in-out property <int> focused-part;
@@ -51,6 +57,7 @@ export global RowFocus {
         root.id = "";
         root.index = index;
         root.part = part;
+        root.pending = true;
         root.serial += 1;
     }
 
@@ -58,7 +65,13 @@ export global RowFocus {
         root.id = id;
         root.index = -1;
         root.part = part;
+        root.pending = true;
         root.serial += 1;
+    }
+
+    // Forget a request no row took (the window shows another view).
+    public function cancel() {
+        root.pending = false;
     }
 
     // The keys of `moveFocus` from row `index` of `total`, on `part`.
@@ -290,11 +303,25 @@ export component AppRow {
     accessible-role: none;
     min-height: l.preferred-height;
 
-    // Rust asked for a row (by id or by index): this one?
+    // Rust or the arrow keys asked for a row (by id or by index): this one?
+    // Asked when the request comes (rows that exist) and when the row is
+    // created (a row that a reorder made anew, after the request).
     property <int> wanted: RowFocus.serial;
     changed wanted => {
+        root.take-focus();
+    }
+    init => {
+        root.take-focus();
+    }
+
+    function take-focus() {
+        // A sample row (the gallery's) has neither an id nor a place.
+        if !RowFocus.pending || (root.app-id == "" && root.index < 0) {
+            return;
+        }
         let mine = RowFocus.id != "" ? RowFocus.id == root.app-id : RowFocus.index == root.index;
         if mine {
+            RowFocus.pending = false;
             if RowFocus.part == 1 && root.can-act {
                 act.focus-me();
             } else {
@@ -467,7 +494,7 @@ export component ProblemRow {
                 size: root.compact ? Theme.app-icon-compact : Theme.app-icon;
             }
         }
-        VerticalLayout {
+        if !root.compact: VerticalLayout {
             alignment: center;
             horizontal-stretch: 1;
             Label {
@@ -478,7 +505,26 @@ export component ProblemRow {
                 text: root.message;
                 font-size: Theme.text-small;
                 color: Theme.problem;
-                max-lines: root.compact ? 1 : 2;
+                max-lines: 2;
+            }
+        }
+        // Compact: one line, as a Compact app row (the message is cut with
+        // an ellipsis; a screen reader hears all of it).
+        if root.compact: HorizontalLayout {
+            spacing: 8px;
+            horizontal-stretch: 1;
+            Label {
+                text: root.name;
+                font-weight: Theme.weight-bold;
+                horizontal-stretch: 0;
+                max-width: self.preferred-width;
+            }
+            Label {
+                text: root.message;
+                font-size: Theme.text-small;
+                color: Theme.problem;
+                horizontal-stretch: 1;
+                min-width: 0px;
             }
         }
     }
