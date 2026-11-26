@@ -112,6 +112,9 @@ pub enum Effect {
     },
 }
 
+/// Why Start at sign-in is not changed (`tray::SIGN_IN_EDITABLE`).
+const SIGN_IN_REFUSED: &str = "Start at sign-in stays with the installed N8 Tray (D33)";
+
 /// Turns an intent into what the shell does, or says why not.
 pub fn resolve(
     intent: Intent,
@@ -119,12 +122,20 @@ pub fn resolve(
     folders: &Folders,
 ) -> Result<Effect, String> {
     match intent {
+        // Start at sign-in, by its key too, goes through the same guard as
+        // the footer's switch: while the installed N8 Tray owns the real
+        // sign-in entry, the native build never writes it (D33).
+        Intent::Setting { key, .. }
+            if key == "launchAtSignIn" && !crate::tray::SIGN_IN_EDITABLE =>
+        {
+            Err(SIGN_IN_REFUSED.into())
+        }
         Intent::Setting { key, on, app } => commands::set_setting(&key, on, app).map(Effect::Send),
         Intent::WindowHeight(name) => commands::set_window_height(&name).map(Effect::Send),
         Intent::HostCommand(name) => commands::host_command(&name).map(Effect::Send),
         Intent::ToggleSignIn => crate::tray::sign_in_command(snapshot)
             .map(Effect::Send)
-            .ok_or_else(|| "Start at sign-in stays with the installed N8 Tray (D33)".into()),
+            .ok_or_else(|| SIGN_IN_REFUSED.into()),
         Intent::Action {
             app,
             action,
@@ -380,6 +391,24 @@ mod tests {
         assert!(send(setting("anything", true, None)).is_err());
         // While the installed N8 Tray owns the sign-in entry (D33).
         assert!(send(Intent::ToggleSignIn).is_err());
+    }
+
+    /// D33: neither the switch nor the setting's key writes the real
+    /// sign-in entry while the native shell may not edit it.
+    #[test]
+    fn start_at_sign_in_by_its_key_is_refused_too() {
+        assert!(!crate::tray::SIGN_IN_EDITABLE);
+        let s = fixture("busy");
+        for on in [true, false] {
+            assert_eq!(
+                resolved(setting("launchAtSignIn", on, None), &s),
+                Err(SIGN_IN_REFUSED.to_string())
+            );
+        }
+        assert_eq!(
+            resolved(Intent::ToggleSignIn, &s),
+            Err(SIGN_IN_REFUSED.to_string())
+        );
     }
 
     #[test]

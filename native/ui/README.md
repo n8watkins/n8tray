@@ -12,6 +12,7 @@ Build views from these pieces only.
 - `cargo test` compares each family with `native/tests/goldens/<family>/<theme>.png` and each view's shots with `native/tests/goldens/view-<name>/<state>-<theme>.png`.
   Refresh one folder with `N8TRAY_UPDATE_GOLDENS=view-hub cargo test`, all of them with `N8TRAY_UPDATE_GOLDENS=1`, and look at the new pictures before committing them.
 - Release builds compile `ui/main.slint` alone; debug and test builds compile `ui/debug.slint`, which adds the gallery (`build.rs`).
+  So the tests need debug assertions: `cargo test --release` stops with a compile error that says so.
 
 ## Ownership: who edits what
 
@@ -35,6 +36,7 @@ A view lane adds nothing to a shared file.
 
 - `views/<name>-model.slint` holds what Rust fills: one global `<Name>Model`, and every struct and enum it uses.
   It holds no component.
+  Every type it exports starts with the view's name in PascalCase (`HubLine`, `AllAppsGroup`, `PanelOpen`), so two lanes never export the same name through the chain: Slint only warns about a duplicate, and Rust then sees one of them (`view::router`'s tests check the prefix).
 - `views/<name>.slint` holds one component `<Name>View` (its title bar, its `ScrollArea`, and for the hub its bottom bar), and any components only it uses.
 - `src/view/<name>.rs` has `fill(ui: &dyn Models, ctx: &mut Ctx)`, called with the latest snapshot whenever the view shows or the snapshot changes, and `wire(ui: &dyn Models)`, called once per window to connect the global's callbacks.
   A callback asks for things through `view::intent` (below) and for other views through `Nav`.
@@ -79,7 +81,7 @@ A reply comes back on the UI thread to a closure that gets the window's models (
 
 | Kind | Call | Example |
 |---|---|---|
-| A setting, N8 Tray's or an app's | `send(Intent::Setting { key, on, app })` | `Intent::Setting { key: "pinned".into(), on: false, app: Some(id) }`; keys: `launchAtSignIn`, `notifications`, `checkUpdates`, `betaUpdates`, `compact` (no app); `enabled`, `autoStart`, `hosted`, `pinned` (an app) |
+| A setting, N8 Tray's or an app's | `send(Intent::Setting { key, on, app })` | `Intent::Setting { key: "pinned".into(), on: false, app: Some(id) }`; keys: `notifications`, `checkUpdates`, `betaUpdates`, `compact` (no app), and `launchAtSignIn`, refused while the installed N8 Tray owns the sign-in entry (D33); `enabled`, `autoStart`, `hosted`, `pinned` (an app) |
 | The window height | `send(Intent::WindowHeight(name))` | `Intent::WindowHeight("medium".into())`; `short`, `medium` or `tall` |
 | A host command | `send(Intent::HostCommand(name))` | `Intent::HostCommand("checkUpdates".into())`; or `reloadSettings` |
 | The footer's sign-in switch | `send(Intent::ToggleSignIn)` | turns Start at sign-in the other way, while the native shell may (D33) |
@@ -111,7 +113,7 @@ Fixtures for shots: `busy`, `healthy`, `trouble`, `watching`, `updating`, `updat
 - The "more" line (`MoreLine`), words only, with `more.text`, only when `more` is present; it opens All apps (`Nav.go(View.all-apps, "")`).
 - The divider, then N8 Tray's own row: an `AppRow` with the id `n8tray`, so it stays in the arrow-key order, line "This app", its private memory and window memory as today; it opens the status details.
 - An empty hub says today's "No apps yet." line.
-- Bottom bar: the sign-in box (`Intent::ToggleSignIn`, a box in both states, disabled with today's tooltip when `signInForeign` or a settings error), History, Log.
+- Bottom bar: the sign-in box (`Intent::ToggleSignIn`, a box in both states, disabled with today's tooltip when `signInForeign` or a settings error, and refused by the shell while `tray::SIGN_IN_EDITABLE` is false, D33), History, Log.
 - Approved differences: the more line and the main-view filter (D32); Compact rows (D35); the status card is gone, its words are in the title bar.
 
 ### Pinned apps: All apps (no counterpart today; approved 2026-11-25, D32)
@@ -140,7 +142,8 @@ Fixtures for shots: `busy`, `healthy`, `trouble`, `watching`, `updating`, `updat
 
 ### Settings and About (copies `Settings.tsx`)
 
-- Settings: Back, "Settings", Close; the N8 Tray group (`ToggleRow`s for `launchAtSignIn`, `notifications`, `checkUpdates`, `betaUpdates`, and Check now with `Intent::HostCommand("checkUpdates")`), "Shown in N8 Tray" (`hosted` per app), and the files links (settings file, Reload, folder, log).
+- Settings: Back, "Settings", Close; the N8 Tray group (`ToggleRow`s for `notifications`, `checkUpdates`, `betaUpdates`, and Check now with `Intent::HostCommand("checkUpdates")`), "Shown in N8 Tray" (`hosted` per app), and the files links (settings file, Reload, folder, log).
+  Start at sign-in shows its state from `settings.launchAtSignIn` and is disabled, with today's tooltip wording for a locked entry, while `tray::SIGN_IN_EDITABLE` is false: `Intent::ToggleSignIn` and `Intent::Setting { key: "launchAtSignIn", .. }` are both refused then, so the native build never rewrites the installed N8 Tray's sign-in entry (D33).
 - New, approved (D35): Compact, a switch (`Intent::Setting { key: "compact", .. }`, Normal by default), and Window height, a three-way choice Short (400, the default), Medium (500) and Tall (600) (`Intent::WindowHeight`).
   The shell applies both from the snapshot on every fill and reveal (`Theme.compact`, `Theme.height-limit`) and fits the window; the view only draws them from `settings.compact` and `settings.windowHeight`.
 - About: Back, "About N8 Tray", Close; today's version line (`N8 Tray <version>`, the end of `Settings.tsx`) on a view of its own, with the release page (`Intent::OpenHost(HostTarget::ReleasePage)`) when an update names one.
