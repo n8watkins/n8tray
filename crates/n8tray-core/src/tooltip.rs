@@ -84,6 +84,22 @@ mod tests {
         assert!(text.contains("Running: App number 0"));
     }
 
+    /// The host puts N8's memory last, so it gives way before "Watching only".
+    #[test]
+    fn the_memory_line_gives_way_first() {
+        let status = format!("N8 Tray: Problem: {}", "x".repeat(22));
+        assert_eq!(status.chars().count(), 40);
+        let notes = [
+            "Watching only: the PowerShell N8 Tray manages apps".to_string(),
+            "N8 117 MB in all".to_string(),
+        ];
+        let text = format(&status, &["N8 Hotkeys".into()], 0, &notes);
+        assert!(text.chars().count() <= LIMIT, "{}", text.chars().count());
+        assert!(text.contains("Running: N8 Hotkeys"), "{text}");
+        assert!(text.ends_with(notes[0].as_str()), "{text}");
+        assert!(!text.contains("in all"), "{text}");
+    }
+
     #[test]
     fn nothing_running() {
         assert_eq!(

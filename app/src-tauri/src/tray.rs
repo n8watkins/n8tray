@@ -150,6 +150,13 @@ fn memory_text(mb: Option<f64>) -> String {
     }
 }
 
+/// The menu's first line: "N8 Tray: Healthy · 310 MB in all", N8's own memory
+/// (the tray and its apps), never the PC's (D34). The native shell's
+/// `tray::status_line` says the same.
+fn status_line(headline: &str, n8_mb: f64) -> String {
+    format!("N8 Tray: {headline} · {} in all", memory_text(Some(n8_mb)))
+}
+
 fn app_lines(app: &AppView) -> Line {
     let mut text = format!(
         "{}: {}",
@@ -207,7 +214,7 @@ fn model(snapshot: &HostSnapshot) -> Vec<Line> {
     let mut lines = vec![
         Line::item(
             "status",
-            format!("N8 Tray: {} · {}", snapshot.headline, snapshot.memory.text),
+            status_line(&snapshot.headline, snapshot.memory.n8_mb),
             true,
         ),
         Line::Separator,
@@ -486,5 +493,24 @@ fn restart(app: &AppHandle) {
     match spawned {
         Ok(_) => app.exit(0),
         Err(e) => warn!("Cannot restart: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::status_line;
+
+    /// N8's own memory, said once: the line already starts with "N8 Tray"
+    /// (D34). The native shell's test checks the same words.
+    #[test]
+    fn the_status_line_says_n8s_memory_once() {
+        assert_eq!(
+            status_line("Healthy", 310.0),
+            "N8 Tray: Healthy · 310 MB in all"
+        );
+        assert_eq!(
+            status_line("Needs attention", 1950.0),
+            "N8 Tray: Needs attention · 1.9 GB in all"
+        );
     }
 }

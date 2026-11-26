@@ -313,6 +313,8 @@ struct Restart {
 
 /// The tray's hover note while a restarted host shows its failure.
 const FAILURE_NOTE: &str = "App monitor restarted after an error";
+/// The tooltip's note while the PowerShell N8 Tray manages the apps (D13).
+pub const WATCHING_NOTE: &str = "Watching only: the PowerShell N8 Tray manages apps";
 
 /// The plain reason a restarted host shows.
 fn failure_reason(at: DateTime<Utc>) -> String {
@@ -1866,13 +1868,16 @@ impl Host {
             LevelName::Off | LevelName::Hidden => "Nothing running",
         }
         .to_string();
-        let mut notes = vec![memory.text.clone()];
+        // The tooltip drops notes from the end when the list needs room, so
+        // N8's memory goes last: it is the first to give way (D34).
+        let mut notes = Vec::new();
         if self.legacy {
-            notes.push("Watching only: the PowerShell N8 Tray manages apps".into());
+            notes.push(WATCHING_NOTE.to_string());
         }
         if failed_at.is_some() {
             notes.push(FAILURE_NOTE.into());
         }
+        notes.push(memory.text.clone());
         let tooltip = crate::tooltip::format(
             &format!("N8 Tray: {headline}"),
             &counts.shown_running,

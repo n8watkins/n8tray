@@ -668,7 +668,7 @@
       ]
     }
   },
-  "tooltip": "N8 Tray: Needs attention",
+  "tooltip": "N8 Tray: Problem\nRunning: N8 Hotkeys\nN8 1.9 GB in all",
   "legacyTray": false,
   "settings": {
     "launchAtSignIn": true,

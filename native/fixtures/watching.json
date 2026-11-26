@@ -1,8 +1,8 @@
 {
   "version": "0.2.0",
-  "level": "ok",
-  "headline": "Healthy",
-  "reason": null,
+  "level": "attention",
+  "headline": "Needs attention",
+  "reason": "N8 Hotkeys: 5 of 6 hotkeys registered",
   "running": 1,
   "total": 4,
   "pinnedRunning": 1,
@@ -20,10 +20,10 @@
       "description": null,
       "icon": "icons/n8hotkeys.svg",
       "version": "2.0.0",
-      "level": "ok",
-      "state": "ready",
-      "words": "Ready",
-      "summary": "6 of 6 hotkeys registered",
+      "level": "attention",
+      "state": "degraded",
+      "words": "Ready, with a problem",
+      "summary": "5 of 6 hotkeys registered",
       "detail": null,
       "running": true,
       "shouldRun": true,
@@ -532,7 +532,7 @@
       ]
     }
   },
-  "tooltip": "N8 Tray: Needs attention",
+  "tooltip": "N8 Tray: Needs attention\nRunning: N8 Hotkeys\nWatching only: the PowerShell N8 Tray manages apps\nN8 117 MB in all",
   "legacyTray": true,
   "settings": {
     "launchAtSignIn": true,

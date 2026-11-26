@@ -6,6 +6,10 @@ An app that implements the contract installs a small manifest, reports its statu
 When N8 Tray runs, it picks the app up, shows it in one hub with every other app, and the app's own icon steps aside.
 Nothing is installed without the user asking.
 
+N8 Tray shows what its apps cost, not the whole PC's memory; for that, use a system monitor.
+Earlier versions turned the tray dot amber or red when the PC ran low on memory, had a "Low memory notifications" setting and showed the PC's free memory in "Details"; all three are gone.
+Apps that ask for it still get told when memory runs low, so they can free some.
+
 ## Status
 
 This repository is new and is being built in phases.

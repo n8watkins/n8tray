@@ -89,6 +89,12 @@ fn memory_text(mb: Option<f64>) -> String {
     }
 }
 
+/// The menu's first line: "N8 Tray: Healthy · 310 MB in all", N8's own memory
+/// (the tray and its apps), never the PC's (D34). Today's app says the same.
+fn status_line(headline: &str, n8_mb: f64) -> String {
+    format!("N8 Tray: {headline} · {} in all", memory_text(Some(n8_mb)))
+}
+
 fn app_lines(app: &AppView) -> Line {
     let mut text = format!(
         "{}: {}",
@@ -170,7 +176,7 @@ pub fn model_with(snapshot: &HostSnapshot, sign_in_editable: bool) -> Vec<Line> 
     let mut lines = vec![
         Line::item(
             "status",
-            format!("N8 Tray: {} · {}", snapshot.headline, snapshot.memory.text),
+            status_line(&snapshot.headline, snapshot.memory.n8_mb),
             true,
         ),
         Line::Separator,
@@ -531,15 +537,30 @@ mod tests {
         None
     }
 
+    /// Low system memory is pushed to apps as pressure, but N8 Tray's own
+    /// level stays the apps': healthy apps keep the plain logo, no dot (D34).
+    #[test]
+    fn memory_pressure_puts_no_dot_on_the_icon() {
+        let mut s = fixture("healthy");
+        s.pressure = LevelName::Problem;
+        assert_eq!(s.level, LevelName::Ok);
+        for taskbar in [Taskbar::Dark, Taskbar::Light] {
+            let drawn = crate::badge::icon(taskbar, s.level);
+            assert_eq!(drawn, crate::badge::icon(taskbar, LevelName::Ok));
+            assert_ne!(drawn, crate::badge::icon(taskbar, LevelName::Attention));
+        }
+    }
+
     #[test]
     fn the_menu_has_todays_lines_in_todays_order() {
         let s = fixture("healthy");
         let lines = model(&s);
         let t = texts(&lines);
+        // N8's own memory, said once (D34); the healthy fixture has 780 MB.
+        assert_eq!(t[0], "N8 Tray: Healthy · 780 MB in all", "the status line");
         assert_eq!(
-            t[0],
-            format!("N8 Tray: {} · {}", s.headline, s.memory.text),
-            "the status line"
+            status_line("Needs attention", 1950.0),
+            "N8 Tray: Needs attention · 1.9 GB in all"
         );
         assert_eq!(t[1], "-");
         let hosted: Vec<_> = s

@@ -207,7 +207,8 @@ export const busy: HostSnapshot = {
   apps: [leadscraper, hotkeys, voicedock, commentary],
   problems: [],
   tray: tray(true),
-  tooltip: "N8 Tray: Needs attention",
+  // As the host writes it (crates/n8tray-core/tests/native_fixtures.rs checks every fixture's).
+  tooltip: "N8 Tray: Needs attention\nRunning: Lead Scraper, N8 Hotkeys, VoiceDock\nN8 1.9 GB in all",
   legacyTray: false,
   settings,
   update: { channel: "stable", available: null, url: null, checkedAt: null, error: null, install: "idle", progress: null, installError: null },
@@ -223,6 +224,7 @@ export const healthy: HostSnapshot = {
   ...pinnedCounts(2, 3),
   memory: { n8Mb: 780, text: "N8 780 MB in all" },
   apps: [hotkeys, voicedock, commentary],
+  tooltip: "N8 Tray: Healthy\nRunning: N8 Hotkeys, VoiceDock\nN8 780 MB in all",
 };
 
 export const trouble: HostSnapshot = {
@@ -252,6 +254,7 @@ export const trouble: HostSnapshot = {
     { ...commentary, actions: commentary.actions.map((a) => (a.kind === "start" ? { ...a, confirm: true } : a)) },
   ],
   problems: [{ file: "broken.json", id: "broken", message: "Manifest invalid: /status: \"type\" is required" }],
+  tooltip: "N8 Tray: Problem\nRunning: N8 Hotkeys\nN8 1.9 GB in all",
   legacyTray: false,
   update: { channel: "stable", available: "0.3.0", url: "https://github.com/n8watkins/n8tray/releases/tag/v0.3.0", checkedAt: null, error: null, install: "idle", progress: null, installError: null },
 };
@@ -266,6 +269,7 @@ export const empty: HostSnapshot = {
   ...pinnedCounts(0, 0),
   apps: [],
   memory: { n8Mb: 15, text: "N8 15 MB in all" },
+  tooltip: "N8 Tray: No apps\nN8 15 MB in all",
 };
 
 /** Healthy, while an update downloads. */
@@ -282,26 +286,27 @@ export const updateFailed: HostSnapshot = {
 
 /**
  * The owner's PC while the PowerShell N8 Tray runs: this one watches, one
- * app runs, three are stopped. Watching is not a fault, so the level stays
- * the apps' (D29).
+ * app runs and needs a look, three are stopped. Watching is not a fault, so
+ * the level and its reason stay the apps' (D29).
  */
 const watched = (app: AppView): AppView => ({ ...app, actions: app.actions.map((a) => ({ ...a, enabled: false })) });
 export const watching: HostSnapshot = {
   ...busy,
-  level: "ok",
-  headline: "Healthy",
-  reason: null,
+  level: "attention",
+  headline: "Needs attention",
+  reason: "N8 Hotkeys: 5 of 6 hotkeys registered",
   running: 1,
   total: 4,
   ...pinnedCounts(1, 4),
   memory: { n8Mb: 117, text: "N8 117 MB in all" },
   apps: [
-    watched({ ...hotkeys, summary: "6 of 6 hotkeys registered", memoryMb: 2.3, history: null }),
+    watched({ ...hotkeys, level: "attention", state: "degraded", words: "Ready, with a problem", summary: "5 of 6 hotkeys registered", memoryMb: 2.3, history: null }),
     watched({ ...leadscraper, ...stopped, group: "Watchers", level: "off", alert: null, summary: "Installed but not running", namespacedMb: null, memoryMb: null, history: null, processes: [] }),
     watched({ ...commentary, group: "Commentary" }),
     watched({ ...voicedock, ...stopped, summary: "Installed but not running", memoryMb: null, cpuPercent: null, history: null, processes: [] }),
   ],
   tray: { ...tray(true), rssMb: 18.2, privateMb: 17.4, windowMb: 287.9, windowPrivateMb: 98.0 },
+  tooltip: "N8 Tray: Needs attention\nRunning: N8 Hotkeys\nWatching only: the PowerShell N8 Tray manages apps\nN8 117 MB in all",
   legacyTray: true,
 };
 

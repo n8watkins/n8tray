@@ -209,6 +209,34 @@ mod tests {
         assert_eq!(h.step(5.0, at(61)), LevelName::Ok);
     }
 
+    /// The production setting: in at once below 3.0, out only above 3.3 and
+    /// only after 60 s there.
+    #[test]
+    fn the_pushed_level_needs_10_percent_and_60_s_to_recover() {
+        let mut h = Hysteresis::push(3.0, 1.5);
+        assert_eq!(h.step(2.9, at(0)), LevelName::Attention);
+        assert_eq!(
+            h.step(3.2, at(1)),
+            LevelName::Attention,
+            "3.2 is not 10% above 3.0"
+        );
+        assert_eq!(
+            h.step(3.2, at(120)),
+            LevelName::Attention,
+            "however long it stays in the band"
+        );
+        assert_eq!(h.step(3.4, at(121)), LevelName::Attention);
+        assert_eq!(h.step(3.4, at(180)), LevelName::Attention, "59 s above 3.3");
+        assert_eq!(h.step(3.4, at(181)), LevelName::Ok, "60 s above 3.3");
+
+        // Problem gives way to attention only above 1.65.
+        let mut h = Hysteresis::push(3.0, 1.5);
+        h.step(1.0, at(0));
+        assert_eq!(h.step(1.6, at(100)), LevelName::Problem);
+        h.step(1.7, at(101));
+        assert_eq!(h.step(1.7, at(161)), LevelName::Attention);
+    }
+
     #[test]
     fn problem_recovers_to_attention_above_1_65() {
         let mut h = even(3.0, 1.5);

@@ -897,7 +897,7 @@
       ]
     }
   },
-  "tooltip": "N8 Tray: Needs attention",
+  "tooltip": "N8 Tray: Healthy\nRunning: N8 Hotkeys, VoiceDock\nN8 780 MB in all",
   "legacyTray": false,
   "settings": {
     "launchAtSignIn": true,

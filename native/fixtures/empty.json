@@ -211,7 +211,7 @@
       ]
     }
   },
-  "tooltip": "N8 Tray: Needs attention",
+  "tooltip": "N8 Tray: No apps\nN8 15 MB in all",
   "legacyTray": false,
   "settings": {
     "launchAtSignIn": true,

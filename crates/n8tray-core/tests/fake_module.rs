@@ -1096,8 +1096,11 @@ fn a_0_6_settings_file_runs_and_saves_cleanly() {
 #[test]
 fn pushes_memory_pressure_and_measures_cpu_and_history() {
     // Thresholds no computer meets: the first reading is a problem at once.
+    // Notifications are on, and so is 0.6.0's low-memory opt-in, which this
+    // version keeps in the file but no longer acts on (D34).
     let tray = tray_with_settings(json!({
-        "memory": { "attentionBelowGiB": 200000, "problemBelowGiB": 100000 }
+        "notifications": true,
+        "memory": { "attentionBelowGiB": 200000, "problemBelowGiB": 100000, "notify": true }
     }));
     let port = free_port().to_string();
     tray.write_manifest(
@@ -1125,8 +1128,8 @@ fn pushes_memory_pressure_and_measures_cpu_and_history() {
     });
     assert_eq!(snapshot.level, LevelName::Ok, "{:?}", snapshot.reason);
     assert_eq!(snapshot.reason, None);
-    let notices = tray.notices.lock().unwrap().clone();
-    assert!(notices.is_empty(), "{notices:?}");
+    assert!(!snapshot.tooltip.contains("memory"), "{}", snapshot.tooltip);
+    assert_eq!(snapshot.pressure, LevelName::Problem);
     // CPU needs two samples; history fills in 10 s steps.
     let app = tray.wait_app("pressured", "CPU and history", |a| {
         a.cpu_percent.is_some()
@@ -1137,6 +1140,11 @@ fn pushes_memory_pressure_and_measures_cpu_and_history() {
     assert_eq!(app.history.unwrap().memory_mb.len(), 90);
     let snapshot = tray.wait("the tray's own CPU", |s| s.tray.cpu_percent.is_some());
     assert!(snapshot.tray.history.is_some());
+    // All through a memory problem with notifications and the old opt-in
+    // on: no notification and no colour of N8 Tray's own.
+    assert_eq!(snapshot.level, LevelName::Ok, "{:?}", snapshot.reason);
+    let notices = tray.notices.lock().unwrap().clone();
+    assert!(notices.is_empty(), "{notices:?}");
 }
 
 #[test]
