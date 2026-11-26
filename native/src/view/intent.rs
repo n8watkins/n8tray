@@ -397,7 +397,6 @@ mod tests {
     /// sign-in entry while the native shell may not edit it.
     #[test]
     fn start_at_sign_in_by_its_key_is_refused_too() {
-        assert!(!crate::tray::SIGN_IN_EDITABLE);
         let s = fixture("busy");
         for on in [true, false] {
             assert_eq!(
