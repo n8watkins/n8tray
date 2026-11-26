@@ -5,7 +5,9 @@
 # sign-in entry and its single-instance lock are never touched. The hosted
 # app is the conformance kit's fake module. The window is opened with
 # `--show` and closed with `--hide`, shown without activation
-# (N8TRAY_NO_ACTIVATE), and is on screen only for the open samples.
+# (N8TRAY_NO_ACTIVATE), and is on screen only for the open samples. A run
+# fails if the foreground window changes at any point. The script stops only
+# processes it started, known by id, path and start time.
 #
 # For each run it records the tray process's private working set (Task
 # Manager's Memory column) and private bytes, its loaded modules and its
@@ -137,12 +139,27 @@ function New-Home([string]$tag) {
   [IO.File]::WriteAllText((Join-Path $h "modules\fake.json"), ($m | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding $false))
   return $h
 }
+# The fake app's copies: only processes of the exe this script copied into
+# -Out, started since this script did.
 function Stop-Fakes {
-  Get-Process -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -eq $appExe } catch { $false } } | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+  Get-Process -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -eq $appExe -and $_.StartTime -ge $started } catch { $false } } | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
 }
 
-$tracked = New-Object System.Collections.Generic.List[int]
-function Invoke-Tray([string]$exe, [string]$home8, [hashtable]$envVars, [string[]]$arguments) {
+# Only the long-lived trays this script started, each by id, path and start
+# time: Windows reuses process ids, so an id alone could name someone else's
+# program by the time the script stops it.
+$trays = New-Object System.Collections.Generic.List[object]
+function Same-Process($known) {
+  $p = Get-Process -Id $known.id -ErrorAction SilentlyContinue
+  if (-not $p) { return $null }
+  try { if ($p.Path -eq $known.path -and $p.StartTime -eq $known.start) { return $p } } catch {}
+  return $null
+}
+function Stop-Known($known) {
+  $p = Same-Process $known
+  if ($p) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+}
+function Start-Exe([string]$exe, [string]$home8, [hashtable]$envVars, [string[]]$arguments) {
   $env:N8TRAY_HOME = $home8; $env:N8TRAY_NO_ACTIVATE = "1"
   foreach ($k in $envVars.Keys) { Set-Item "env:$k" $envVars[$k] }
   try {
@@ -150,8 +167,30 @@ function Invoke-Tray([string]$exe, [string]$home8, [hashtable]$envVars, [string[
   } finally {
     foreach ($k in @("N8TRAY_HOME", "N8TRAY_NO_ACTIVATE") + @($envVars.Keys)) { Remove-Item "env:$k" -ErrorAction SilentlyContinue }
   }
-  $tracked.Add($p.Id)
-  return $p
+  return [pscustomobject]@{ id = $p.Id; path = $p.Path; start = $p.StartTime; process = $p }
+}
+# The tray: tracked until it has exited.
+function Start-Tray([string]$exe, [string]$home8, [hashtable]$envVars) {
+  $known = Start-Exe $exe $home8 $envVars @()
+  $trays.Add($known)
+  return $known
+}
+# A short-lived copy (`--show`, `--hide`, `--exit`): it passes its request
+# on and ends. Waited for here and never tracked; stopped now only if it is
+# still the very process this call started.
+function Invoke-Copy([string]$exe, [string]$home8, [hashtable]$envVars, [string]$argument) {
+  $known = Start-Exe $exe $home8 $envVars @($argument)
+  try { Wait-Process -Id $known.id -Timeout 20 -ErrorAction Stop } catch {
+    Log "  the $argument copy did not end; stopped"
+    Stop-Known $known
+  }
+}
+
+# The foreground window must never change while a run measures: the window
+# is shown without activation and nothing here clicks or types.
+function Assert-Foreground($expected, [string]$when) {
+  $now = [W]::GetForegroundWindow()
+  if ($now -ne $expected) { throw "the foreground window changed $when (was $expected, now $now)" }
 }
 function Status([string]$home8) { try { Get-Content -Raw (Join-Path $home8 "status.json") | ConvertFrom-Json } catch { $null } }
 function Hub-Window([int]$id) { [W]::Windows([uint32]$id) | Where-Object { $_[1] -eq "N8 Tray" } | Select-Object -First 1 }
@@ -171,10 +210,12 @@ function Picture([string]$handle, [string]$file) {
 function Measure-Run([string]$exe, [string]$tag, [hashtable]$envVars) {
   Log "run $tag ($($envVars | ConvertTo-Json -Compress))"
   $home8 = New-Home $tag
-  $run = [ordered]@{ tag = $tag; env = $envVars; exe = $exe; points = [ordered]@{}; foregroundTaken = $false }
+  $run = [ordered]@{ tag = $tag; env = $envVars; exe = $exe; points = [ordered]@{} }
   $fg0 = [W]::GetForegroundWindow()
-  $p = Invoke-Tray $exe $home8 $envVars @()
+  $tray = Start-Tray $exe $home8 $envVars
+  $p = $tray.process
   $t0 = Get-Date
+  Assert-Foreground $fg0 "when the tray started"
   Wait-Until "the status file" { $s = Status $home8; $s -and $s.tray.pid -eq $p.Id } 60 | Out-Null
   Wait-Until "the fake app running" { $s = Status $home8; $s -and @($s.apps | Where-Object { $_.id -eq "fake" -and $_.running }).Count -eq 1 } 60 | Out-Null
   # The start-up trim runs 30 s after start.
@@ -182,20 +223,21 @@ function Measure-Run([string]$exe, [string]$tag, [hashtable]$envVars) {
   $run.points.closed = Sample $p.Id
   Log "  closed: $($run.points.closed.privateWorkingSetMb) MB private WS, $($run.points.closed.privateBytesMb) MB private bytes, $($run.points.closed.modules) modules"
 
-  Invoke-Tray $exe $home8 $envVars @("--show") | Out-Null
+  Assert-Foreground $fg0 "while closed"
   $tShow = Get-Date
+  Invoke-Copy $exe $home8 $envVars "--show"
   $win = Wait-Until "the window" { $w = Hub-Window $p.Id; if ($w -and $w[2] -eq "1") { $w } } 15
   $run.openMs = [int]((Get-Date) - $tShow).TotalMilliseconds
   Start-Sleep -Milliseconds 800
   $run.window = Picture $win[0] (Join-Path $out "window-$tag.png")
   $run.points.open = Sample $p.Id
-  $fg = [W]::GetForegroundWindow()
-  if ($fg -eq [IntPtr]::new([int64]$win[0])) { $run.foregroundTaken = $true }
+  Assert-Foreground $fg0 "with the window open"
   Log "  open: $($run.points.open.privateWorkingSetMb) MB private WS, $($run.points.open.privateBytesMb) MB private bytes, $($run.points.open.modules) modules, window $($run.window.rect -join ',') style $($run.window.exStyle)"
 
-  Invoke-Tray $exe $home8 $envVars @("--hide") | Out-Null
   $tHide = Get-Date
+  Invoke-Copy $exe $home8 $envVars "--hide"
   Wait-Until "the window hidden" { $w = Hub-Window $p.Id; -not $w -or $w[2] -eq "0" } 15 | Out-Null
+  Assert-Foreground $fg0 "after hiding"
   Wait-Since $tHide 5
   $run.points.hidden = Sample $p.Id 2
   Log "  hidden: $($run.points.hidden.privateWorkingSetMb) MB private WS, $($run.points.hidden.privateBytesMb) MB private bytes, windows $($run.points.hidden.topLevelWindows)"
@@ -208,21 +250,23 @@ function Measure-Run([string]$exe, [string]$tag, [hashtable]$envVars) {
   # private bytes that keep growing). The window is on screen about 1 s each.
   $run.cycles = @()
   for ($c = 1; $c -le $Cycles; $c++) {
-    Invoke-Tray $exe $home8 $envVars @("--show") | Out-Null
+    Invoke-Copy $exe $home8 $envVars "--show"
     Wait-Until "the window" { $w = Hub-Window $p.Id; if ($w -and $w[2] -eq "1") { $w } } 15 | Out-Null
     Start-Sleep -Milliseconds 800
-    if ([W]::GetForegroundWindow() -eq [IntPtr]::new([int64](Hub-Window $p.Id)[0])) { $run.foregroundTaken = $true }
-    Invoke-Tray $exe $home8 $envVars @("--hide") | Out-Null
+    Assert-Foreground $fg0 "with the window open (cycle $c)"
     $tHide = Get-Date
+    Invoke-Copy $exe $home8 $envVars "--hide"
     Wait-Until "the window hidden" { $w = Hub-Window $p.Id; -not $w -or $w[2] -eq "0" } 15 | Out-Null
+    Assert-Foreground $fg0 "after hiding (cycle $c)"
     Wait-Since $tHide 16
     $s = Sample $p.Id 2
     $run.cycles += [ordered]@{ cycle = $c; privateWorkingSetMb = $s.privateWorkingSetMb; privateBytesMb = $s.privateBytesMb; topLevelWindows = $s.topLevelWindows }
     Log "  cycle ${c}: $($s.privateWorkingSetMb) MB private WS, $($s.privateBytesMb) MB private bytes"
   }
 
-  Invoke-Tray $exe $home8 $envVars @("--exit") | Out-Null
-  try { Wait-Process -Id $p.Id -Timeout 20 } catch { Log "  did not exit; stopped"; Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+  Invoke-Copy $exe $home8 $envVars "--exit"
+  try { Wait-Process -Id $tray.id -Timeout 20 -ErrorAction Stop } catch { Log "  did not exit; stopped"; Stop-Known $tray }
+  [void]$trays.Remove($tray)
   Stop-Fakes
   $log = Get-ChildItem (Join-Path $home8 "logs") -Filter "n8tray*.log" -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($log) { $run.logLines = @(Get-Content $log.FullName | Where-Object { $_ -match "frame insets|opens at|created in|dropped|kept|started|exited|WARN|ERROR" } | ForEach-Object { [string]$_ }) }
@@ -256,8 +300,9 @@ try {
   $report.errors += $_.Exception.Message
   Log "FAILED: $($_.Exception.Message)"
 } finally {
-  # Only what this script started.
-  foreach ($id in $tracked) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+  # Only a tray this script started that still runs (a run that failed),
+  # checked by path and start time, never by id alone.
+  foreach ($known in @($trays)) { Stop-Known $known }
   Stop-Fakes
   $report.finishedAt = (Get-Date).ToString("s")
   $report | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $out "report.json")

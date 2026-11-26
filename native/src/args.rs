@@ -1,4 +1,5 @@
 //! Command-line options: the same as the Tauri app's (app/src-tauri/src/main.rs).
+#![forbid(unsafe_code)]
 
 /// What N8 Tray was started with.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]

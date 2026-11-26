@@ -1,6 +1,7 @@
 //! The last warnings and errors from the tray log, kept in memory for the
 //! status details ("Recent warnings"). A `tracing` layer next to the log
 //! file's, so every warning anywhere in the host is seen once.
+#![forbid(unsafe_code)]
 
 use std::collections::VecDeque;
 use std::fmt::Write as _;

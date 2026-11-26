@@ -3,6 +3,7 @@
 //! The window only ever passes ids and keys, never a path, a URL or a
 //! command line: each function turns them into a host command or into a
 //! target the snapshot or N8 Tray's own folders name (D18).
+#![forbid(unsafe_code)]
 
 use std::path::PathBuf;
 
@@ -88,6 +89,8 @@ pub fn set_setting(key: &str, on: bool, app: Option<String>) -> Result<Command, 
         ("enabled", Some(app)) => Command::SetEnabled { app, enabled: on },
         ("autoStart", Some(app)) => Command::SetAutoStart { app, on },
         ("hosted", Some(app)) => Command::SetOwnIcon { app, on: !on },
+        // Not in the Tauri app's list on purpose: pinning (D32) is shown by
+        // the native window only, so only its commands take it.
         ("pinned", Some(app)) => Command::SetPinned { app, pinned: on },
         _ => return Err(format!("unknown setting {key}")),
     })
@@ -262,6 +265,40 @@ mod tests {
         assert!(set_setting("enabled", true, None).is_err());
         assert!(set_setting("notifications", true, Some("voicedock".into())).is_err());
         assert!(set_setting("anything", true, None).is_err());
+    }
+
+    /// The keys are the Tauri app's (app/src-tauri/src/commands.rs) plus
+    /// `pinned`, which only the native window shows (D32): a deliberate
+    /// difference, not drift.
+    #[test]
+    fn the_keys_are_todays_plus_pinned() {
+        let todays_host = [
+            "launchAtSignIn",
+            "notifications",
+            "memoryNotifications",
+            "checkUpdates",
+            "betaUpdates",
+        ];
+        let todays_app = ["enabled", "autoStart", "hosted"];
+        for key in todays_host {
+            assert!(set_setting(key, true, None).is_ok(), "{key}");
+        }
+        for key in todays_app {
+            assert!(set_setting(key, true, Some("a".into())).is_ok(), "{key}");
+        }
+        for on in [true, false] {
+            assert_eq!(
+                set_setting("pinned", on, Some("a".into())),
+                Ok(Command::SetPinned {
+                    app: "a".into(),
+                    pinned: on
+                })
+            );
+        }
+        assert!(
+            set_setting("pinned", true, None).is_err(),
+            "pinning names an app"
+        );
     }
 
     #[test]

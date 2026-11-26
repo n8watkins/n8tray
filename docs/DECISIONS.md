@@ -310,21 +310,38 @@ Lane N0 adds the skeleton as its own crate and binary, `native/` and `n8tray-nat
 
 Its shape:
 
+- `native/` is a Cargo workspace of its own with its own `Cargo.lock`, excluded from the root workspace, until the switch.
+  In the shared workspace, Slint moved shared dependencies of the shipping app (icu, image, moxcms, zbus) and the root Lint and Test jobs checked a Tauri build with the native crate's features unified in, which is not the one that ships.
+  Its path dependencies on `n8tray-core` and `n8tray-platform` stay members of the root workspace; only CI's Native job compiles Slint, and it runs the crate's format, lint and tests (`npm run check:native`).
+  The exe's version resource takes the root workspace's version, which release-kit keeps.
+- It runs only in a home of its own: without `N8TRAY_HOME`, or with it naming the installed N8 Tray's own folder, it exits with code 3 before it writes anything, its log included, and says why on stderr.
+  In the real home it would become the host of the user's apps (status, history, lease) and the installed app would find the host lock taken at sign-in.
+  `N8TRAY_RUN_DIR` and `N8TRAY_MODULES_DIR` are ignored: everything stays under the home.
 - One `Shell` on the UI thread holds the host's handle, the latest snapshot, the tray icon and the window, if there is one.
   Host events, the taskbar's colour, tray and menu clicks and requests from a later copy are posted to the UI thread with `slint::invoke_from_event_loop` and handled one at a time.
-- The tray is `tray-icon` with `muda` menus, at the version Tauri's tray uses (0.25), since 0.27 needs a newer GTK than Tauri's on Linux and one workspace can link only one.
-  The menu is a line-for-line port of today's (same items, order, labels, states and in-place updates), the badge is today's drawing on plain RGBA, and the process lets its menus follow the system's dark mode, as Tauri's window library does.
+- The tray is `tray-icon` 0.27 with `muda` menus, Pulse's version; with a lockfile of its own the GTK it needs on Linux no longer meets Tauri's.
+  The menu is a line-for-line port of today's (same items, order, labels, states and in-place updates), the badge is today's drawing on plain RGBA, and the process lets its menus follow the system's dark mode exactly as Tauri's window library does (Windows 10 build 17763 or later, uxtheme from System32).
+  "Start at sign-in" shows its state but is disabled: the setting it saves would make the installed app rewrite the real sign-in entry.
+  If the tray icon cannot be created, N8 Tray exits, as the Tauri app does.
+- The window's life (show, hide, the 400 ms guard after a blur, generations, waiting for the native window, drop or keep) is plain state in `life.rs`, tested without a toolkit; `window.rs` carries out its steps.
+  A native window that never appears is dropped after 2 s.
+- A panic on the UI thread unwinds out of the event loop to `main`, where the shell is no longer borrowed: the host is stopped and the tray icon removed as on a normal exit, then the process exits with code 101.
+  The crate denies unsafe code, each of its own modules forbids it, and only Slint's generated module may allow it.
 - The commands are plain Rust functions with today's validation: the window passes ids and keys only, never a path, a URL or a command line (D18).
 - Slint is pinned to 1.19.1, Pulse's version, on the winit backend with the `accessibility` feature.
   Slint re-activates a window each time it shows it, so the window is shown once off screen and never activated (owned by a hidden window, so it never has a taskbar button or an Alt-Tab entry), then shown, hidden and placed only through Win32 (`n8tray_platform::window`).
   Its frame insets are 0 on the owner's PC (a frameless winit window keeps no invisible border); the placement still subtracts them, as for the Tauri window (D25).
 - Single instance is a named mutex plus one named event per request (show, hide, exit) in `n8tray_platform::single`.
   The name is derived from the N8 Tray home, so the native shell never meets the installed app's lock, and two test homes never meet each other.
+  The first copy opens the events before it takes the mutex, so a request from a copy started at the same moment is never lost; if the mutex cannot be created at all, the copy runs as the first one and logs it.
 - Until the switch the native shell never writes the sign-in entry (the installed app owns it), shows no notifications (they are logged) and opens the release page for Install update instead of installing in place (D27).
   It runs on Windows only; on macOS and Linux it is compiled and tested in CI.
-- `app-release.yml` builds the Tauri app alone; a CI step fails if it ever names the native shell or builds the whole workspace.
+- Nothing users get contains the native shell: `native/scripts/check-release.mjs` checks that the installer bundles no native file (`bundle.externalBin`, `bundle.resources`), that the bundle's build step is unchanged, and that App release's commands (not its comments) run `tauri build` and nothing that builds the native shell.
+  It is tested against bad samples in the same CI step.
+- Left for the lanes that build the screens: the copied code (`logs.rs`, `recent.rs`, `open.rs`, the menu model, the badge drawing and the command checks) should move to a crate both shells share, or go with the Tauri app at the switch.
+  Placement across monitors of different scale shows one frame at the wrong size before the second placement corrects it, and is not tested yet.
 
-Measured on the owner's PC on 2026-11-25 with `native/scripts/measure.ps1` (no input, never the focus), each run in its own `N8TRAY_HOME` hosting the conformance kit's fake module, the placeholder window 380 by 104 px.
+Measured on the owner's PC on 2026-11-25 with `native/scripts/measure.ps1` (no input; the foreground window never changed), each run in its own `N8TRAY_HOME` hosting the conformance kit's fake module, the placeholder window 380 by 104 px.
 Figures are the tray process's private working set (Task Manager's Memory column) and, after the slash, its private bytes, in MB, the median of three readings.
 The PC was quiet at the start (CPU 6%) and busy at the end (87%, other agents building); memory figures do not depend on that.
 

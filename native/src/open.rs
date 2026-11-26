@@ -1,5 +1,6 @@
 //! Opening a file, folder or URL with the OS's default handler. Only
 //! targets the host resolved from a manifest or its own folders get here.
+#![forbid(unsafe_code)]
 
 use std::process::{Command, Stdio};
 

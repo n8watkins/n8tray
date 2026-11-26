@@ -25,14 +25,28 @@ pub enum Request {
 /// Held by the running copy for as long as it runs.
 pub struct Instance {
     _inner: imp::Inner,
+    checked: bool,
 }
 
 impl Instance {
     /// `Some` for the first copy, which then hears every request through
     /// `on_request` (on a thread of its own). `None` when another copy holds
-    /// the name.
+    /// the name. When the OS cannot say (the mutex cannot be created), this
+    /// copy runs as the first one and [`Instance::checked`] is false: the
+    /// host lock still keeps a second host out.
     pub fn acquire(name: &str, on_request: impl Fn(Request) + Send + 'static) -> Option<Instance> {
-        imp::acquire(name, Box::new(on_request)).map(|inner| Instance { _inner: inner })
+        match imp::acquire(name, Box::new(on_request)) {
+            imp::Acquired::First { inner, checked } => Some(Instance {
+                _inner: inner,
+                checked,
+            }),
+            imp::Acquired::Second => None,
+        }
+    }
+
+    /// Whether another copy was ruled out (false when the OS could not tell).
+    pub fn checked(&self) -> bool {
+        self.checked
     }
 }
 
@@ -55,8 +69,20 @@ mod imp {
 
     pub struct Inner;
 
-    pub fn acquire(_name: &str, _on_request: Box<dyn Fn(Request) + Send>) -> Option<Inner> {
-        Some(Inner)
+    pub enum Acquired {
+        First {
+            inner: Inner,
+            checked: bool,
+        },
+        #[allow(dead_code, reason = "only Windows has other copies to find")]
+        Second,
+    }
+
+    pub fn acquire(_name: &str, _on_request: Box<dyn Fn(Request) + Send>) -> Acquired {
+        Acquired::First {
+            inner: Inner,
+            checked: false,
+        }
     }
 
     pub fn is_running(_name: &str) -> bool {
@@ -70,7 +96,7 @@ mod imp {
 
 #[cfg(windows)]
 mod imp {
-    pub use crate::win::single::{Inner, acquire, is_running, send};
+    pub use crate::win::single::{Acquired, Inner, acquire, is_running, send};
 }
 
 #[cfg(test)]
@@ -86,7 +112,7 @@ mod tests {
     fn elsewhere_every_copy_is_the_first() {
         let name = unique("other");
         let first = Instance::acquire(&name, |_| {});
-        assert!(first.is_some());
+        assert!(first.as_ref().is_some_and(|f| !f.checked()));
         assert!(Instance::acquire(&name, |_| {}).is_some());
         assert!(!is_running(&name));
         assert!(!send(&name, Request::Show, Duration::ZERO));
@@ -104,6 +130,7 @@ mod tests {
             let _ = tx.send(r);
         })
         .expect("the first copy");
+        assert!(first.checked());
         assert!(is_running(&name));
         assert!(Instance::acquire(&name, |_| {}).is_none());
         let wait = || rx.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -115,6 +142,34 @@ mod tests {
         assert!(!is_running(&name));
         // Released: a new first copy can take it.
         assert!(Instance::acquire(&name, |_| {}).is_some());
+    }
+
+    /// Several later copies at once, each finding the first and signalling
+    /// right away: every request arrives (Show coalesces while unhandled, so
+    /// at least one, and none is lost to an event nobody held open).
+    #[cfg(windows)]
+    #[test]
+    fn requests_from_copies_starting_together_are_not_lost() {
+        use std::sync::mpsc;
+        let name = unique("burst");
+        let (tx, rx) = mpsc::channel();
+        let _first = Instance::acquire(&name, move |r| {
+            let _ = tx.send(r);
+        })
+        .unwrap();
+        let copies: Vec<_> = (0..4)
+            .map(|_| {
+                let name = name.clone();
+                std::thread::spawn(move || {
+                    assert!(Instance::acquire(&name, |_| {}).is_none());
+                    assert!(send(&name, Request::Hide, Duration::ZERO));
+                })
+            })
+            .collect();
+        for copy in copies {
+            copy.join().unwrap();
+        }
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(Request::Hide));
     }
 
     #[cfg(windows)]

@@ -2,6 +2,7 @@
 //! the logo alone when healthy, and a dot on it otherwise: amber, red or grey.
 //! The drawing is the Tauri app's (app/src-tauri/src/badge.rs), on plain RGBA
 //! for `tray_icon::Icon::from_rgba`.
+#![forbid(unsafe_code)]
 
 use std::sync::OnceLock;
 

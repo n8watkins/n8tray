@@ -35,16 +35,27 @@ fn event(name: &[u16]) -> Option<Handle> {
     Handle::new(unsafe { CreateEventW(std::ptr::null(), 0, 0, name.as_ptr()) })
 }
 
+/// What [`acquire`] found.
+pub enum Acquired {
+    /// This is the first copy; `checked` is false when the mutex could not
+    /// be created, so nothing could tell whether another copy runs.
+    First { inner: Inner, checked: bool },
+    /// Another copy holds the name.
+    Second,
+}
+
 pub struct Inner {
-    // Field order is drop order: the mutex goes first, so the copy counts as
-    // gone at once, even while the waiter is still stopping.
-    _mutex: Handle,
+    /// `None` when it could not be created (the copy runs unchecked).
+    mutex: Option<Handle>,
     stop: Option<Arc<Handle>>,
     join: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Drop for Inner {
     fn drop(&mut self) {
+        // The mutex goes first, so the copy counts as gone at once, even
+        // while the waiter is still stopping.
+        drop(self.mutex.take());
         if let Some(stop) = &self.stop {
             unsafe { SetEvent(stop.raw()) };
         }
@@ -57,28 +68,34 @@ impl Drop for Inner {
     }
 }
 
-pub fn acquire(name: &str, on_request: Box<dyn Fn(Request) + Send>) -> Option<Inner> {
-    let mutex_name = mutex_name(name);
-    let raw = unsafe { CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr()) };
-    let already = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
-    // Without a mutex nothing can tell; run as the first copy rather than
-    // refuse to start (the host lock still keeps a second host out).
-    let mutex = Handle::new(raw)?;
-    if already {
-        return None;
-    }
+pub fn acquire(name: &str, on_request: Box<dyn Fn(Request) + Send>) -> Acquired {
+    // The events first, the mutex second: whenever the mutex exists its
+    // copy already holds the events open, so a request a later copy signals
+    // is never lost, even when both start together (an event nobody holds
+    // open would vanish with its signal).
     let events: Option<Vec<Handle>> = REQUESTS
         .iter()
         .map(|r| event(&event_name(name, *r)))
         .collect();
+    let mutex_name = mutex_name(name);
+    let raw = unsafe { CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr()) };
+    let already = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+    let mutex = Handle::new(raw);
+    if mutex.is_some() && already {
+        return Acquired::Second;
+    }
     // A manual-reset event with no name, to stop the waiter.
     let stop = Handle::new(unsafe { CreateEventW(std::ptr::null(), 1, 0, std::ptr::null()) });
+    let checked = mutex.is_some();
     let (Some(events), Some(stop)) = (events, stop) else {
-        return Some(Inner {
-            _mutex: mutex,
-            stop: None,
-            join: None,
-        });
+        return Acquired::First {
+            inner: Inner {
+                mutex,
+                stop: None,
+                join: None,
+            },
+            checked,
+        };
     };
     let stop = Arc::new(stop);
     let waiter_stop = Arc::clone(&stop);
@@ -100,11 +117,14 @@ pub fn acquire(name: &str, on_request: Box<dyn Fn(Request) + Send>) -> Option<In
             drop(events);
         })
         .ok();
-    Some(Inner {
-        _mutex: mutex,
-        stop: Some(stop),
-        join,
-    })
+    Acquired::First {
+        inner: Inner {
+            mutex,
+            stop: Some(stop),
+            join,
+        },
+        checked,
+    }
 }
 
 pub fn is_running(name: &str) -> bool {

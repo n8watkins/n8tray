@@ -1,6 +1,7 @@
 //! The tray log: one file per day in the logs folder, the last 7 kept.
 //! The same file names and folder as the Tauri app's (a copy of its
 //! `logs.rs`; one of the two goes at the switch).
+#![forbid(unsafe_code)]
 
 use std::path::{Path, PathBuf};
 

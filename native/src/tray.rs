@@ -5,9 +5,11 @@
 //! otherwise only the texts and states that changed are updated, so a menu
 //! the user has open does not flicker (D17). The icon's art follows the
 //! taskbar's colour (D30).
+#![forbid(unsafe_code)]
 
 use std::collections::HashMap;
 
+use n8tray_core::host::Command;
 use n8tray_core::model::{ActionKindView, AppView, HostSnapshot, LevelName};
 use n8tray_platform::theme::Taskbar;
 use tracing::{info, warn};
@@ -140,8 +142,31 @@ fn app_lines(app: &AppView) -> Line {
     }
 }
 
+/// Whether "Start at sign-in" can be changed here. Not until the switch:
+/// the setting it saves would make the installed N8 Tray rewrite the real
+/// sign-in entry (D33). The line still shows the setting's state.
+pub const SIGN_IN_EDITABLE: bool = false;
+
+/// What clicking "Start at sign-in" sends to the host, if anything.
+pub fn sign_in_command(snapshot: Option<&HostSnapshot>) -> Option<Command> {
+    sign_in_command_with(snapshot, SIGN_IN_EDITABLE)
+}
+
+fn sign_in_command_with(snapshot: Option<&HostSnapshot>, editable: bool) -> Option<Command> {
+    if !editable {
+        return None;
+    }
+    let on = snapshot.is_some_and(|s| !s.settings.launch_at_sign_in);
+    Some(Command::SetLaunchAtSignIn(on))
+}
+
 /// The menu for a snapshot.
 pub fn model(snapshot: &HostSnapshot) -> Vec<Line> {
+    model_with(snapshot, SIGN_IN_EDITABLE)
+}
+
+/// The menu, with "Start at sign-in" editable or not (today's app: editable).
+pub fn model_with(snapshot: &HostSnapshot, sign_in_editable: bool) -> Vec<Line> {
     let mut lines = vec![
         Line::item(
             "status",
@@ -189,7 +214,9 @@ pub fn model(snapshot: &HostSnapshot) -> Vec<Line> {
     lines.push(Line::Check {
         id: "signin".into(),
         text: "Start at sign-in".into(),
-        enabled: !snapshot.settings.sign_in_foreign && snapshot.settings.error.is_none(),
+        enabled: sign_in_editable
+            && !snapshot.settings.sign_in_foreign
+            && snapshot.settings.error.is_none(),
         checked: snapshot.settings.launch_at_sign_in,
     });
     lines.push(Line::item("settings", "Open settings file", true));
@@ -665,9 +692,37 @@ mod tests {
     }
 
     #[test]
+    fn the_native_shell_never_changes_start_at_sign_in() {
+        for name in crate::tests::fixture_names() {
+            let s = fixture(&name);
+            match find(&model(&s), "signin") {
+                Some(Line::Check {
+                    enabled, checked, ..
+                }) => {
+                    assert!(!enabled, "{name}");
+                    assert_eq!(
+                        *checked, s.settings.launch_at_sign_in,
+                        "{name}: still shown"
+                    );
+                }
+                other => panic!("{name}: {other:?}"),
+            }
+            assert_eq!(sign_in_command(Some(&s)), None, "{name}");
+        }
+        assert_eq!(sign_in_command(None), None);
+        // Editable (today's app, and the native shell after the switch).
+        let mut s = fixture("healthy");
+        s.settings.launch_at_sign_in = false;
+        assert_eq!(
+            sign_in_command_with(Some(&s), true),
+            Some(Command::SetLaunchAtSignIn(true))
+        );
+    }
+
+    #[test]
     fn sign_in_is_checked_and_enabled_from_the_settings() {
         let mut s = fixture("healthy");
-        let check = |s: &HostSnapshot| match find(&model(s), "signin") {
+        let check = |s: &HostSnapshot| match find(&model_with(s, true), "signin") {
             Some(Line::Check {
                 enabled, checked, ..
             }) => (*enabled, *checked),

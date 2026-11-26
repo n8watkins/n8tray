@@ -128,8 +128,9 @@ pub fn create_owner() -> Option<isize> {
 }
 
 /// Lets the process's menus (the tray menu) follow the system's dark mode,
-/// as Tauri's window library does for the app today. Windows 10 1903 and
-/// later; returns whether it was done.
+/// exactly as Tauri's window library (tao) does for the app today: Windows
+/// 10 build 17763 or later, uxtheme loaded from System32. Returns whether it
+/// was done.
 pub fn allow_dark_menus() -> bool {
     #[cfg(windows)]
     {
@@ -150,6 +151,9 @@ pub struct Monitor {
     pub work: (i32, i32, i32, i32),
     /// Its display scale (1.0 at 96 DPI).
     pub scale: f64,
+    /// False when Windows could not give the monitor's own DPI and `scale`
+    /// is the system's instead.
+    pub scale_from_monitor: bool,
 }
 
 /// The monitor that holds this point, or the nearest one. `None` where the
@@ -185,6 +189,7 @@ mod tests {
         assert!(mw > 0 && mh > 0 && ww > 0 && wh > 0);
         assert!(wx >= mx && wy >= my && wx + ww <= mx + mw && wy + wh <= my + mh);
         assert!(m.scale >= 1.0);
+        assert!(m.scale_from_monitor, "a real monitor reports its DPI");
         // A point far off every monitor still answers with the nearest one.
         assert!(monitor_at(-100_000, -100_000).is_some());
     }

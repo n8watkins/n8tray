@@ -3,12 +3,13 @@
 //! `n8tray_core::placement` inside the work area of the icon's monitor,
 //! shown with or without activation as today, hidden when it loses focus or
 //! on Escape, and dropped 10 s after it was hidden, then the working set
-//! trimmed (D17). The same rules as the Tauri app's `hub.rs`.
+//! trimmed (D17). The rules are `crate::life`'s; this carries them out.
 //!
 //! Slint re-activates a window every time it shows it, so after the first
 //! show (off screen, never activated) the window is shown and hidden only
 //! through Win32 (`n8tray_platform::window`); Slint keeps thinking it is
 //! visible until it is dropped.
+#![forbid(unsafe_code)]
 
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
@@ -20,73 +21,45 @@ use n8tray_core::placement::{self, Rect};
 use slint::{ComponentHandle, ModelRc, VecModel};
 use tracing::{info, warn};
 
-use crate::{AppLine, HubWindow};
+use crate::life::{Life, Step, WhenHidden};
+use crate::ui::{AppLine, HubWindow};
 
 /// How long a hidden window is kept before it is dropped (D17).
 pub const KEEP_HIDDEN: Duration = Duration::from_secs(10);
 /// The window's width in logical pixels; its height follows its content.
 const WIDTH: f64 = 380.0;
-/// A tray click this soon after a blur hid the window is the click that
-/// caused the blur: it must not reopen it.
-const REOPEN_GUARD: Duration = Duration::from_millis(400);
 /// After a drop, how long to wait before trimming (what the window left
 /// behind is freed by then).
 const TRIM_AFTER_DROP: Duration = Duration::from_secs(2);
+/// Between two looks for the native window.
+const WAIT_TURN: Duration = Duration::from_millis(10);
 
-/// What happens to a window hidden for [`KEEP_HIDDEN`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WhenHidden {
-    /// Dropped, then the working set trimmed (the default, D17).
-    Drop,
-    /// Kept, and the working set trimmed (`N8TRAY_WINDOW=keep`, for measuring).
-    Keep,
-}
-
-impl WhenHidden {
-    pub fn from_env() -> WhenHidden {
-        match std::env::var("N8TRAY_WINDOW").as_deref() {
-            Ok("keep") => WhenHidden::Keep,
-            _ => WhenHidden::Drop,
-        }
-    }
+pub fn when_hidden_from_env() -> WhenHidden {
+    WhenHidden::parse(std::env::var("N8TRAY_WINDOW").ok().as_deref())
 }
 
 pub struct Hub {
+    life: Life,
     ui: Option<HubWindow>,
     hwnd: Option<isize>,
-    visible: bool,
-    /// Counts shows and hides, so a timer set for one hide does nothing
-    /// after a later show.
-    generation: u64,
-    hidden_by_blur: Option<Instant>,
     /// The tray icon's rectangle, in physical pixels.
     anchor: Option<Rect>,
-    /// Show with activation when the native window turns up.
-    pending: Option<bool>,
-    /// Waits for the native window after Slint's first show.
     wait: slint::Timer,
-    waited: u32,
     retire: slint::Timer,
     trim: slint::Timer,
-    when_hidden: WhenHidden,
     host: Option<Sender<Command>>,
 }
 
 impl Hub {
     pub fn new(when_hidden: WhenHidden) -> Hub {
         Hub {
+            life: Life::new(when_hidden),
             ui: None,
             hwnd: None,
-            visible: false,
-            generation: 0,
-            hidden_by_blur: None,
             anchor: None,
-            pending: None,
             wait: slint::Timer::default(),
-            waited: 0,
             retire: slint::Timer::default(),
             trim: slint::Timer::default(),
-            when_hidden,
             host: None,
         }
     }
@@ -95,77 +68,156 @@ impl Hub {
         self.host = Some(host);
     }
 
-    fn send(&self, command: Command) {
-        if let Some(host) = &self.host {
-            let _ = host.send(command);
-        }
+    /// Testing on a PC someone uses: shown without taking the focus.
+    fn activate() -> bool {
+        std::env::var_os("N8TRAY_NO_ACTIVATE").is_none()
     }
 
     /// A left click on the tray icon: open, or close when open.
     pub fn toggle(&mut self, anchor: Option<Rect>, snapshot: Option<&HostSnapshot>) {
-        let just_hidden = self
-            .hidden_by_blur
-            .is_some_and(|t| t.elapsed() < REOPEN_GUARD);
-        if self.visible {
-            self.hide(false);
-        } else if !just_hidden {
-            self.show(anchor, snapshot);
+        if anchor.is_some() {
+            self.anchor = anchor;
         }
+        let steps = self.life.toggle(Instant::now(), Self::activate());
+        self.run(steps, snapshot);
+        self.reveal();
     }
 
     /// Opens the window next to the tray icon (`anchor`, or where it was).
     pub fn show(&mut self, anchor: Option<Rect>, snapshot: Option<&HostSnapshot>) {
-        self.generation += 1;
-        self.retire.stop();
-        self.trim.stop();
         if anchor.is_some() {
             self.anchor = anchor;
         }
-        if self.ui.is_none() {
-            match create() {
-                Ok(ui) => self.ui = Some(ui),
-                Err(e) => {
-                    warn!("The window could not be created: {e}");
-                    return;
-                }
-            }
-        }
-        if let Some(ui) = &self.ui {
-            fill(ui, snapshot);
-        }
-        // Testing on a PC someone uses: shown without taking the focus.
-        let activate = std::env::var_os("N8TRAY_NO_ACTIVATE").is_none();
-        self.pending = Some(activate);
-        self.waited = 0;
-        self.reveal_when_ready();
+        let steps = self.life.show(Self::activate());
+        self.run(steps, snapshot);
+        self.reveal();
     }
 
     /// Shows the window once its native window exists (Slint creates it
     /// during its first show; it may take an event loop turn).
-    pub fn reveal_when_ready(&mut self) {
-        if self.hwnd.is_none() {
-            let found = self.ui.as_ref().and_then(native_handle);
-            match found {
-                Some(hwnd) => self.adopt(hwnd),
-                None if self.waited < 200 => {
-                    self.waited += 1;
-                    self.wait.start(
-                        slint::TimerMode::SingleShot,
-                        Duration::from_millis(10),
-                        || crate::shell::with(|s| s.hub.reveal_when_ready()),
-                    );
-                    return;
+    pub fn reveal(&mut self) {
+        if self.hwnd.is_none()
+            && let Some(hwnd) = self.ui.as_ref().and_then(native_handle)
+        {
+            self.adopt(hwnd);
+        }
+        let steps = self.life.reveal();
+        self.run(steps, None);
+    }
+
+    pub fn hide(&mut self, from_blur: bool) {
+        let steps = self.life.hide(Instant::now(), from_blur);
+        self.run(steps, None);
+    }
+
+    /// The window lost the focus: a shown window hides (D25).
+    pub fn blurred(&mut self) {
+        let steps = self.life.blurred(Instant::now());
+        self.run(steps, None);
+    }
+
+    fn retire(&mut self, generation: u64) {
+        let steps = self.life.retire(generation);
+        self.run(steps, None);
+    }
+
+    /// The snapshot changed while the window is open.
+    pub fn refresh(&mut self, snapshot: &HostSnapshot) {
+        if let (Some(ui), true) = (&self.ui, self.life.visible()) {
+            fill(ui, Some(snapshot));
+            self.place(false);
+        }
+    }
+
+    /// The display scale changed under a shown window.
+    pub fn rescaled(&mut self) {
+        if self.life.visible() {
+            self.place(false);
+        }
+    }
+
+    /// Drops the window now (the shell is exiting).
+    pub fn close(&mut self) {
+        let steps = self.life.close();
+        self.run(steps, None);
+    }
+
+    /// Carries out the life's steps, in order.
+    fn run(&mut self, steps: Vec<Step>, snapshot: Option<&HostSnapshot>) {
+        for step in steps {
+            match step {
+                Step::StopTimers => {
+                    self.wait.stop();
+                    self.retire.stop();
+                    self.trim.stop();
                 }
-                None => {
-                    warn!("The window has no native window after 2 s");
-                    self.pending = None;
-                    return;
+                Step::Create => match create() {
+                    Ok(ui) => {
+                        self.ui = Some(ui);
+                        self.hwnd = None;
+                    }
+                    Err(e) => {
+                        warn!("The window could not be created: {e}");
+                        self.life.create_failed();
+                        return;
+                    }
+                },
+                Step::Fill => {
+                    if let Some(ui) = &self.ui {
+                        fill(ui, snapshot);
+                    }
+                }
+                Step::WaitForNative => {
+                    self.wait
+                        .start(slint::TimerMode::SingleShot, WAIT_TURN, || {
+                            crate::shell::with(|s| s.hub.reveal())
+                        });
+                }
+                Step::Reveal { activate } => self.reveal_native(activate),
+                Step::Hide => {
+                    if let Some(hwnd) = self.hwnd {
+                        n8tray_platform::window::hide(hwnd);
+                    }
+                }
+                Step::Open(open) => {
+                    if let Some(host) = &self.host {
+                        let _ = host.send(Command::WindowOpen(open));
+                    }
+                }
+                Step::StartRetire { generation } => {
+                    self.retire
+                        .start(slint::TimerMode::SingleShot, KEEP_HIDDEN, move || {
+                            crate::shell::with(|s| s.hub.retire(generation))
+                        });
+                }
+                Step::Drop => {
+                    if let Some(ui) = self.ui.take() {
+                        let _ = ui.hide();
+                        drop(ui);
+                        if self.hwnd.is_some() {
+                            info!("The window was dropped to free its memory");
+                        } else {
+                            warn!("The window had no native window after 2 s; dropped");
+                        }
+                    }
+                    self.hwnd = None;
+                }
+                Step::StartTrim => {
+                    self.trim
+                        .start(slint::TimerMode::SingleShot, TRIM_AFTER_DROP, || {
+                            n8tray_platform::memory::trim_own_working_set();
+                        });
+                }
+                Step::TrimNow => {
+                    info!("The window was hidden for {KEEP_HIDDEN:?}: kept, memory trimmed");
+                    n8tray_platform::memory::trim_own_working_set();
                 }
             }
         }
-        let (Some(activate), Some(hwnd)) = (self.pending.take(), self.hwnd) else {
-            return;
-        };
+    }
+
+    fn reveal_native(&mut self, activate: bool) {
+        let Some(hwnd) = self.hwnd else { return };
         self.place(true);
         if activate {
             n8tray_platform::window::show_active(hwnd);
@@ -178,10 +230,6 @@ impl Hub {
         // Moving between monitors of different scale can resize the window
         // behind our back: place it once more now that it is shown.
         self.place(false);
-        if !self.visible {
-            self.visible = true;
-            self.send(Command::WindowOpen(true));
-        }
     }
 
     /// The native window exists: hide it at once (Slint showed it off
@@ -190,6 +238,7 @@ impl Hub {
         n8tray_platform::window::hide(hwnd);
         n8tray_platform::window::style_flyout(hwnd);
         self.hwnd = Some(hwnd);
+        self.life.native_found();
         let Some(ui) = &self.ui else { return };
         ui.set_dark(dark(ui));
         listen(ui);
@@ -197,86 +246,6 @@ impl Hub {
         // this one keeps, so the placement code path stays honest.
         let insets = n8tray_platform::window::frame_insets(hwnd);
         info!("The window's frame insets (left, top, right, bottom): {insets:?}");
-    }
-
-    /// Hides the window; `from_blur` when focus loss hid it.
-    pub fn hide(&mut self, from_blur: bool) {
-        if !self.visible {
-            return;
-        }
-        if from_blur {
-            self.hidden_by_blur = Some(Instant::now());
-        }
-        if let Some(hwnd) = self.hwnd {
-            n8tray_platform::window::hide(hwnd);
-        }
-        self.visible = false;
-        self.generation += 1;
-        self.send(Command::WindowOpen(false));
-        let generation = self.generation;
-        self.retire
-            .start(slint::TimerMode::SingleShot, KEEP_HIDDEN, move || {
-                crate::shell::with(|s| s.hub.retire(generation))
-            });
-    }
-
-    /// The window was hidden for [`KEEP_HIDDEN`].
-    fn retire(&mut self, generation: u64) {
-        if generation != self.generation || self.visible {
-            return;
-        }
-        match self.when_hidden {
-            WhenHidden::Drop => {
-                if let Some(ui) = self.ui.take() {
-                    let _ = ui.hide();
-                    drop(ui);
-                    info!("The window was hidden for {KEEP_HIDDEN:?}: dropped to free its memory");
-                }
-                self.hwnd = None;
-                self.trim
-                    .start(slint::TimerMode::SingleShot, TRIM_AFTER_DROP, || {
-                        n8tray_platform::memory::trim_own_working_set();
-                    });
-            }
-            WhenHidden::Keep => {
-                info!("The window was hidden for {KEEP_HIDDEN:?}: kept, memory trimmed");
-                n8tray_platform::memory::trim_own_working_set();
-            }
-        }
-    }
-
-    /// The window lost the focus: a shown window hides (D25).
-    pub fn blurred(&mut self) {
-        if self.visible {
-            self.hide(true);
-        }
-    }
-
-    /// The snapshot changed while the window is open.
-    pub fn refresh(&mut self, snapshot: &HostSnapshot) {
-        if let (Some(ui), true) = (&self.ui, self.visible) {
-            fill(ui, Some(snapshot));
-            self.place(false);
-        }
-    }
-
-    /// The display scale changed under a shown window.
-    pub fn rescaled(&mut self) {
-        if self.visible {
-            self.place(false);
-        }
-    }
-
-    /// Drops the window now (the shell is exiting).
-    pub fn close(&mut self) {
-        self.retire.stop();
-        self.trim.stop();
-        self.wait.stop();
-        if let Some(ui) = self.ui.take() {
-            let _ = ui.hide();
-        }
-        self.hwnd = None;
-        self.visible = false;
     }
 
     /// Sizes the window to its content and places it next to the icon,
@@ -295,6 +264,12 @@ impl Hub {
         let Some(monitor) = monitor else {
             return;
         };
+        if !monitor.scale_from_monitor {
+            warn!(
+                "The monitor's own scale is unknown; placing at the system's ({})",
+                monitor.scale
+            );
+        }
         let rect = |(x, y, w, h): (i32, i32, i32, i32)| Rect::new(x, y, w, h);
         let screen = rect(monitor.bounds);
         let work = test
@@ -515,13 +490,5 @@ mod tests {
             apps.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>(),
             hosted
         );
-    }
-
-    #[test]
-    fn keeping_the_window_is_only_for_measuring() {
-        // The default drops it (D17).
-        if std::env::var_os("N8TRAY_WINDOW").is_none() {
-            assert_eq!(WhenHidden::from_env(), WhenHidden::Drop);
-        }
     }
 }

@@ -10,13 +10,13 @@ use windows_sys::Win32::Graphics::Gdi::{
     ClientToScreen, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
 };
 use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
-use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForSystem, MDT_EFFECTIVE_DPI};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, CreateWindowExW, GWL_EXSTYLE, GetClientRect, GetForegroundWindow,
-    GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible, SW_HIDE, SW_SHOW,
-    SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, WS_EX_APPWINDOW,
-    WS_EX_TOOLWINDOW, WS_POPUP,
+    GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsHungAppWindow, IsWindowVisible,
+    SW_HIDE, SW_SHOW, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 pub fn style_flyout(handle: isize) -> bool {
@@ -137,7 +137,11 @@ pub fn show_active(handle: isize) -> bool {
             GetWindowThreadProcessId(front, std::ptr::null_mut())
         };
         let mine = GetCurrentThreadId();
-        let attached = front_thread != 0
+        // Attaching to a hung window's input queue would hang this thread
+        // (the tray's UI thread) with it: then the window just stays behind.
+        let hung = !front.is_null() && IsHungAppWindow(front) != 0;
+        let attached = !hung
+            && front_thread != 0
             && front_thread != mine
             && AttachThreadInput(mine, front_thread, 1) != 0;
         BringWindowToTop(hwnd);
@@ -195,21 +199,58 @@ pub fn create_owner() -> Option<isize> {
     (!hwnd.is_null()).then_some(hwnd as isize)
 }
 
+/// Windows' version, as tao reads it (`RtlGetVersion`, which does not lie
+/// to an exe without a compatibility manifest): (major, minor, build).
+fn windows_version() -> (u32, u32, u32) {
+    use windows_sys::Wdk::System::SystemServices::RtlGetVersion;
+    use windows_sys::Win32::System::SystemInformation::OSVERSIONINFOW;
+    let mut info: OSVERSIONINFOW = unsafe { std::mem::zeroed() };
+    info.dwOSVersionInfoSize = size_of::<OSVERSIONINFOW>() as u32;
+    unsafe { RtlGetVersion(&mut info) };
+    (info.dwMajorVersion, info.dwMinorVersion, info.dwBuildNumber)
+}
+
+/// What tao (Tauri's window library) does at start, `allow_dark_mode_for_app(true)`:
+/// on Windows 10 build 17763 or later, uxtheme's export 135 with "allow dark"
+/// (`AllowDarkModeForApp(true)` before build 18362, `SetPreferredAppMode(AllowDark)`
+/// from it), then export 104, `RefreshImmersiveColorPolicyState`.
 pub fn allow_dark_menus() -> bool {
-    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
-    // uxtheme's SetPreferredAppMode, exported by ordinal 135 since Windows
-    // 10 1903, as tao (Tauri's window library) calls it; 1 is AllowDark.
+    use windows_sys::Win32::System::LibraryLoader::{
+        GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW,
+    };
+    let (major, minor, build) = windows_version();
+    if !(major == 10 && minor == 0 && build >= 17763) {
+        return false;
+    }
+    type AllowDarkModeForApp = unsafe extern "system" fn(bool) -> bool;
     type SetPreferredAppMode = unsafe extern "system" fn(i32) -> i32;
+    type Refresh = unsafe extern "system" fn();
+    const ALLOW_DARK: i32 = 1;
+    let name = super::wide("uxtheme.dll");
     unsafe {
-        let module = LoadLibraryA(c"uxtheme.dll".as_ptr().cast());
+        // From System32 only, never from the exe's folder or the path.
+        let module = LoadLibraryExW(
+            name.as_ptr(),
+            std::ptr::null_mut(),
+            LOAD_LIBRARY_SEARCH_SYSTEM32,
+        );
         if module.is_null() {
             return false;
         }
         let Some(address) = GetProcAddress(module, 135usize as *const u8) else {
             return false;
         };
-        let set: SetPreferredAppMode = std::mem::transmute(address);
-        set(1);
+        if build < 18362 {
+            let allow: AllowDarkModeForApp = std::mem::transmute(address);
+            allow(true);
+        } else {
+            let set: SetPreferredAppMode = std::mem::transmute(address);
+            set(ALLOW_DARK);
+        }
+        if let Some(address) = GetProcAddress(module, 104usize as *const u8) {
+            let refresh: Refresh = std::mem::transmute(address);
+            refresh();
+        }
     }
     true
 }
@@ -226,14 +267,18 @@ pub fn monitor_at(x: i32, y: i32) -> Option<crate::window::Monitor> {
         if GetMonitorInfoW(monitor, &mut info) == 0 {
             return None;
         }
-        let (mut dx, mut dy) = (96u32, 96u32);
-        if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dx, &mut dy) != 0 {
-            dx = 96;
+        let (mut dx, mut dy) = (0u32, 0u32);
+        // Without the monitor's DPI, the system's (the primary monitor's at
+        // sign-in), and the caller is told so.
+        let from_monitor = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dx, &mut dy) == 0;
+        if !from_monitor || dx == 0 {
+            dx = GetDpiForSystem();
         }
         Some(crate::window::Monitor {
             bounds: rect(info.rcMonitor),
             work: rect(info.rcWork),
             scale: f64::from(dx.max(96)) / 96.0,
+            scale_from_monitor: from_monitor && dy != 0,
         })
     }
 }

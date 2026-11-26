@@ -24,6 +24,7 @@ sysinfo = { version = "0.40.1", default-features = false, features = ["system"] 
 winreg = "0.56.0"
 windows-sys = { version = "0.61.2", features = [
   "Wdk_System_SystemInformation",
+  "Wdk_System_SystemServices",
   "Win32_Foundation",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",

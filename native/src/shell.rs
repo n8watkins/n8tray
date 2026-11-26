@@ -3,6 +3,7 @@
 //! events, the taskbar's colour, tray and menu clicks, requests from a later
 //! copy) is posted to the UI thread with `slint::invoke_from_event_loop`
 //! and handled here, one at a time.
+#![forbid(unsafe_code)]
 
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -18,7 +19,7 @@ use tracing::{info, warn};
 
 use crate::commands::{self, Opened};
 use crate::tray::{Clicked, Tray};
-use crate::window::{Hub, WhenHidden};
+use crate::window::Hub;
 
 /// Start-up touches far more memory than an idle tray keeps (D19).
 const TRIM_AFTER_START: Duration = Duration::from_secs(30);
@@ -55,6 +56,8 @@ pub struct Shell {
     taskbar: Taskbar,
     pub hub: Hub,
     startup_trim: slint::Timer,
+    /// The process's exit code once the event loop ends.
+    exit_code: i32,
 }
 
 /// Puts a new shell on this thread.
@@ -66,8 +69,9 @@ pub fn install(folders: Folders) {
         tray: None,
         // Where the platform cannot say, the art for a dark taskbar.
         taskbar: theme::taskbar().unwrap_or_default(),
-        hub: Hub::new(WhenHidden::from_env()),
+        hub: Hub::new(crate::window::when_hidden_from_env()),
         startup_trim: slint::Timer::default(),
+        exit_code: 0,
     };
     SHELL.with(|cell| *cell.borrow_mut() = Some(shell));
 }
@@ -103,7 +107,14 @@ impl Shell {
                 }
                 self.tray = Some(tray);
             }
-            Err(e) => warn!("The tray icon could not be created: {e}"),
+            Err(e) => {
+                // As the Tauri app, which fails its setup: no hosting without
+                // an icon to reach N8 Tray by (apps keep running).
+                tracing::error!("The tray icon could not be created: {e}; N8 Tray exits");
+                self.exit_code = 1;
+                self.exit();
+                return;
+            }
         }
         tray_icon::TrayIconEvent::set_event_handler(Some(|event| {
             if let tray_icon::TrayIconEvent::Click {
@@ -117,10 +128,12 @@ impl Shell {
                 defer(move |s| s.toggle(Some(rect)));
             }
         }));
-        tray_icon::menu::MenuEvent::set_event_handler(Some(|event: tray_icon::menu::MenuEvent| {
-            let id = event.id.0;
-            defer(move |s| s.on_menu(&id));
-        }));
+        tray_icon::menu::MenuEvent::set_event_handler(Some(Arc::new(
+            |event: tray_icon::menu::MenuEvent| {
+                let id = event.id.0;
+                defer(move |s| s.on_menu(&id));
+            },
+        )));
         let taskbar = self.taskbar;
         let watch = theme::watch_taskbar(|report| match report {
             Ok(taskbar) => defer(move |s| s.set_taskbar(taskbar)),
@@ -184,12 +197,10 @@ impl Shell {
         match crate::tray::clicked(id) {
             // The details view comes with a later lane.
             Clicked::Status => self.show(None),
-            Clicked::SignIn => {
-                let on = snapshot
-                    .as_ref()
-                    .is_some_and(|s| !s.settings.launch_at_sign_in);
-                self.send(Command::SetLaunchAtSignIn(on));
-            }
+            Clicked::SignIn => match crate::tray::sign_in_command(snapshot.as_deref()) {
+                Some(command) => self.send(command),
+                None => info!("Start at sign-in stays with the installed N8 Tray (D33)"),
+            },
             Clicked::Settings => self.open_host("settings"),
             Clicked::Folder => self.open_host("folder"),
             Clicked::Log => self.open_host("log"),
@@ -260,6 +271,10 @@ impl Shell {
             }
             Err(e) => warn!("Cannot restart: {e}"),
         }
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        self.exit_code
     }
 
     /// Takes the tray icon out of the notification area and drops the window.
