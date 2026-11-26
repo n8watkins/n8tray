@@ -14,6 +14,7 @@ import {
     OpenItem, OpenLinks, KeyValue, KeyValues, WarningItem, WarningList,
     TableColumn, TableRow, Table, Spark, Chart, ChartLegend, ScrollArea,
     Tooltip, TooltipLayer, TitleBar, BarAction, BottomBar, BarLink,
+    RowFocusExpiry,
 } from "widgets.slint";
 import { HubView } from "views/hub.slint";
 import { AllAppsView } from "views/all-apps.slint";
@@ -901,6 +902,8 @@ export component Gallery inherits Window {
             live-rows: root.live-rows;
         }
     }
+
+    RowFocusExpiry { }
 
     TooltipLayer {
         x: 0;

@@ -99,6 +99,24 @@ export global RowFocus {
     }
 }
 
+// Drops a focus request that no row took (kit: each window has one). A
+// request is taken by a row when it is asked or when it is created at the
+// next layout; one still pending after that would take the focus whenever a
+// matching row appears later. Not a zero-delay timer: Slint's winit loop
+// updates timers right after a posted closure runs, before the frame whose
+// layout creates the moved rows, so the wait outlasts a frame or two.
+export component RowFocusExpiry {
+    width: 0;
+    height: 0;
+    Timer {
+        interval: 250ms;
+        running: RowFocus.pending;
+        triggered => {
+            RowFocus.pending = false;
+        }
+    }
+}
+
 // The part of a row that opens the app's panel (`.app-main`).
 component RowMain {
     in property <string> name;

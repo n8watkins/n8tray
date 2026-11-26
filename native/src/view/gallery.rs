@@ -935,7 +935,7 @@ pub mod tests {
         apps.reverse();
         let synced = list::sync(&model, rows_of(&apps, &confirms), |r| r.id.clone());
         assert!(synced.moved);
-        rows::refocus(&focus, &before);
+        rows::refocus(&focus, &before, &*model);
         draw(&headed, 1.0).unwrap();
         assert_eq!(
             focus.get_focused_id(),
@@ -963,9 +963,90 @@ pub mod tests {
         let before = rows::focused(&focus);
         let synced = list::sync(&model, rows_of(&apps, &confirms), |r| r.id.clone());
         assert!(!synced.moved);
-        rows::refocus(&focus, &before);
+        rows::refocus(&focus, &before, &*model);
         draw(&headed, 1.0).unwrap();
         assert_eq!(focus.get_focused_id(), d.as_str());
+        headed.ui.hide().unwrap();
+    }
+
+    /// A focus request never sticks: the focused row leaves the list (a
+    /// sync removes it), the list is reordered, then the row comes back,
+    /// and the focus does not jump to it. A request no row takes is dropped
+    /// soon after (`RowFocusExpiry`), so a row added later takes nothing.
+    #[test]
+    fn a_focus_request_for_a_gone_row_never_steals_the_focus_later() {
+        let headed = headed(Look::Light, "list", Font::Test).unwrap();
+        let snapshot = busy();
+        let all: Vec<_> = snapshot
+            .apps
+            .iter()
+            .filter(|a| format::row_action(a).is_some())
+            .cloned()
+            .collect();
+        assert!(all.len() >= 3);
+        let rows_of = |apps: &[n8tray_core::model::AppView]| -> Vec<RowData> {
+            apps.iter()
+                .map(|a| {
+                    rows::row_data(
+                        a,
+                        slint::Image::default(),
+                        &Confirms::default(),
+                        false,
+                        Instant::now(),
+                    )
+                })
+                .collect()
+        };
+        let model = Rc::new(VecModel::default());
+        list::sync(&model, rows_of(&all), |r| r.id.clone());
+        set_live_rows(&headed.ui, &model);
+        draw(&headed, 1.0).unwrap();
+        let focus = headed.ui.global::<RowFocus>();
+        let reveal = headed.ui.global::<crate::ui::Reveal>();
+        let gone = all[all.len() - 1].id.clone();
+        focus.invoke_to_id(gone.as_str().into(), 0);
+        draw(&headed, 1.0).unwrap();
+        assert_eq!(focus.get_focused_id(), gone.as_str());
+
+        // The focused row leaves: no request for it.
+        let before = rows::focused(&focus);
+        let mut rest: Vec<_> = all[..all.len() - 1].to_vec();
+        list::sync(&model, rows_of(&rest), |r| r.id.clone());
+        rows::refocus(&focus, &before, &*model);
+        assert!(!focus.get_pending(), "no request for a row that left");
+        draw(&headed, 1.0).unwrap();
+        // Reordered: still nothing asked.
+        let before = rows::focused(&focus);
+        rest.reverse();
+        list::sync(&model, rows_of(&rest), |r| r.id.clone());
+        rows::refocus(&focus, &before, &*model);
+        assert!(!focus.get_pending());
+        draw(&headed, 1.0).unwrap();
+        // The row comes back: it does not take the focus.
+        let serial = reveal.get_focused_serial();
+        list::sync(&model, rows_of(&all), |r| r.id.clone());
+        draw(&headed, 1.0).unwrap();
+        assert_eq!(
+            reveal.get_focused_serial(),
+            serial,
+            "no control took the focus when the row came back"
+        );
+
+        // A request for a row that is not drawn yet and never is: dropped.
+        list::sync(&model, rows_of(&rest), |r| r.id.clone());
+        focus.invoke_to_id(gone.as_str().into(), 0);
+        assert!(focus.get_pending());
+        // A frame starts the expiry timer (as the window's next frame does).
+        draw(&headed, 1.0).unwrap();
+        assert!(focus.get_pending(), "still pending within the wait");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        slint::platform::update_timers_and_animations();
+        draw(&headed, 1.0).unwrap();
+        assert!(!focus.get_pending(), "the request expired");
+        let serial = reveal.get_focused_serial();
+        list::sync(&model, rows_of(&all), |r| r.id.clone());
+        draw(&headed, 1.0).unwrap();
+        assert_eq!(reveal.get_focused_serial(), serial, "nothing jumps later");
         headed.ui.hide().unwrap();
     }
 

@@ -69,7 +69,7 @@ Ask the shell lane for anything in the kit:
 - `npm run check:native` passes on Linux and Windows.
 - Every control takes the keyboard focus, shows the ring and has its role, label and state; rows move with the arrow keys.
 - Its module has a test calling `view::gallery::tests::tab_through` on a shot whose list scrolls.
-- Lists are stable models updated in place by app id (`view::list::sync`); actions go through `Intent::Action`, which arms those that ask to confirm (`view::confirm`); after a sync that moved rows, `view::rows::refocus` puts the focus back by id, in the same turn.
+- Lists are stable models updated in place by app id (`view::list::sync`); actions go through `Intent::Action`, which arms those that ask to confirm (`view::confirm`); after a sync that moved rows, `view::rows::refocus(focus, focused, model)` puts the focus back by id, in the same turn, and asks nothing for an app that left the list (a request no row takes expires after 250 ms).
 - No shared file changed.
 
 ## What a view may ask for: `view::intent`

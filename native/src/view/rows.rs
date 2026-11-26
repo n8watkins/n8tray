@@ -7,7 +7,7 @@
 use std::time::Instant;
 
 use n8tray_core::model::{ActionKindView, AppView, LevelName};
-use slint::{Image, SharedString};
+use slint::{Image, Model, SharedString};
 
 use super::action::action_ui;
 use super::confirm::{self, Confirms};
@@ -116,8 +116,19 @@ pub fn row_label(name: &str, words: &str, line: &str, memory: &str, sub: &str) -
 /// right after it, in the same turn: a row the sync moved is a new instance
 /// that does not exist until the next layout, and it takes the request when
 /// it is created (`RowFocus.pending`).
-pub fn refocus(focus: &RowFocus<'_>, focused: &(SharedString, i32)) {
-    if !focused.0.is_empty() {
+///
+/// `rows` is the list after the sync: an app that left it gets no request,
+/// so its row cannot take the focus back when it returns later. A request
+/// no row takes is dropped shortly after (`RowFocusExpiry`).
+pub fn refocus(
+    focus: &RowFocus<'_>,
+    focused: &(SharedString, i32),
+    rows: &impl Model<Data = RowData>,
+) {
+    if focused.0.is_empty() {
+        return;
+    }
+    if rows.iter().any(|r| r.id == focused.0) {
         focus.invoke_to_id(focused.0.clone(), focused.1);
     }
 }
