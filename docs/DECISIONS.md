@@ -411,3 +411,26 @@ The `builtin` status type stays in contract 2: removing it would reject manifest
 Settings files need no new schema version.
 A file from 0.6.0 loads without an error or a warning: `memory.notify` is kept as it is under `memory`, and app settings or a `wslMemory` section for WSL Memory are kept as unknown entries, as before.
 A file this version saves still reads in 0.6.0, which takes a missing `notify` as off.
+
+## D35. Compact rows and a window height limit: two global settings (2026-11-26)
+
+The owner approved two settings for the native window.
+This entry adds them to the core only, as D32 did for pins, so a later lane can draw them.
+Today's Tauri window does not read or change either.
+
+- `compact` is a boolean, off by default.
+  Normal shows two lines per app; compact shows one.
+- `windowHeight` is one of three presets, `short` (400 px), `medium` (500 px) or `tall` (600 px), `short` by default.
+  It is the height the window stops growing at before its app list scrolls.
+- Both are global, not per app, and sit at the top level of the settings file as `compact` and `windowHeight`.
+- A file without them reads as the defaults, so there is no new schema version.
+  An older build keeps both keys in its unknown entries through a load and a save, so going back a version and forward again loses no choice.
+- An unknown `windowHeight` in a hand-edited file (a wrong name, a number, a null) reads as `short`, and the file is not a settings error.
+  This differs from the update channel, where an unknown value makes the whole file an error: a cosmetic limit should never switch off saving for every other setting.
+  The next save writes `short`.
+- `SettingsView` carries `compact`, `windowHeight` and `windowHeightPx`, the pixel value, so a shell does not repeat the mapping.
+- The host takes `Command::SetCompact` and `Command::SetWindowHeight`, saved through the same path as the other global settings.
+- The native shell's `set_setting` takes `compact`, and its `set_window_height` takes only the three preset names.
+  The Tauri app's setting list has neither, as it has no `pinned`: the difference is deliberate, and a test on each side says so.
+- The Tauri window receives the same snapshot, so its data gains the three new `settings` fields, which no view reads.
+  Its copied status text (`report.rs`) does not mention them.

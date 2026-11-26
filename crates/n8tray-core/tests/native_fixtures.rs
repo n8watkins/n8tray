@@ -99,6 +99,14 @@ fn every_fixture_loads_and_round_trips() {
         );
         let reloaded: HostSnapshot = serde_json::from_value(again).expect("deserializes again");
         assert_eq!(snapshot, reloaded, "{name}: second round trip differs");
+        let height =
+            n8tray_core::settings::WindowHeight::from_name(&snapshot.settings.window_height)
+                .unwrap_or_else(|| panic!("{name}: window height is not a preset"));
+        assert_eq!(
+            snapshot.settings.window_height_px,
+            height.pixels(),
+            "{name}: windowHeightPx"
+        );
         pins_agree(&name, &snapshot);
         tooltip_agrees(&name, &snapshot);
         names.push(name);
@@ -108,6 +116,7 @@ fn every_fixture_loads_and_round_trips() {
         names,
         [
             "busy.json",
+            "compactTall.json",
             "empty.json",
             "healthy.json",
             "pinned.json",

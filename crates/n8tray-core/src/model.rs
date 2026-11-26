@@ -297,6 +297,14 @@ pub struct SettingsView {
     pub notifications: bool,
     pub update_channel: String,
     pub check_updates: bool,
+    /// Compact rows (one line per app) in the native window; the Tauri window
+    /// does not read it (D35).
+    pub compact: bool,
+    /// The window's height limit: `short`, `medium` or `tall`.
+    pub window_height: String,
+    /// `window_height` in pixels (400, 500 or 600), so a shell does not
+    /// repeat the mapping.
+    pub window_height_px: u32,
     /// The settings file has an error: defaults in use, nothing saved.
     pub error: Option<String>,
     pub file: String,

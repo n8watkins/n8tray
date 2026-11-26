@@ -180,6 +180,9 @@ const settings = {
   notifications: true,
   updateChannel: "stable",
   checkUpdates: true,
+  compact: false,
+  windowHeight: "short",
+  windowHeightPx: 400,
   error: null,
   file: "C:\\Users\\someone\\AppData\\Local\\N8Tray\\settings.json",
 };
@@ -335,4 +338,39 @@ export const pinned: HostSnapshot = {
   tooltip: "N8 Tray: Needs attention\nRunning: Lead Scraper, VoiceDock · 1 more running\nN8 768 MB in all",
 };
 
-export const fixtures: Record<string, HostSnapshot> = { busy, healthy, trouble, empty, updating, updateFailed, watching, pinned };
+/**
+ * Compact rows and the tall window (D35), with a dozen apps, so a 400 px
+ * window would scroll: nine run, three are stopped, every one is pinned.
+ * Today's window does not read the two settings.
+ */
+const dozenNames = [
+  ["audiobridge", "Audio Bridge"],
+  ["clipkeeper", "Clip Keeper"],
+  ["n8hotkeys", "N8 Hotkeys"],
+  ["leadscraper", "Lead Scraper"],
+  ["mailroom", "Mailroom"],
+  ["notesync", "Note Sync"],
+  ["pulse", "Pulse"],
+  ["voicedock", "VoiceDock"],
+  ["whisperhub", "Whisper Hub"],
+  ["n8commentary", "N8 Commentary"],
+  ["screenshelf", "Screen Shelf"],
+  ["tabtidy", "Tab Tidy"],
+] as const;
+const dozenApps: AppView[] = dozenNames.map(([id, name], i) =>
+  i < 9
+    ? { ...base, id, name, summary: "Ready", memoryMb: 20 + i * 6, privateMb: 10 + i * 5, cpuPercent: 0, processes: [proc(4000 + i, `${id}.exe`, 20 + i * 6, 0)] }
+    : { ...base, ...stopped, id, name, summary: "Installed but not running", autoStart: false },
+);
+export const compactTall: HostSnapshot = {
+  ...healthy,
+  running: 9,
+  total: 12,
+  ...pinnedCounts(9, 12),
+  memory: { n8Mb: 342, text: "N8 342 MB in all" },
+  apps: dozenApps,
+  tooltip: "N8 Tray: Healthy\nRunning: Audio Bridge, Clip Keeper, N8 Hotkeys, Lead Scraper, Mailroom, Note Sync, Pulse,...\nN8 342 MB in all",
+  settings: { ...settings, compact: true, windowHeight: "tall", windowHeightPx: 600 },
+};
+
+export const fixtures: Record<string, HostSnapshot> = { busy, healthy, trouble, empty, updating, updateFailed, watching, pinned, compactTall };

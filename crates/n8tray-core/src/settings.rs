@@ -26,6 +26,13 @@ pub struct Settings {
     pub notifications: bool,
     pub updates: UpdateSettings,
     pub history: HistorySettings,
+    /// Compact rows in the native window: one line per app instead of two.
+    /// Global, not per app (D35). A file without it reads as off, so it needs
+    /// no new schema version.
+    pub compact: bool,
+    /// The height the native window stops growing at before its list scrolls
+    /// (D35). A file without it reads as `short`.
+    pub window_height: WindowHeight,
     /// Per app, by id. An app missing here has the defaults.
     pub apps: BTreeMap<String, AppSettings>,
     /// Sections this version does not know, kept as they are (such as a
@@ -43,9 +50,64 @@ impl Default for Settings {
             notifications: true,
             updates: UpdateSettings::default(),
             history: HistorySettings::default(),
+            compact: false,
+            window_height: WindowHeight::default(),
             apps: BTreeMap::new(),
             other: Map::new(),
         }
+    }
+}
+
+/// The three heights the window may stop growing at (D35).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowHeight {
+    #[default]
+    Short,
+    Medium,
+    Tall,
+}
+
+impl WindowHeight {
+    /// The preset's name as the file and the commands write it.
+    pub fn name(self) -> &'static str {
+        match self {
+            WindowHeight::Short => "short",
+            WindowHeight::Medium => "medium",
+            WindowHeight::Tall => "tall",
+        }
+    }
+
+    /// The preset's name, or `None` for anything else.
+    pub fn from_name(name: &str) -> Option<WindowHeight> {
+        match name {
+            "short" => Some(WindowHeight::Short),
+            "medium" => Some(WindowHeight::Medium),
+            "tall" => Some(WindowHeight::Tall),
+            _ => None,
+        }
+    }
+
+    /// The height in pixels (logical) the window stops growing at.
+    pub fn pixels(self) -> u32 {
+        match self {
+            WindowHeight::Short => 400,
+            WindowHeight::Medium => 500,
+            WindowHeight::Tall => 600,
+        }
+    }
+}
+
+/// Unlike `Channel`, an unknown value (a hand-edited file, or a later version's
+/// preset) reads as `short` and is not a settings error: a cosmetic limit must
+/// never put the whole file in the error state, where nothing can be saved.
+impl<'de> Deserialize<'de> for WindowHeight {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        Ok(value
+            .as_str()
+            .and_then(WindowHeight::from_name)
+            .unwrap_or_default())
     }
 }
 
@@ -545,6 +607,109 @@ mod tests {
         let back: AppSettings = serde_json::from_str(&written).unwrap();
         assert!(!back.pinned);
         assert!(!back.other.contains_key("pinned"), "read as the field");
+    }
+
+    #[test]
+    fn density_and_height_default_to_normal_and_short() {
+        let defaults = Settings::default();
+        assert!(!defaults.compact);
+        assert_eq!(defaults.window_height, WindowHeight::Short);
+        assert_eq!(WindowHeight::Short.pixels(), 400);
+        assert_eq!(WindowHeight::Medium.pixels(), 500);
+        assert_eq!(WindowHeight::Tall.pixels(), 600);
+
+        // A file from before the settings existed reads as the defaults, with
+        // no new schema version.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, r#"{ "schemaVersion": 1, "notifications": false }"#).unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.error, None);
+        assert_eq!(SCHEMA_VERSION, 1);
+        assert!(!loaded.settings.compact);
+        assert_eq!(loaded.settings.window_height, WindowHeight::Short);
+
+        // Chosen, they are saved and read back.
+        let mut settings = loaded.settings;
+        settings.compact = true;
+        settings.window_height = WindowHeight::Tall;
+        save(&path, &settings).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("\"compact\": true"), "{text}");
+        assert!(text.contains("\"windowHeight\": \"tall\""), "{text}");
+        let again = load(&path);
+        assert_eq!(again.error, None);
+        assert_eq!(again.settings, settings);
+    }
+
+    #[test]
+    fn an_unknown_window_height_reads_as_short_without_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        for bad in [
+            r#""huge""#,
+            r#""TALL""#,
+            r#""""#,
+            "500",
+            "null",
+            "true",
+            "[]",
+        ] {
+            std::fs::write(
+                &path,
+                format!(r#"{{ "compact": true, "windowHeight": {bad}, "notifications": false }}"#),
+            )
+            .unwrap();
+            let loaded = load(&path);
+            assert_eq!(loaded.error, None, "{bad}");
+            assert_eq!(loaded.settings.window_height, WindowHeight::Short, "{bad}");
+            // The rest of the file is read as written.
+            assert!(loaded.settings.compact, "{bad}");
+            assert!(!loaded.settings.notifications, "{bad}");
+        }
+    }
+
+    /// An older N8 Tray, whose settings have neither key, keeps both through a
+    /// load and a save, so going back a version and forward again loses no
+    /// choice.
+    #[test]
+    fn an_older_build_keeps_compact_and_the_window_height() {
+        #[derive(Serialize, Deserialize)]
+        #[serde(rename_all = "camelCase", default)]
+        struct OlderSettings {
+            schema_version: u32,
+            notifications: bool,
+            #[serde(flatten)]
+            other: Map<String, Value>,
+        }
+        impl Default for OlderSettings {
+            fn default() -> Self {
+                OlderSettings {
+                    schema_version: SCHEMA_VERSION,
+                    notifications: true,
+                    other: Map::new(),
+                }
+            }
+        }
+
+        let settings = Settings {
+            compact: true,
+            window_height: WindowHeight::Tall,
+            ..Settings::default()
+        };
+        let text = serde_json::to_string(&settings).unwrap();
+        let older: OlderSettings = serde_json::from_str(&text).unwrap();
+        assert_eq!(older.other.get("compact"), Some(&Value::Bool(true)));
+        assert_eq!(
+            older.other.get("windowHeight"),
+            Some(&Value::String("tall".into()))
+        );
+        let written = serde_json::to_string(&older).unwrap();
+        let back: Settings = serde_json::from_str(&written).unwrap();
+        assert!(back.compact);
+        assert_eq!(back.window_height, WindowHeight::Tall);
+        assert!(!back.other.contains_key("compact"), "read as the field");
+        assert!(!back.other.contains_key("windowHeight"));
     }
 
     #[test]

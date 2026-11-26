@@ -118,6 +118,10 @@ pub enum Command {
     SetNotifications(bool),
     SetUpdateChannel(Channel),
     SetCheckUpdates(bool),
+    /// One line per app instead of two, in the native window (D35).
+    SetCompact(bool),
+    /// The height the native window stops growing at (D35).
+    SetWindowHeight(settings::WindowHeight),
     ReloadSettings,
     CheckUpdates,
     /// How installing an update goes (the app installs it).
@@ -1604,6 +1608,8 @@ impl Host {
                 self.update.checked_at = None;
             }
             Command::SetCheckUpdates(on) => self.change(|s| s.updates.check = on),
+            Command::SetCompact(on) => self.change(|s| s.compact = on),
+            Command::SetWindowHeight(height) => self.change(|s| s.window_height = height),
             Command::ReloadSettings => {
                 self.settings = settings::load(&self.options.folders.settings_file);
                 match &self.settings.error {
@@ -1939,6 +1945,9 @@ impl Host {
                 notifications: settings.notifications,
                 update_channel: channel_name(settings.updates.channel).into(),
                 check_updates: settings.updates.check,
+                compact: settings.compact,
+                window_height: settings.window_height.name().into(),
+                window_height_px: settings.window_height.pixels(),
                 error: self.settings.error.clone(),
                 file: self.settings.path.display().to_string(),
             },
