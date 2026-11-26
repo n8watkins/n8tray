@@ -10,12 +10,8 @@
   "pinnedText": "No apps",
   "more": null,
   "memory": {
-    "freeGb": 12.6,
-    "totalGb": 31.1,
-    "level": "ok",
     "n8Mb": 15,
-    "system": "Windows",
-    "text": "Windows 12.6/31.1 GB free · N8 0.0 GB"
+    "text": "N8 15 MB in all"
   },
   "pressure": "ok",
   "apps": [],
@@ -221,7 +217,6 @@
     "launchAtSignIn": true,
     "signInForeign": false,
     "notifications": true,
-    "memoryNotifications": false,
     "updateChannel": "stable",
     "checkUpdates": true,
     "error": null,

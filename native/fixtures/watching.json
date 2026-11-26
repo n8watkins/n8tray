@@ -1,8 +1,8 @@
 {
   "version": "0.2.0",
-  "level": "problem",
-  "headline": "Problem",
-  "reason": "Low memory",
+  "level": "ok",
+  "headline": "Healthy",
+  "reason": null,
   "running": 1,
   "total": 4,
   "pinnedRunning": 1,
@@ -10,12 +10,8 @@
   "pinnedText": "1 of 4 running",
   "more": null,
   "memory": {
-    "freeGb": 1.4,
-    "totalGb": 31.1,
-    "level": "problem",
     "n8Mb": 117,
-    "system": "Windows",
-    "text": "Windows 1.4/31.1 GB free · N8 0.1 GB"
+    "text": "N8 117 MB in all"
   },
   "pressure": "ok",
   "apps": [
@@ -542,7 +538,6 @@
     "launchAtSignIn": true,
     "signInForeign": false,
     "notifications": true,
-    "memoryNotifications": false,
     "updateChannel": "stable",
     "checkUpdates": true,
     "error": null,

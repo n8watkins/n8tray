@@ -10,12 +10,8 @@
   "pinnedText": "1 of 3 running",
   "more": null,
   "memory": {
-    "freeGb": 1.3,
-    "totalGb": 31.1,
-    "level": "problem",
     "n8Mb": 1950,
-    "system": "Windows",
-    "text": "Windows 1.3/31.1 GB free · N8 0.1 GB"
+    "text": "N8 1.9 GB in all"
   },
   "pressure": "ok",
   "apps": [
@@ -678,7 +674,6 @@
     "launchAtSignIn": true,
     "signInForeign": false,
     "notifications": true,
-    "memoryNotifications": false,
     "updateChannel": "stable",
     "checkUpdates": true,
     "error": null,

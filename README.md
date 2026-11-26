@@ -27,7 +27,7 @@ The PowerShell N8 Tray that runs on the owner's PC today lives in a private repo
 spec/
   contract-v2.md     the contract: manifest, status protocol, vocabulary, resources, ownership, security, lease
   schema/            its JSON Schemas (normative for the shape of every document)
-  examples/          manifests for VoiceDock, Commentary, Hotkeys, Lead Scraper and WSL Memory
+  examples/          manifests for VoiceDock, Commentary, Hotkeys and Lead Scraper
   fixtures/          valid and invalid documents every implementation is tested against
 crates/
   n8tray-contract/       the contract's Rust types and validation

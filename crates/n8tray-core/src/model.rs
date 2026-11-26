@@ -37,7 +37,7 @@ impl From<n8tray_contract::status::Level> for LevelName {
 #[ts(export)]
 pub struct HostSnapshot {
     pub version: String,
-    /// The worst level of every app and of system memory.
+    /// The worst level of every app in the hub.
     pub level: LevelName,
     /// "Healthy", "Needs attention" or "Problem", or why nothing runs.
     pub headline: String,
@@ -75,15 +75,11 @@ pub struct HostSnapshot {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct MemoryView {
-    pub free_gb: Option<f64>,
-    pub total_gb: Option<f64>,
-    /// The system memory level with hysteresis (shown).
-    pub level: LevelName,
-    /// N8 Tray plus every hosted app, in MiB.
+    /// N8 Tray plus every hosted app, in MiB. The PC's own memory is not
+    /// N8 Tray's to show (D34).
     pub n8_mb: f64,
-    /// The system's name for the memory line: `Windows`, `macOS` or `Linux`.
-    pub system: String,
-    /// "Windows 4.2/31.1 GB free · N8 310 MB" (GB from 1000 MB).
+    /// "N8 310 MB in all" (GB from 1000 MB), for the tooltip, the tray menu's
+    /// status line and Copy status.
     pub text: String,
 }
 
@@ -299,8 +295,6 @@ pub struct SettingsView {
     /// The sign-in entry exists but N8 Tray did not make it.
     pub sign_in_foreign: bool,
     pub notifications: bool,
-    /// Low-memory notifications (off unless turned on).
-    pub memory_notifications: bool,
     pub update_channel: String,
     pub check_updates: bool,
     /// The settings file has an error: defaults in use, nothing saved.

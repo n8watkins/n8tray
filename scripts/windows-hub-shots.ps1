@@ -1,5 +1,5 @@
 # The real N8 Tray window on Windows, pictured and measured: in its own
-# folders with five stand-in apps (the conformance kit's fake module under the
+# folders with four stand-in apps (the conformance kit's fake module under the
 # example apps' names and icons), shown without taking the focus
 # (N8TRAY_NO_ACTIVATE), light and dark (N8TRAY_THEME), by the real taskbar and
 # by simulated ones on the other edges, auto-hidden and from the overflow
@@ -78,7 +78,6 @@ function Install-StandIns {
     @{ id = "voicedock"; name = "VoiceDock"; group = "Audio"; http = $true; auto = $true; extra = @("--eat-mb", "120", "--children", "1") },
     @{ id = "n8hotkeys"; name = "N8 Hotkeys"; group = "Hotkeys"; http = $false; auto = $true; extra = @() },
     @{ id = "n8commentary"; name = "N8 Commentary"; group = "Streaming"; http = $false; auto = $false; extra = @() },
-    @{ id = "wslmemory"; name = "WSL Memory"; group = "System"; http = $false; auto = $true; extra = @() },
     @{ id = "leadscraper"; name = "Lead Scraper"; group = "Work"; http = $false; auto = $true; extra = @("--eat-mb", "40") }
   )
   $port = 47700

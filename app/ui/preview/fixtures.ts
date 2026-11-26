@@ -164,16 +164,6 @@ const leadscraper: AppView = {
   processes: [proc(30112, "powershell.exe", 0, 0.1, { rssMb: 0 }), proc(0, "node (wsl:Ubuntu-24.04)", 1230, 3, { verdict: "reported" })],
 };
 
-const wslmemory: AppView = {
-  ...base,
-  id: "wslmemory",
-  name: "WSL Memory",
-  group: "System",
-  icon: "icons/wslmemory.svg",
-  summary: "10.5 of 19.5 GB free · 3 dev servers",
-  actions: [],
-};
-
 export const tray = (windowOpen: boolean) => ({
   pid: 9124,
   rssMb: 15.2,
@@ -188,7 +178,6 @@ const settings = {
   launchAtSignIn: true,
   signInForeign: false,
   notifications: true,
-  memoryNotifications: false,
   updateChannel: "stable",
   checkUpdates: true,
   error: null,
@@ -210,12 +199,12 @@ export const busy: HostSnapshot = {
   running: 3,
   total: 4,
   // From the apps below (the older `running` and `total` above are not).
-  ...pinnedCounts(4, 5),
+  ...pinnedCounts(3, 4),
   more: null,
-  memory: { freeGb: 4.2, totalGb: 31.1, level: "ok", n8Mb: 1950, system: "Windows", text: "Windows 4.2/31.1 GB free · N8 1.9 GB" },
+  memory: { n8Mb: 1950, text: "N8 1.9 GB in all" },
   pressure: "ok",
   // The host's order: what runs first, then what is stopped; by name within.
-  apps: [leadscraper, hotkeys, voicedock, wslmemory, commentary],
+  apps: [leadscraper, hotkeys, voicedock, commentary],
   problems: [],
   tray: tray(true),
   tooltip: "N8 Tray: Needs attention",
@@ -232,7 +221,7 @@ export const healthy: HostSnapshot = {
   running: 2,
   total: 3,
   ...pinnedCounts(2, 3),
-  memory: { ...busy.memory, n8Mb: 780, text: "Windows 12.6/31.1 GB free · N8 0.8 GB", freeGb: 12.6 },
+  memory: { n8Mb: 780, text: "N8 780 MB in all" },
   apps: [hotkeys, voicedock, commentary],
 };
 
@@ -244,7 +233,6 @@ export const trouble: HostSnapshot = {
   running: 1,
   total: 3,
   ...pinnedCounts(1, 3),
-  memory: { ...busy.memory, freeGb: 1.3, level: "problem", text: "Windows 1.3/31.1 GB free · N8 0.1 GB" },
   apps: [
     { ...hotkeys, pending: "Restarting" },
     {
@@ -277,7 +265,7 @@ export const empty: HostSnapshot = {
   total: 0,
   ...pinnedCounts(0, 0),
   apps: [],
-  memory: { ...busy.memory, n8Mb: 15, text: "Windows 12.6/31.1 GB free · N8 0.0 GB", freeGb: 12.6 },
+  memory: { n8Mb: 15, text: "N8 15 MB in all" },
 };
 
 /** Healthy, while an update downloads. */
@@ -294,18 +282,19 @@ export const updateFailed: HostSnapshot = {
 
 /**
  * The owner's PC while the PowerShell N8 Tray runs: this one watches, one
- * app runs, three are stopped, memory is low.
+ * app runs, three are stopped. Watching is not a fault, so the level stays
+ * the apps' (D29).
  */
 const watched = (app: AppView): AppView => ({ ...app, actions: app.actions.map((a) => ({ ...a, enabled: false })) });
 export const watching: HostSnapshot = {
   ...busy,
-  level: "problem",
-  headline: "Problem",
-  reason: "Low memory",
+  level: "ok",
+  headline: "Healthy",
+  reason: null,
   running: 1,
   total: 4,
   ...pinnedCounts(1, 4),
-  memory: { freeGb: 1.4, totalGb: 31.1, level: "problem", n8Mb: 117, system: "Windows", text: "Windows 1.4/31.1 GB free · N8 0.1 GB" },
+  memory: { n8Mb: 117, text: "N8 117 MB in all" },
   apps: [
     watched({ ...hotkeys, summary: "6 of 6 hotkeys registered", memoryMb: 2.3, history: null }),
     watched({ ...leadscraper, ...stopped, group: "Watchers", level: "off", alert: null, summary: "Installed but not running", namespacedMb: null, memoryMb: null, history: null, processes: [] }),
@@ -317,29 +306,28 @@ export const watching: HostSnapshot = {
 };
 
 /**
- * Three apps unpinned (D32): N8 Commentary is stopped and WSL Memory runs,
+ * Three apps unpinned (D32): N8 Commentary is stopped and N8 Hotkeys runs,
  * both behind the "2 more" line; Lead Scraper is degraded and over its
  * warning, so it is in the main view until 30 s after that clears. The pinned
- * headline counts the two pinned apps; the level, N8's memory, `running` and
+ * headline counts the one pinned app; the level, N8's memory, `running` and
  * `total` count every app. The tooltip names what the main view shows.
  */
 const unpinned = (app: AppView, inMainView = false): AppView => ({ ...app, pinned: false, inMainView });
 export const pinned: HostSnapshot = {
   ...busy,
   reason: "Lead Scraper: Over its 1 GB warning",
-  running: 4,
-  total: 5,
-  ...pinnedCounts(2, 2, 5),
-  more: { count: 2, running: 1, memoryMb: 38, text: "2 more · 1 running, 38 MB" },
-  memory: { ...busy.memory, freeGb: 12.6, n8Mb: 805.9, text: "Windows 12.6/31.1 GB free · N8 806 MB" },
+  running: 3,
+  total: 4,
+  ...pinnedCounts(1, 1, 4),
+  more: { count: 2, running: 1, memoryMb: 24, text: "2 more · 1 running, 24 MB" },
+  memory: { n8Mb: 767.9, text: "N8 768 MB in all" },
   apps: [
     unpinned({ ...leadscraper, state: "degraded", words: "Ready, with a problem", summary: "Over its 1 GB warning" }, true),
-    hotkeys,
+    unpinned(hotkeys),
     voicedock,
-    unpinned({ ...wslmemory, memoryMb: 38, privateMb: 31 }),
     unpinned(commentary),
   ],
-  tooltip: "N8 Tray: Needs attention\nRunning: Lead Scraper, N8 Hotkeys, VoiceDock · 1 more running\nWindows 12.6/31.1 GB free · N8 806 MB",
+  tooltip: "N8 Tray: Needs attention\nRunning: Lead Scraper, VoiceDock · 1 more running\nN8 768 MB in all",
 };
 
 export const fixtures: Record<string, HostSnapshot> = { busy, healthy, trouble, empty, updating, updateFailed, watching, pinned };

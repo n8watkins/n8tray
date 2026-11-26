@@ -81,7 +81,6 @@ pub fn set_setting(key: &str, on: bool, app: Option<String>) -> Result<Command, 
     Ok(match (key, app) {
         ("launchAtSignIn", None) => Command::SetLaunchAtSignIn(on),
         ("notifications", None) => Command::SetNotifications(on),
-        ("memoryNotifications", None) => Command::SetMemoryNotifications(on),
         ("checkUpdates", None) => Command::SetCheckUpdates(on),
         ("betaUpdates", None) => {
             Command::SetUpdateChannel(if on { Channel::Beta } else { Channel::Stable })
@@ -265,6 +264,8 @@ mod tests {
         assert!(set_setting("enabled", true, None).is_err());
         assert!(set_setting("notifications", true, Some("voicedock".into())).is_err());
         assert!(set_setting("anything", true, None).is_err());
+        // The low-memory notification left with the PC's memory (D34).
+        assert!(set_setting("memoryNotifications", true, None).is_err());
     }
 
     /// The keys are the Tauri app's (app/src-tauri/src/commands.rs) plus
@@ -275,7 +276,6 @@ mod tests {
         let todays_host = [
             "launchAtSignIn",
             "notifications",
-            "memoryNotifications",
             "checkUpdates",
             "betaUpdates",
         ];
