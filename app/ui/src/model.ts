@@ -99,18 +99,6 @@ export function statusCard(s: HostSnapshot): { big: string; small: string } {
   return { big: running, small: n8 };
 }
 
-/** The memory meter: used share of the system's memory, and its words. */
-export function memoryMeter(s: HostSnapshot): { label: string; text: string; used: number; level: LevelName } | null {
-  const { freeGb, totalGb } = s.memory;
-  if (freeGb === null || totalGb === null || totalGb <= 0) return null;
-  return {
-    label: s.memory.system,
-    text: `${freeGb.toFixed(1)} / ${totalGb.toFixed(1)} GB free`,
-    used: Math.min(1, Math.max(0, 1 - freeGb / totalGb)),
-    level: s.memory.level,
-  };
-}
-
 /**
  * Points of a sparkline or chart: values scaled into a w x h box, from
  * index `from` on (earlier steps keep their place on the time axis).

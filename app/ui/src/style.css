@@ -115,9 +115,6 @@ button { font: inherit; color: inherit; }
 .status .big { font-weight: 600; }
 .status .small { color: var(--muted); font-size: 12px; }
 .status .more { color: var(--muted); font-size: 12px; align-self: center; }
-.meters { display: flex; gap: 14px; grid-column: 1 / -1; margin-top: 6px; }
-.meter { flex: 1; min-width: 0; }
-.meter .label { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--muted); }
 .bar { height: 4px; border-radius: 2px; background: var(--track); margin-top: 4px; overflow: hidden; }
 .bar > i { display: block; height: 100%; border-radius: 2px; background: var(--ok); }
 .bar.attention > i { background: var(--attention); }

@@ -14,7 +14,6 @@ import {
   hasHistory,
   hubApps,
   levelWords,
-  memoryMeter,
   rowAction,
   rowFigures,
   rowLine,
@@ -51,7 +50,6 @@ export function CloseButton() {
 export function Hub({ snapshot, go }: { snapshot: HostSnapshot; go: Go }) {
   const apps = hubApps(snapshot);
   const card = statusCard(snapshot);
-  const meter = memoryMeter(snapshot);
   let row = 0;
   return (
     <div class="flyout-inner">
@@ -67,19 +65,6 @@ export function Hub({ snapshot, go }: { snapshot: HostSnapshot; go: Go }) {
           </span>
         </span>
         <span class="more">Details</span>
-        {meter && (
-          <span class="meters" aria-hidden="true">
-            <span class="meter">
-              <span class="label">
-                <span>{meter.label}</span>
-                <span>{meter.text}</span>
-              </span>
-              <span class={`bar ${meter.level}`} style={{ display: "block" }}>
-                <i style={{ width: `${Math.round(meter.used * 100)}%` }} />
-              </span>
-            </span>
-          </span>
-        )}
       </button>
       <div class="list" role="group" aria-label="Apps">
         {apps.length === 0 && <p class="empty">No apps yet. An app appears here once it installs its manifest.</p>}

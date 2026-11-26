@@ -254,3 +254,12 @@ N8 Tray reads it at start and watches the key with `RegNotifyChangeKeyValue` on 
 The `WM_SETTINGCHANGE` "ImmersiveColorSet" broadcast was the other way; Tauri does not pass the tray's hidden window's messages on, so it would need a window of our own just to receive one message.
 macOS and Linux keep the dark-taskbar art until they get a signal of their own.
 The level dot over it (`badge.rs`) shows only on trouble (owner, 2026-11-25): healthy is the logo alone, because the dot covers most of the 8; amber, red and grey are as before, on either art.
+
+## D31. The status card no longer shows the system's memory (2026-11-25)
+
+The status card at the top of the window had a "Windows 8.9 / 31.1 GB free" row with a bar under its headline.
+The owner asked for it gone, because Pulse, his system monitor, now shows the PC's memory.
+The card keeps its headline, the "N8 ... MB in all" line (N8's own apps, not the system) and "Details".
+Only the row and its meter were removed from the interface (`memoryMeter`, its markup and its styles).
+The system memory reading itself stays, since it still feeds the status level and its "Low memory" reason, the low-memory notification, the tray tooltip, the status report and the free and total figures in "Details".
+Per-app memory is untouched.
