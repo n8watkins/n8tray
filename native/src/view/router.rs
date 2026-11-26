@@ -451,6 +451,33 @@ mod tests {
             );
             let view = read(&format!("views/{name}.slint"));
             assert!(star(&view).is_empty(), "{name}.slint");
+            // Every exported type starts with the view's name (`AllApps...`),
+            // so two lanes never export the same name through the chain
+            // (Slint only warns when they do, and Rust then sees one).
+            let prefix: String = name
+                .split('-')
+                .map(|w| w[..1].to_uppercase() + &w[1..])
+                .collect();
+            let mut names = Vec::new();
+            for line in model.lines() {
+                let line = line.trim_start();
+                for kind in ["export struct ", "export enum ", "export global "] {
+                    if let Some(rest) = line.strip_prefix(kind) {
+                        let type_name: String = rest
+                            .chars()
+                            .take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+                            .collect();
+                        names.push(type_name);
+                    }
+                }
+            }
+            assert!(!names.is_empty(), "{name}-model.slint exports nothing");
+            for type_name in names {
+                assert!(
+                    type_name.starts_with(&prefix),
+                    "{name}-model.slint exports {type_name}: its types start with {prefix}"
+                );
+            }
         }
     }
 }
