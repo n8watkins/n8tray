@@ -1,4 +1,4 @@
-//! What the tray menu and, in later lanes, the window may ask for, as plain
+//! What the tray menu and the window (`view::intent`) may ask for, as plain
 //! functions with the Tauri app's validation (app/src-tauri/src/commands.rs).
 //! The window only ever passes ids and keys, never a path, a URL or a
 //! command line: each function turns them into a host command or into a
@@ -73,10 +73,6 @@ pub fn open_item(
 }
 
 /// One setting. `key` is one of a fixed list; app settings name the app.
-#[allow(
-    dead_code,
-    reason = "the window's settings view calls it (a later lane)"
-)]
 pub fn set_setting(key: &str, on: bool, app: Option<String>) -> Result<Command, String> {
     Ok(match (key, app) {
         ("launchAtSignIn", None) => Command::SetLaunchAtSignIn(on),
@@ -96,10 +92,6 @@ pub fn set_setting(key: &str, on: bool, app: Option<String>) -> Result<Command, 
 }
 
 /// Reloads the settings file, or checks for an update now.
-#[allow(
-    dead_code,
-    reason = "the window's settings view calls it (a later lane)"
-)]
 pub fn host_command(name: &str) -> Result<Command, String> {
     match name {
         "reloadSettings" => Ok(Command::ReloadSettings),

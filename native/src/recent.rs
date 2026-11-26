@@ -18,10 +18,6 @@ const KEEP: usize = 20;
 static RECENT: Mutex<VecDeque<WarningView>> = Mutex::new(VecDeque::new());
 
 /// The kept warnings, newest first.
-#[allow(
-    dead_code,
-    reason = "the window's status details show them (a later lane)"
-)]
 pub fn list() -> Vec<WarningView> {
     RECENT.lock().unwrap().iter().rev().cloned().collect()
 }

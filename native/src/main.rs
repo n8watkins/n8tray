@@ -19,6 +19,7 @@ mod life;
 mod logs;
 mod open;
 mod recent;
+mod report;
 mod shell;
 mod tray;
 mod view;

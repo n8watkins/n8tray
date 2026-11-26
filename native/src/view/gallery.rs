@@ -561,11 +561,27 @@ pub mod tests {
         }
     }
 
+    /// Presses a key in a headless gallery and draws.
+    fn press(headed: &Headed, k: slint::platform::Key) {
+        use slint::platform::WindowEvent;
+        let text: SharedString = k.into();
+        headed
+            .window
+            .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+        headed
+            .window
+            .dispatch_event(WindowEvent::KeyReleased { text });
+        draw(headed, 1.0).unwrap();
+    }
+
     /// The keyboard focus follows the app, not the position, when its list
     /// is reordered (`list::sync` and `rows::refocus`), and the armed state
-    /// stays on its app.
+    /// stays on its app. As in the window, the sync and the refocus happen
+    /// in the same turn, before any layout, and the focused row is one that
+    /// `sync` moved: its widgets are new, created only at the next layout.
     #[test]
     fn focus_and_the_armed_state_follow_the_app_through_a_reorder() {
+        use slint::platform::Key;
         let headed = headed(Look::Light, "list", Font::Test).unwrap();
         let snapshot = busy();
         let mut apps: Vec<_> = snapshot
@@ -574,6 +590,7 @@ pub mod tests {
             .filter(|a| format::row_action(a).is_some())
             .cloned()
             .collect();
+        assert!(apps.len() >= 3);
         let mut confirms = Confirms::default();
         let now = Instant::now();
         let rows_of = |apps: &[n8tray_core::model::AppView], c: &Confirms| -> Vec<RowData> {
@@ -586,16 +603,19 @@ pub mod tests {
         set_live_rows(&headed.ui, &model);
         draw(&headed, 1.0).unwrap();
 
-        let a = apps[0].id.clone();
-        let stop = format::row_action(&apps[0]).unwrap().id.clone();
-        confirms.press(confirm::key(&a, &stop, None), true, now);
+        // The last row, D: reversing the list moves it to the top, so `sync`
+        // takes it out and puts it back (the others shift in place).
+        let last = apps.len() - 1;
+        let d = apps[last].id.clone();
+        let stop = format::row_action(&apps[last]).unwrap().id.clone();
+        confirms.press(confirm::key(&d, &stop, None), true, now);
         let focus = headed.ui.global::<RowFocus>();
-        focus.invoke_to_id(a.as_str().into(), 1);
+        focus.invoke_to_id(d.as_str().into(), 1);
         draw(&headed, 1.0).unwrap();
         assert_eq!(
             focus.get_focused_id(),
-            a.as_str(),
-            "the action of A has the focus"
+            d.as_str(),
+            "the action of D has the focus"
         );
         assert_eq!(focus.get_focused_part(), 1);
 
@@ -603,21 +623,29 @@ pub mod tests {
         apps.reverse();
         let synced = list::sync(&model, rows_of(&apps, &confirms), |r| r.id.clone());
         assert!(synced.moved);
-        draw(&headed, 1.0).unwrap();
         rows::refocus(&focus, &before);
         draw(&headed, 1.0).unwrap();
         assert_eq!(
             focus.get_focused_id(),
-            a.as_str(),
-            "the focus is on A again"
+            d.as_str(),
+            "the focus is on D again, in its new place"
         );
         assert_eq!(focus.get_focused_part(), 1);
+        assert!(!focus.get_pending(), "the new row took the request");
         let armed: Vec<String> = model
             .iter()
             .filter(|r| r.armed)
             .map(|r| r.id.to_string())
             .collect();
-        assert_eq!(armed, std::slice::from_ref(&a));
+        assert_eq!(armed, std::slice::from_ref(&d));
+
+        // The arrow keys go on from D's new place: the row under it is the
+        // one that was above it.
+        press(&headed, Key::DownArrow);
+        assert_eq!(focus.get_focused_id(), apps[1].id.as_str());
+        assert_eq!(focus.get_focused_part(), 1, "the same part");
+        press(&headed, Key::UpArrow);
+        assert_eq!(focus.get_focused_id(), d.as_str());
 
         // A refresh in the same order keeps both.
         let before = rows::focused(&focus);
@@ -625,7 +653,7 @@ pub mod tests {
         assert!(!synced.moved);
         rows::refocus(&focus, &before);
         draw(&headed, 1.0).unwrap();
-        assert_eq!(focus.get_focused_id(), a.as_str());
+        assert_eq!(focus.get_focused_id(), d.as_str());
         headed.ui.hide().unwrap();
     }
 
@@ -633,7 +661,7 @@ pub mod tests {
     /// keyboard.ts does.
     #[test]
     fn arrow_keys_move_between_rows_and_parts() {
-        use slint::platform::{Key, WindowEvent};
+        use slint::platform::Key;
         let headed = headed(Look::Light, "list", Font::Test).unwrap();
         let snapshot = busy();
         let apps: Vec<_> = snapshot
@@ -661,16 +689,7 @@ pub mod tests {
         let focus = headed.ui.global::<RowFocus>();
         focus.invoke_to_index(0, 0);
         draw(&headed, 1.0).unwrap();
-        let key = |k: Key| {
-            let text: SharedString = k.into();
-            headed
-                .window
-                .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
-            headed
-                .window
-                .dispatch_event(WindowEvent::KeyReleased { text });
-            draw(&headed, 1.0).unwrap();
-        };
+        let key = |k: Key| press(&headed, k);
         assert_eq!(focus.get_focused_id(), apps[0].id.as_str());
         key(Key::DownArrow);
         assert_eq!(focus.get_focused_id(), apps[1].id.as_str());

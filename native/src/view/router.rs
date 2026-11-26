@@ -121,17 +121,23 @@ impl Router {
         self.app.as_deref()
     }
 
-    /// Opens a view; `id` names the app of a panel or of a history.
-    pub fn go(&mut self, view: View, id: &str) {
-        if view == self.view && self.app.as_deref() == Some(id).filter(|i| !i.is_empty()) {
-            return;
+    /// Opens a view; `id` names the app of a panel or of a history. True
+    /// when the view changed (the window then moves the focus to its top).
+    pub fn go(&mut self, view: View, id: &str) -> bool {
+        let app = (!id.is_empty()).then(|| id.to_string());
+        if view == self.view && app == self.app {
+            return false;
         }
         self.back.push((self.view, self.app.take()));
         if view == View::Hub {
             self.back.clear();
         }
         self.view = view;
-        self.app = (!id.is_empty()).then(|| id.to_string());
+        self.app = app;
+        // Armed actions belong to the view that armed them (today's
+        // ActionButton keeps its state in the view).
+        self.confirms.clear();
+        true
     }
 
     /// Back to the view before (the hub when there is none).
@@ -139,6 +145,7 @@ impl Router {
         let (view, app) = self.back.pop().unwrap_or((View::Hub, None));
         self.view = view;
         self.app = app;
+        self.confirms.clear();
     }
 
     /// Escape: back, or in the hub hide the window (today's window).
@@ -151,19 +158,69 @@ impl Router {
         }
     }
 
-    /// A new window starts at the hub (the old one was dropped).
-    pub fn reset(&mut self) {
-        *self = Router {
-            confirms: std::mem::take(&mut self.confirms),
-            icons: Icons::default(),
-            ..Router::default()
-        };
+    /// The window opens on `view` (the hub on every open by the tray icon,
+    /// the status details from the tray's status line), with nothing to go
+    /// back to but the hub, and nothing armed.
+    pub fn open_at(&mut self, view: View, id: &str) {
+        self.view = view;
+        self.app = (!id.is_empty()).then(|| id.to_string());
+        self.back.clear();
         self.confirms.clear();
     }
 
-    /// Fills the view that shows from the snapshot and sets `Nav.view`.
-    pub fn fill(&mut self, ui: &dyn Models, snapshot: &HostSnapshot) {
+    /// A new window (the old one was dropped): its icons are loaded again and
+    /// nothing is armed. The view stays the one `open_at` chose.
+    pub fn new_window(&mut self) {
+        self.icons = Icons::default();
+        self.confirms.clear();
+    }
+
+    /// The snapshot no longer has an app the router remembers: a panel (or
+    /// one app's history) whose app is gone falls back to the hub, as today
+    /// (`main.tsx` shows the hub for a panel without its app), and the way
+    /// back forgets views of gone apps. True when the view changed.
+    pub fn forget_gone(&mut self, snapshot: &HostSnapshot) -> bool {
+        let exists = |app: &Option<String>| match app {
+            None => true,
+            Some(id) => id == "n8tray" || snapshot.apps.iter().any(|a| &a.id == id),
+        };
+        self.back.retain(|(_, app)| exists(app));
+        // Two entries that were apart may now be the same view in a row.
+        self.back.dedup();
+        if exists(&self.app) {
+            return false;
+        }
+        self.open_at(View::Hub, "");
+        true
+    }
+
+    /// The title a screen reader hears when the view opens (the title bar's
+    /// words; `Nav.title`).
+    pub fn title(&self, snapshot: &HostSnapshot) -> String {
+        match self.view {
+            View::Hub => "N8 Tray".into(),
+            View::AllApps => "All apps".into(),
+            View::Panel => self
+                .app
+                .as_deref()
+                .and_then(|id| snapshot.apps.iter().find(|a| a.id == id))
+                .map(|a| a.name.clone())
+                .unwrap_or_default(),
+            View::Details => "Status details".into(),
+            View::Settings => "Settings".into(),
+            View::About => "About N8 Tray".into(),
+            View::History => "Resource history".into(),
+        }
+    }
+
+    /// Fills the view that shows from the snapshot and sets `Nav.view` and
+    /// `Nav.title`. A view whose app left the snapshot falls back first
+    /// (`forget_gone`); true then, so the window moves the focus to the
+    /// new view's top.
+    pub fn fill(&mut self, ui: &dyn Models, snapshot: &HostSnapshot) -> bool {
+        let fell_back = self.forget_gone(snapshot);
         ui.nav().set_view(self.view);
+        ui.nav().set_title(self.title(snapshot).into());
         let app = self.app.clone();
         let mut ctx = Ctx {
             snapshot,
@@ -173,6 +230,7 @@ impl Router {
             now: Instant::now(),
         };
         fill_view(self.view, ui, &mut ctx);
+        fell_back
     }
 }
 

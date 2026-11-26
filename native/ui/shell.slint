@@ -2,7 +2,8 @@
 // showing one view at a time, as Nav says, with the tooltip layer over it.
 // Rust (`window.rs`, `view::router`) sizes it to `content-height` up to the
 // height-limit setting (the view's scroll area then scrolls), places it,
-// applies the theme on every reveal, and drops it 10 s after it hides.
+// applies the theme, Compact and the height limit on every fill and reveal,
+// and drops it 10 s after it hides.
 import { Theme, TooltipLayer } from "widgets.slint";
 import { Nav, View } from "nav.slint";
 import { HubView } from "views/hub.slint";
@@ -16,6 +17,8 @@ import { HistoryView } from "views/history.slint";
 export component FlyoutWindow inherits Window {
     // The height the view wants, in logical pixels.
     out property <length> content-height: frame.preferred-height;
+    // The view's top has the keyboard focus (tests read it).
+    out property <bool> top-focused: top.has-focus;
 
     title: "N8 Tray";
     no-frame: true;
@@ -23,6 +26,22 @@ export component FlyoutWindow inherits Window {
     background: Theme.bg;
     default-font-size: Theme.text-body;
     default-font-family: Theme.font-family;
+
+    // A new view puts the keyboard focus here, at its top, as today's window
+    // focuses the flyout itself (`main.tsx`): a screen reader says the
+    // view's title, and Tab goes on to the view's first control.
+    public function focus-top() {
+        top.focus();
+    }
+
+    top := FocusScope {
+        x: 0;
+        y: 0;
+        width: 0;
+        height: 0;
+        accessible-role: groupbox;
+        accessible-label: Nav.title;
+    }
 
     frame := VerticalLayout {
         if Nav.view == View.hub: HubView { }
