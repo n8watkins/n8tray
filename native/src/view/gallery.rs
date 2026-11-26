@@ -23,7 +23,7 @@ use super::format;
 use super::icons::Icons;
 use super::router::{self, Ctx, Models};
 use super::theme::{self, Choice, NIGHT_SKY};
-use crate::ui::{Gallery, RowData, View};
+use crate::ui::{Gallery, View};
 
 /// The widget families and the views, as the gallery's `only` names them.
 /// Each has its own folder of golden images.
@@ -382,7 +382,8 @@ pub fn write_pngs(folder: &Path, scale: f32) -> Result<usize, String> {
 }
 
 /// Rows for the "list" page (the focus test).
-pub fn set_live_rows(ui: &Gallery, model: &Rc<VecModel<RowData>>) {
+#[cfg(test)]
+pub fn set_live_rows(ui: &Gallery, model: &Rc<VecModel<crate::ui::RowData>>) {
     ui.set_live_rows(ModelRc::from(model.clone()));
 }
 
@@ -403,7 +404,7 @@ pub mod tests {
     use slint::Model;
 
     use super::*;
-    use crate::ui::RowFocus;
+    use crate::ui::{RowData, RowFocus};
     use crate::view::confirm;
     use crate::view::list;
     use crate::view::rows;

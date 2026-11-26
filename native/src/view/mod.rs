@@ -10,14 +10,22 @@
 //! Views (one lane each, one module each): `hub`, `all_apps`, `panel`,
 //! `details`, `settings`, `about`, `history`.
 
+// The kit is written ahead of the views that use it: until each view lane
+// lands, parts of it have no caller outside the tests.
+#[allow(dead_code, reason = "the kit for the view lanes")]
 pub mod action;
+#[allow(dead_code, reason = "the kit for the view lanes")]
 pub mod confirm;
 pub mod format;
 #[cfg(any(debug_assertions, test))]
 pub mod gallery;
+#[allow(dead_code, reason = "the kit for the view lanes")]
 pub mod icons;
+#[allow(dead_code, reason = "the kit for the view lanes")]
 pub mod list;
+#[allow(dead_code, reason = "the kit for the view lanes")]
 pub mod router;
+#[allow(dead_code, reason = "the kit for the view lanes")]
 pub mod rows;
 pub mod theme;
 

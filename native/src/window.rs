@@ -23,7 +23,7 @@ use tracing::{info, warn};
 use crate::life::{Life, Step, WhenHidden};
 use crate::ui::{FlyoutWindow, Nav, Theme, View};
 use crate::view::confirm::{self, Press};
-use crate::view::router::{self, Escape, Models, Router};
+use crate::view::router::{self, Escape, Router};
 
 /// How long a hidden window is kept before it is dropped (D17).
 pub const KEEP_HIDDEN: Duration = Duration::from_secs(10);
@@ -49,6 +49,7 @@ pub struct Hub {
     retire: slint::Timer,
     trim: slint::Timer,
     /// Fires when an armed action stops waiting for its second click.
+    #[allow(dead_code, reason = "the views that run actions come with their lanes")]
     disarm: slint::Timer,
     host: Option<Sender<Command>>,
     /// Which view shows, the armed actions and the icons.
@@ -115,6 +116,7 @@ impl Hub {
     /// runs, or it is armed for a second click when it asks to confirm. The
     /// armed state is the router's, by app and action, so it survives a
     /// refresh or a reordered list.
+    #[allow(dead_code, reason = "the views that run actions come with their lanes")]
     pub fn press_action(&mut self, app: &str, action: &str, component: Option<&str>) {
         let Some(found) = self
             .latest
@@ -144,6 +146,7 @@ impl Hub {
     }
 
     /// Fills again when the next armed action stops waiting.
+    #[allow(dead_code, reason = "the views that run actions come with their lanes")]
     fn arm_disarm(&mut self, now: Instant) {
         if let Some(at) = self.router.confirms.next_expiry() {
             self.disarm.start(

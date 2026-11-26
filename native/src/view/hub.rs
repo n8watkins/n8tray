@@ -5,7 +5,7 @@
 
 use std::rc::Rc;
 
-use n8tray_core::model::{HostSnapshot, LevelName};
+use n8tray_core::model::HostSnapshot;
 use slint::{ModelRc, SharedString, VecModel};
 
 use super::format;
@@ -43,6 +43,8 @@ pub fn wire(_ui: &dyn Models) {}
 
 #[cfg(test)]
 mod tests {
+    use n8tray_core::model::LevelName;
+
     use super::*;
     use crate::tests::fixture;
 
