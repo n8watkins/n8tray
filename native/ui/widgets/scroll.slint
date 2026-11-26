@@ -1,0 +1,128 @@
+// The scrolling part of the window (`.flyout-body`, `scrollbar-width:
+// thin`): its children are stacked; it is as tall as they are until the
+// window's height limit, then only it scrolls. Its thin scrollbar is hidden
+// at rest and shows while the mouse is over the list or it scrolls
+// (approved 2026-11-26), widening under the mouse as WebView2's overlay
+// scrollbar does.
+//
+// The control that takes the keyboard focus inside it is scrolled into
+// view. Controls of the title bar and the bottom bar never ask
+// (`reveal: false`), and a request from outside the content is ignored.
+import { Theme } from "../theme.slint";
+import { Reveal } from "base.slint";
+
+export component ScrollArea {
+    // The height the children want; the window is sized from it.
+    out property <length> content-height: inner.preferred-height;
+    // How far it is scrolled, from 0 down.
+    out property <length> scrolled: -fl.content-y;
+    property <length> maximum: max(0px, root.content-height - root.height);
+    property <bool> overflows: root.maximum > 0.5px;
+    // Shown: the mouse is over the list, or it scrolled a moment ago.
+    property <bool> active: area.has-hover || root.scrolling || root.demo-scrollbar;
+    property <bool> scrolling;
+    in property <bool> demo-scrollbar;
+    in property <bool> demo-scrollbar-hover;
+
+    accessible-role: none;
+    preferred-height: root.content-height;
+    min-height: 0px;
+    vertical-stretch: 1;
+
+    area := TouchArea {
+        // Hover only: clicks are the content's.
+        width: root.width;
+        height: root.height;
+
+        fl := Flickable {
+            width: root.width;
+            height: root.height;
+            content-width: root.width;
+            content-height: max(root.height, root.content-height);
+
+            inner := VerticalLayout {
+                width: root.width;
+                alignment: start;
+                @children
+            }
+        }
+    }
+
+    // It scrolled: show the bar for a moment.
+    property <length> offset: fl.content-y;
+    changed offset => {
+        root.scrolling = true;
+        settle.restart();
+    }
+    settle := Timer {
+        interval: 800ms;
+        running: false;
+        triggered => {
+            root.scrolling = false;
+            self.stop();
+        }
+    }
+
+    // A control in the content took the focus: bring it into view.
+    property <int> reveal: Reveal.serial;
+    changed reveal => {
+        if !root.overflows {
+            return;
+        }
+        // Its position already includes the scrolling: it is in the content
+        // when it lies within the content's whole height.
+        let content-top = inner.absolute-position.y;
+        if Reveal.top < content-top || Reveal.bottom > content-top + inner.height {
+            return;
+        }
+        let view-top = fl.absolute-position.y;
+        if Reveal.top < view-top {
+            fl.content-y = min(0px, fl.content-y + (view-top - Reveal.top));
+        } else if Reveal.bottom > view-top + root.height {
+            fl.content-y = max(-root.maximum, fl.content-y - (Reveal.bottom - view-top - root.height));
+        }
+    }
+
+    // The scrollbar: a 2 px line, 6 px on a soft track under the mouse; the
+    // thumb can be dragged.
+    if root.overflows: bar := Rectangle {
+        property <bool> wide: bar-ta.has-hover || bar-ta.pressed || root.demo-scrollbar-hover;
+        property <length> track: root.height - 4px;
+        property <length> thumb-height: max(16px, self.track * root.height / root.content-height);
+        x: root.width - Theme.scrollbar - 2px;
+        y: 2px;
+        width: Theme.scrollbar;
+        height: self.track;
+        border-radius: Theme.scrollbar / 2;
+        background: self.wide && !Theme.contrast ? Theme.hover : transparent;
+        opacity: root.active || self.wide ? 1 : 0;
+        animate opacity { duration: 150ms; }
+
+        thumb := Rectangle {
+            width: bar.wide ? Theme.scrollbar : 2px;
+            x: parent.width - self.width - (bar.wide ? 0px : 1px);
+            height: bar.thumb-height;
+            y: root.maximum > 0 ? (bar.track - self.height) * (-fl.content-y / root.maximum) : 0px;
+            border-radius: self.width / 2;
+            background: Theme.contrast ? Theme.system.canvas-text : Theme.faint.with-alpha(bar.wide ? 0.7 : 0.5);
+            animate width, x { duration: 150ms; easing: ease-out; }
+        }
+
+        bar-ta := TouchArea {
+            property <length> start-offset;
+            property <length> start-y;
+            pointer-event(event) => {
+                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                    self.start-offset = -fl.content-y;
+                    self.start-y = self.mouse-y;
+                }
+            }
+            moved => {
+                if self.pressed && bar.track > bar.thumb-height {
+                    let wanted = self.start-offset + (self.mouse-y - self.start-y) * root.maximum / (bar.track - bar.thumb-height);
+                    fl.content-y = -max(0px, min(root.maximum, wanted));
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,352 @@
+// The panels' and the details' building blocks: a paragraph block
+// (`.say`), a wrapping row of buttons (`.actions-row`), a component's row
+// with its buttons (`.comp`), the two-column grid of things to open
+// (`.opens`), a key-value list (`.kv`), a list of warnings (`.warnings`)
+// and a table (`table`).
+import { Theme, Level, Tone } from "../theme.slint";
+import { Glyph, GlyphName, Label, TipArea, WrapLabel } from "base.slint";
+import { LinkButton } from "buttons.slint";
+import { Tag } from "status.slint";
+
+// A block of short paragraphs (`.say`: 12px, muted, 3 px apart). Put
+// `SayLine`s in it.
+export component Say inherits VerticalLayout {
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 2px;
+    padding-bottom: 10px;
+    spacing: 3px;
+}
+
+// One paragraph of a `Say`: muted, or coloured by tone; it wraps.
+export component SayLine inherits WrapLabel {
+    in property <Tone> tone: Tone.normal;
+    font-size: Theme.text-small;
+    color: Theme.tone-color(root.tone);
+    accessible-role: AccessibleRole.text;
+    accessible-label: self.text;
+}
+
+// A row of buttons that wraps (`.actions-row`: 6 px apart, padding 4px
+// 12px 10px). Put `SmallButton`s in it.
+export component ActionsRow inherits FlexboxLayout {
+    spacing: 6px;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 4px;
+    padding-bottom: 10px;
+}
+
+// A component of an app (`.comp`): its name and what it does at the left,
+// its memory at the right, its buttons under them (put `SmallButton`s as
+// children). `first` leaves out the line above it.
+export component ComponentRow {
+    in property <string> name;
+    in property <string> line;
+    in property <Tone> tone: Tone.normal;
+    in property <string> memory;
+    in property <bool> first;
+    accessible-role: groupbox;
+    accessible-label: root.name;
+    min-height: l.preferred-height;
+
+    if !root.first: Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.line;
+    }
+
+    l := VerticalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        spacing: 4px;
+
+        HorizontalLayout {
+            spacing: 10px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                Label {
+                    text: root.name;
+                    font-weight: Theme.weight-bold;
+                }
+                WrapLabel {
+                    text: root.line;
+                    font-size: Theme.text-small;
+                    color: Theme.tone-color(root.tone);
+                }
+            }
+            if root.memory != "": VerticalLayout {
+                alignment: center;
+                Text {
+                    text: root.memory;
+                    font-size: Theme.text-small;
+                    font-weight: Theme.weight-bold;
+                    color: Theme.fg;
+                    horizontal-alignment: right;
+                    min-width: 50px;
+                    accessible-role: none;
+                }
+            }
+        }
+        FlexboxLayout {
+            spacing: 4px;
+            @children
+        }
+    }
+}
+
+// Something a panel opens: a file, a folder, a page or one of its menu
+// items. `enabled` is false while it is not there yet.
+export struct OpenItem {
+    key: string,
+    glyph: GlyphName,
+    text: string,
+    tooltip: string,
+    enabled: bool,
+}
+
+// The two-column grid of links (`.opens`: padding 4px, 2 px apart).
+export component OpenLinks {
+    in property <[OpenItem]> items;
+    property <length> cell: (root.width - 8px - 2px) / 2;
+    property <length> row-height: 29.5px;
+    callback open(key: string);
+
+    accessible-role: none;
+    height: 8px + ceil(root.items.length / 2) * root.row-height + max(0, ceil(root.items.length / 2) - 1) * 2px;
+
+    for item[i] in root.items: LinkButton {
+        x: 4px + mod(i, 2) * (root.cell + 2px);
+        y: 4px + floor(i / 2) * (root.row-height + 2px);
+        width: root.cell;
+        height: root.row-height;
+        glyph: item.glyph;
+        text: item.text;
+        tooltip: item.tooltip;
+        enabled: item.enabled;
+        clicked => {
+            root.open(item.key);
+        }
+    }
+}
+
+// One key and its value.
+export struct KeyValue {
+    key: string,
+    value: string,
+}
+
+// A list of keys and values (`.kv`: keys faint in a column as wide as the
+// widest, values wrapping; 12px).
+export component KeyValues inherits VerticalLayout {
+    in property <[KeyValue]> items;
+    padding-left: 12px;
+    padding-right: 12px;
+    // 4px, less the 3 px after the hidden measure.
+    padding-top: 1px;
+    padding-bottom: 10px;
+    spacing: 3px;
+
+    // The keys' column is as wide as the widest key (measured here, not
+    // shown); values wrap beside it.
+    keys := GridLayout {
+        visible: false;
+        height: 0px;
+        for item in root.items: Row {
+            Text {
+                text: item.key;
+                font-size: Theme.text-small;
+                accessible-role: none;
+            }
+        }
+    }
+
+    for item in root.items: HorizontalLayout {
+        spacing: 12px;
+        Text {
+            text: item.key;
+            width: keys.preferred-width;
+            font-size: Theme.text-small;
+            color: Theme.faint;
+            vertical-alignment: top;
+            height: self.font-size * Theme.line-height;
+            accessible-role: AccessibleRole.text;
+            accessible-label: item.key + ": " + item.value;
+        }
+        WrapLabel {
+            text: item.value;
+            font-size: Theme.text-small;
+            horizontal-stretch: 1;
+            wrap: char-wrap;
+        }
+    }
+}
+
+// A warning from the log: its time ("18:02") and message.
+export struct WarningItem {
+    time: string,
+    text: string,
+    error: bool,
+}
+
+// A list of warnings (`.warnings`: a 40 px time column, then the message;
+// errors in the problem colour).
+export component WarningList inherits VerticalLayout {
+    in property <[WarningItem]> items;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 4px;
+    padding-bottom: 10px;
+    spacing: 4px;
+
+    for item in root.items: HorizontalLayout {
+        spacing: 6px;
+        accessible-role: AccessibleRole.text;
+        accessible-label: (item.time != "" ? item.time + ": " : "") + item.text;
+        Text {
+            text: item.time;
+            width: 40px;
+            font-size: Theme.text-small;
+            color: Theme.faint;
+            vertical-alignment: top;
+            accessible-role: none;
+        }
+        WrapLabel {
+            text: item.text;
+            font-size: Theme.text-small;
+            color: item.error ? Theme.problem : Theme.muted;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+// A table's column: its title (empty for a screen-reader-only one), right
+// aligned when it holds numbers.
+export struct TableColumn {
+    title: string,
+    numeric: bool,
+}
+
+// A table row: one text per column; the first may have a faint `small`
+// after it, and a `tag` (a process's verdict) replaces the last cell. Slint
+// has no table roles, so `label` carries the column names for a screen
+// reader ("Process voicedock-hub, Memory 643 MB, ..."; `view::table`).
+export struct TableRow {
+    cells: [string],
+    small: string,
+    tag: string,
+    tag-level: Level,
+    tooltip: string,
+    label: string,
+}
+
+component Cell {
+    in property <string> text;
+    in property <string> small;
+    in property <string> tag;
+    in property <Level> tag-level;
+    in property <bool> numeric;
+    in property <bool> first;
+    in property <bool> last;
+    in property <bool> header;
+    in property <string> tooltip;
+    in property <string> label;
+    accessible-role: none;
+    min-width: l.preferred-width;
+    min-height: l.preferred-height;
+
+    if !root.header: Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.line;
+    }
+    if root.tooltip != "": TipArea {
+        tooltip: root.tooltip;
+    }
+    // The row's words for a screen reader, on its first cell.
+    if root.label != "": Rectangle {
+        accessible-role: AccessibleRole.text;
+        accessible-label: root.label;
+    }
+
+    l := HorizontalLayout {
+        padding-left: root.first ? 12px : 6px;
+        padding-right: root.last ? 10px : 6px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        spacing: 4px;
+        alignment: root.numeric ? LayoutAlignment.end : LayoutAlignment.start;
+
+        if root.tag == "": Text {
+            text: root.text;
+            font-size: Theme.text-pill;
+            font-weight: root.header ? Theme.weight-bold : Theme.weight-normal;
+            color: root.header ? Theme.faint : root.first ? Theme.fg : Theme.muted;
+            horizontal-alignment: root.numeric ? right : left;
+            height: self.font-size * Theme.line-height;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        if root.small != "": Text {
+            // `<small>`: a size smaller.
+            text: root.small;
+            font-size: Theme.text-pill * 0.833;
+            color: Theme.faint;
+            height: Theme.text-pill * Theme.line-height;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        if root.tag != "": VerticalLayout {
+            alignment: start;
+            Tag {
+                level: root.tag-level;
+                text: root.tag;
+            }
+        }
+    }
+}
+
+// A table (`table`: 11.5px, the header faint and bold, a line above each
+// row, numbers right-aligned, 6 px after the last row). The first column
+// takes the room left over.
+export component Table inherits VerticalLayout {
+    in property <[TableColumn]> columns;
+    in property <[TableRow]> rows;
+    in property <string> label;
+    accessible-role: table;
+    accessible-label: root.label;
+
+    GridLayout {
+        Row {
+            for column[j] in root.columns: Cell {
+                header: true;
+                text: column.title;
+                numeric: column.numeric;
+                first: j == 0;
+                last: j == root.columns.length - 1;
+                horizontal-stretch: j == 0 ? 1 : 0;
+            }
+        }
+        for row in root.rows: Row {
+            for cell[j] in row.cells: Cell {
+                text: cell;
+                small: j == 0 ? row.small : "";
+                tag: j == root.columns.length - 1 ? row.tag : "";
+                tag-level: row.tag-level;
+                numeric: root.columns[j].numeric;
+                first: j == 0;
+                last: j == root.columns.length - 1;
+                tooltip: row.tooltip;
+                label: j == 0 ? row.label : "";
+                horizontal-stretch: j == 0 ? 1 : 0;
+            }
+        }
+    }
+    // `.table-end`
+    Rectangle {
+        height: 6px;
+    }
+}

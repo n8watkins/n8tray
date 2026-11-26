@@ -1,0 +1,28 @@
+// Status details (lane: details). A stub until that lane lands; it owns
+// this file and `src/view/details.rs`.
+import { TitleBar, ScrollArea, Say, SayLine } from "../widgets.slint";
+import { Nav } from "../nav.slint";
+
+export global DetailsModel {
+    in-out property <string> note: "Status details come with their own lane.";
+}
+
+export component DetailsView inherits VerticalLayout {
+    TitleBar {
+        title: "Status details";
+        back: true;
+        back-clicked => {
+            Nav.back();
+        }
+        close-clicked => {
+            Nav.close();
+        }
+    }
+    ScrollArea {
+        Say {
+            SayLine {
+                text: DetailsModel.note;
+            }
+        }
+    }
+}

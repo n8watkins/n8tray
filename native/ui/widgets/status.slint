@@ -1,0 +1,183 @@
+// What shows a state: the level pill, an app's icon with its level dot, a
+// process verdict's tag and a progress bar.
+import { Theme, Level } from "../theme.slint";
+import { Label } from "base.slint";
+
+// The level pill (`.pill`): "Healthy", "Needs attention", "Problem", "Idle",
+// or an app's own words in its panel.
+export component Pill inherits Rectangle {
+    in property <Level> level;
+    in property <string> text;
+
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.text;
+    background: Theme.level-bg(root.level);
+    border-radius: self.height / 2;
+    // Under High Contrast the pill gets a border, as the window's does.
+    border-width: Theme.contrast ? 1px : 0px;
+    border-color: Theme.frame;
+    horizontal-stretch: 0;
+    min-width: l.preferred-width;
+    max-width: l.preferred-width;
+    height: l.preferred-height;
+
+    l := HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 2px;
+        padding-bottom: 2px;
+
+        Label {
+            text: root.text;
+            font-size: Theme.text-pill;
+            font-weight: Theme.weight-bold;
+            color: Theme.level-color(root.level);
+            // The approved title bar's 16 px line box.
+            height: 16px;
+        }
+    }
+}
+
+// A process verdict (`.tag`): verified, unverified, rejected.
+export component Tag inherits Rectangle {
+    in property <Level> level: Level.off;
+    in property <string> text;
+
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.text;
+    // No border under High Contrast: today's tags have none.
+    background: Theme.level-bg(root.level);
+    border-radius: self.height / 2;
+    horizontal-stretch: 0;
+    min-width: l.preferred-width;
+    max-width: l.preferred-width;
+    height: l.preferred-height;
+
+    l := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        padding-top: 1px;
+        padding-bottom: 1px;
+
+        Label {
+            text: root.text;
+            font-size: Theme.text-tag;
+            color: root.level == Level.off ? Theme.muted : Theme.level-color(root.level);
+        }
+    }
+}
+
+// The generic app glyph (AppIcon.tsx's GenericIcon): four rounded squares on
+// a soft tile, for an app without a usable icon.
+component GenericIcon inherits Rectangle {
+    // One unit of the 32 x 32 drawing.
+    property <length> u: self.width / 32;
+    background: Theme.off-bg;
+    border-radius: 7 * root.u;
+
+    for cell in [{ x: 8, y: 8 }, { x: 17, y: 8 }, { x: 8, y: 17 }, { x: 17, y: 17 }]: Rectangle {
+        // The stroke sits on the outline: half of it outside.
+        x: (cell.x - 0.9) * root.u;
+        y: (cell.y - 0.9) * root.u;
+        width: 8.8 * root.u;
+        height: 8.8 * root.u;
+        border-radius: 2.5 * root.u;
+        border-width: 1.8 * root.u;
+        border-color: Theme.muted;
+    }
+}
+
+// An app's icon (`.appicon`), its own image or the generic glyph, with the
+// app's level as a dot on its corner. 28 px; 24 px small; 18 px compact.
+export component AppIcon {
+    in property <image> source;
+    in property <bool> has-image: root.source.width > 0;
+    in property <Level> level;
+    in property <bool> show-dot: true;
+    in property <length> size: Theme.app-icon;
+    // The colour around the dot: the surface the icon sits on.
+    in property <color> surface: Theme.bg;
+    property <bool> tiny: root.size < 20px;
+    property <length> dot: root.tiny ? 7px : 10px;
+    property <length> ring: root.tiny ? 1.5px : 2px;
+
+    width: root.size;
+    height: root.size;
+    accessible-role: none;
+
+    Rectangle {
+        border-radius: root.tiny ? 4px : Theme.radius-icon;
+        clip: true;
+
+        if root.has-image: Image {
+            source: root.source;
+            width: parent.width;
+            height: parent.height;
+            image-fit: contain;
+        }
+        if !root.has-image: GenericIcon {
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+
+    if root.show-dot: Rectangle {
+        // `right: -2px; bottom: -2px`, and under High Contrast a 1 px ring of
+        // the text colour around it (`outline: 1px solid CanvasText`).
+        property <length> outline: Theme.contrast ? 1px : 0px;
+        x: root.width + 2px - root.dot - self.outline;
+        y: root.height + 2px - root.dot - self.outline;
+        width: root.dot + 2 * self.outline;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.contrast ? Theme.system.canvas-text : transparent;
+
+        Rectangle {
+            x: parent.outline;
+            y: parent.outline;
+            width: root.dot;
+            height: root.dot;
+            border-radius: root.dot / 2;
+            background: Theme.contrast ? Theme.system.canvas : root.surface;
+
+            Rectangle {
+                x: root.ring;
+                y: root.ring;
+                width: root.dot - 2 * root.ring;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: Theme.dot-color(root.level);
+            }
+        }
+    }
+}
+
+// A progress bar (`.bar`): 4 px, the share filled, `value` from 0 to 1.
+export component ProgressBar inherits Rectangle {
+    in property <float> value;
+    in property <Level> level: Level.ok;
+    in property <string> label;
+
+    accessible-role: progress-indicator;
+    accessible-label: root.label;
+    accessible-value: Math.round(root.value * 100) + "%";
+    accessible-value-minimum: 0;
+    accessible-value-maximum: 100;
+    height: 4px;
+    border-radius: 2px;
+    background: Theme.track;
+    border-width: Theme.contrast ? 1px : 0px;
+    border-color: Theme.frame;
+    clip: true;
+
+    // Inside the High Contrast border.
+    Rectangle {
+        property <length> inset: Theme.contrast ? 1px : 0px;
+        x: self.inset;
+        y: self.inset;
+        height: parent.height - 2 * self.inset;
+        width: (parent.width - 2 * self.inset) * clamp(root.value, 0, 1);
+        border-radius: 2px;
+        background: Theme.contrast ? Theme.system.highlight : Theme.level-color(root.level);
+    }
+}

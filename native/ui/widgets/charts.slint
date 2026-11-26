@@ -1,0 +1,126 @@
+// The sparkline in a row and the chart in a panel (Charts.tsx). The lines
+// come from Rust as SVG path commands (`view::format::spark` and `chart`);
+// screen readers get the numbers from the text around them.
+import { Theme } from "../theme.slint";
+
+// A row's sparkline: 44 x 20, the memory of the latest run, filled.
+// Empty `line` (under a minute of data) keeps the space and draws nothing.
+export component Spark {
+    in property <string> line;
+    in property <string> fill;
+    width: 44px;
+    height: 20px;
+    accessible-role: none;
+
+    if root.fill != "": Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 44;
+        viewbox-height: 20;
+        fit: ImageFit.fill;
+        commands: root.fill;
+        fill: Theme.spark-fill;
+        stroke-width: 0;
+    }
+    if root.line != "": Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 44;
+        viewbox-height: 20;
+        fit: ImageFit.fill;
+        commands: root.line;
+        fill: transparent;
+        stroke: Theme.spark;
+        stroke-width: 1.3px;
+        stroke-line-join: round;
+    }
+}
+
+// A panel's chart: memory filled with its line, CPU dashed (against at
+// least 10% of the machine, scaled up), drawn into a 336 x 64 box that
+// stretches to the width it is given, 64 px tall. `label` is what a screen
+// reader says ("Memory over the last 15 minutes, at most 643 MB; ...").
+export component Chart {
+    in property <string> memory-line;
+    in property <string> memory-fill;
+    in property <string> cpu-line;
+    in property <string> label;
+    height: 64px;
+    accessible-role: image;
+    accessible-label: root.label;
+
+    if root.memory-fill != "": Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 336;
+        viewbox-height: 64;
+        // `preserveAspectRatio="none"`: stretched to the width given.
+        fit: ImageFit.fill;
+        commands: root.memory-fill;
+        fill: Theme.spark-fill;
+        stroke-width: 0;
+    }
+    if root.memory-line != "": Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 336;
+        viewbox-height: 64;
+        // `preserveAspectRatio="none"`: stretched to the width given.
+        fit: ImageFit.fill;
+        commands: root.memory-line;
+        fill: transparent;
+        stroke: Theme.spark;
+        stroke-width: 1.5px;
+    }
+    if root.cpu-line != "": Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 336;
+        viewbox-height: 64;
+        // `preserveAspectRatio="none"`: stretched to the width given.
+        fit: ImageFit.fill;
+        commands: root.cpu-line;
+        fill: transparent;
+        stroke: Theme.cpu;
+        stroke-width: 1px;
+        stroke-dash-array: [2px, 2px];
+        opacity: 0.85;
+    }
+}
+
+// The legend under a chart (`.legend`): memory at the left, CPU at the
+// right in the CPU colour.
+export component ChartLegend {
+    in property <string> memory;
+    in property <string> cpu;
+    accessible-role: none;
+
+    HorizontalLayout {
+        padding-top: 2px;
+        spacing: 8px;
+
+        // `justify-content: space-between`.
+        Text {
+            text: root.memory;
+            font-size: Theme.text-group;
+            color: Theme.faint;
+            height: self.font-size * Theme.line-height;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 0;
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        Text {
+            horizontal-stretch: 0;
+            text: root.cpu;
+            font-size: Theme.text-group;
+            color: Theme.cpu;
+            horizontal-alignment: right;
+            height: self.font-size * Theme.line-height;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}

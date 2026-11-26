@@ -21,9 +21,10 @@ mod open;
 mod recent;
 mod shell;
 mod tray;
+mod view;
 mod window;
 
-/// Slint's generated code for `ui/window.slint`, in a module of its own.
+/// Slint's generated code for `ui/main.slint`, in a module of its own.
 mod ui {
     slint::include_modules!();
 }
@@ -44,12 +45,27 @@ const EXIT_PANIC: i32 = 101;
 
 #[cfg(not(windows))]
 fn main() {
+    gallery();
     eprintln!("n8tray-native runs on Windows only for now; use the Tauri app (n8tray) here.");
     std::process::exit(2);
 }
 
+/// `--gallery` and `--gallery-png <folder>` (debug builds only): the widget
+/// gallery instead of N8 Tray, which then exits (`view::gallery`). It needs
+/// no home and touches nothing of N8 Tray's.
+fn gallery() {
+    #[cfg(debug_assertions)]
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if let Some(code) = view::gallery::from_args(&args) {
+            std::process::exit(code);
+        }
+    }
+}
+
 #[cfg(windows)]
 fn main() {
+    gallery();
     let args = args::parse(std::env::args().skip(1));
     // Before anything is written, the log and `--import-settings` included.
     let home = match home::isolated_home(

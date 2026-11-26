@@ -1,0 +1,28 @@
+// Resource history (lane: history), of every app or of one. A stub until
+// that lane lands; it owns this file and `src/view/history.rs`.
+import { TitleBar, ScrollArea, Say, SayLine } from "../widgets.slint";
+import { Nav } from "../nav.slint";
+
+export global HistoryModel {
+    in-out property <string> note: "Resource history comes with its own lane.";
+}
+
+export component HistoryView inherits VerticalLayout {
+    TitleBar {
+        title: "Resource history";
+        back: true;
+        back-clicked => {
+            Nav.back();
+        }
+        close-clicked => {
+            Nav.close();
+        }
+    }
+    ScrollArea {
+        Say {
+            SayLine {
+                text: HistoryModel.note;
+            }
+        }
+    }
+}
