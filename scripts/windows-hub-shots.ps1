@@ -71,17 +71,21 @@ $home8 = Join-Path $root "home"
 $apps = Join-Path $root "apps"
 function Status { try { Get-Content -Raw (Join-Path $home8 "status.json") | ConvertFrom-Json } catch { $null } }
 
+$standIns = @(
+  @{ id = "voicedock"; name = "VoiceDock"; group = "Audio"; http = $true; auto = $true; extra = @("--eat-mb", "120", "--children", "1") },
+  @{ id = "n8hotkeys"; name = "N8 Hotkeys"; group = "Hotkeys"; http = $false; auto = $true; extra = @() },
+  @{ id = "n8commentary"; name = "N8 Commentary"; group = "Streaming"; http = $false; auto = $false; extra = @() },
+  @{ id = "leadscraper"; name = "Lead Scraper"; group = "Work"; http = $false; auto = $true; extra = @("--eat-mb", "40") }
+)
+# The stand-ins that start with N8 Tray: what every wait below waits for.
+$autoStarted = @($standIns | Where-Object { $_.auto }).Count
+function All-StandIns-Run { $s = Status; $s -and (@($s.apps | Where-Object running).Count -ge $autoStarted) }
+
 function Install-StandIns {
   if (Test-Path $home8) { Remove-Item -Recurse -Force $home8 }
   New-Item -ItemType Directory -Force (Join-Path $home8 "modules") | Out-Null
-  $list = @(
-    @{ id = "voicedock"; name = "VoiceDock"; group = "Audio"; http = $true; auto = $true; extra = @("--eat-mb", "120", "--children", "1") },
-    @{ id = "n8hotkeys"; name = "N8 Hotkeys"; group = "Hotkeys"; http = $false; auto = $true; extra = @() },
-    @{ id = "n8commentary"; name = "N8 Commentary"; group = "Streaming"; http = $false; auto = $false; extra = @() },
-    @{ id = "leadscraper"; name = "Lead Scraper"; group = "Work"; http = $false; auto = $true; extra = @("--eat-mb", "40") }
-  )
   $port = 47700
-  foreach ($a in $list) {
+  foreach ($a in $standIns) {
     $dir = Join-Path $apps $a.id
     New-Item -ItemType Directory -Force $dir | Out-Null
     Copy-Item -Force $fakeExe (Join-Path $dir "app.exe")
@@ -205,7 +209,7 @@ try {
   # 1. The real taskbar and the real icon, in each theme.
   foreach ($theme in @("dark", "light")) {
     $trayProc = Start-Tray @{ N8TRAY_THEME = $theme }
-    Wait-Until "the stand-ins to run" { $s = Status; $s -and (@($s.apps | Where-Object running).Count -ge 4) } 60 | Out-Null
+    Wait-Until "the stand-ins to run" { All-StandIns-Run } 60 | Out-Null
     if ($theme -eq "dark") {
       # Idle, before any window: the trim runs 30 s after start.
       Start-Sleep 42
@@ -263,7 +267,7 @@ try {
   foreach ($k in $cases.Keys) {
     $a = $cases[$k][0]; $wk = $cases[$k][1]
     $trayProc = Start-Tray @{ N8TRAY_THEME = "dark"; N8TRAY_ANCHOR = (($a -join ",") + ";" + ($wk -join ",")) }
-    Wait-Until "the stand-ins" { $s = Status; $s -and (@($s.apps | Where-Object running).Count -ge 4) } 60 | Out-Null
+    Wait-Until "the stand-ins" { All-StandIns-Run } 60 | Out-Null
     $shown = Show-Hub $trayProc
     Start-Sleep 2
     $report["edge_$k"] = Save-Window "hub-edge-$k" $shown.hwnd $a $wk
@@ -279,3 +283,6 @@ try {
   Stop-Process -Id $watchdog.Id -Force -ErrorAction SilentlyContinue
   $report | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $out "report.json")
 }
+# A run that stopped early fails the step, after report.json is written, so
+# the pictures and figures can never go missing with CI still green.
+if ($report.error) { exit 1 }
