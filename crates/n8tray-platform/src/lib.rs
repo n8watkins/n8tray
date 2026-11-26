@@ -15,7 +15,9 @@
 //! - [`legacy`]: whether the PowerShell N8 Tray runs.
 //! - [`folders`]: a folder only the current user can read.
 //! - [`theme`]: whether the taskbar is light or dark, and when it changes.
-//! - [`window`]: the tray window's native style (no Alt-Tab entry, rounded corners).
+//! - [`window`]: the tray window's native style (no Alt-Tab entry, rounded corners),
+//!   showing and placing it, and the monitors.
+//! - [`single`]: one running copy, and requests from a later copy.
 
 pub mod autostart;
 pub mod container;
@@ -25,6 +27,7 @@ pub mod legacy;
 pub mod memory;
 pub mod process;
 pub mod signal;
+pub mod single;
 pub mod spawn;
 pub mod theme;
 pub mod window;
