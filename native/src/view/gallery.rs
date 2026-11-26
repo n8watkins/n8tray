@@ -738,6 +738,7 @@ pub mod tests {
         window: &MinimalSoftwareWindow,
         draw: &dyn Fn(),
         wheel_at: (f32, f32),
+        at_top: &dyn Fn() -> bool,
     ) -> Stops {
         use slint::platform::{Key, WindowEvent};
         let reveal = models.reveal();
@@ -765,8 +766,14 @@ pub mod tests {
             let serial = reveal.get_focused_serial();
             tab();
             if reveal.get_focused_serial() == serial {
-                // The focus went to no control: the shell window's top
-                // (`focus-top`), where the round started.
+                // No kit control took the focus. Only the shell window's top
+                // (`focus-top`), where the round started, may: anything else
+                // is a focusable thing that is not a kit control (a bare
+                // FocusScope or TextInput), which reports nothing.
+                assert!(
+                    at_top(),
+                    "Tab landed on something that is not a kit control (it does not report its focus)"
+                );
                 assert!(first.is_some(), "Tab found no control to focus");
                 assert_eq!(
                     reveal.get_scrolled(),
@@ -833,7 +840,8 @@ pub mod tests {
         let draw = || {
             w.draw().unwrap();
         };
-        let stops = tab_core(&w.ui, &w.window, &draw, (190.0, height / 2.0));
+        let at_top = || w.ui.get_top_focused();
+        let stops = tab_core(&w.ui, &w.window, &draw, (190.0, height / 2.0), &at_top);
         w.ui.hide().unwrap();
         stops
     }
@@ -865,7 +873,10 @@ pub mod tests {
         let redraw = || {
             draw(&headed, 1.0).unwrap();
         };
-        let stops = tab_core(&headed.ui, &headed.window, &redraw, (200.0, 160.0));
+        // The gallery has no view top: every stop is a kit control.
+        let stops = tab_core(&headed.ui, &headed.window, &redraw, (200.0, 160.0), &|| {
+            false
+        });
         assert!(stops.bottom > 0.0, "the list scrolled: {stops:?}");
         assert!(stops.in_list >= 5, "{stops:?}");
         assert!(stops.in_bars >= 3, "{stops:?}");
