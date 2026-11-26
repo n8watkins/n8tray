@@ -264,7 +264,7 @@ impl Picture {
 }
 
 /// The windows the headless platform made, the latest last.
-type Windows = Rc<RefCell<Vec<Rc<MinimalSoftwareWindow>>>>;
+pub type Windows = Rc<RefCell<Vec<Rc<MinimalSoftwareWindow>>>>;
 
 /// The software renderer with no window system, one window per component:
 /// set once per thread (Slint's platform is per thread).
@@ -284,7 +284,8 @@ thread_local! {
     static WINDOWS: RefCell<Option<Windows>> = const { RefCell::new(None) };
 }
 
-fn headless() -> Result<Windows, String> {
+/// The headless platform on this thread (set once), with the windows it made.
+pub fn headless() -> Result<Windows, String> {
     WINDOWS.with(|cell| {
         if let Some(windows) = cell.borrow().as_ref() {
             return Ok(windows.clone());

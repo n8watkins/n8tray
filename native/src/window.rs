@@ -591,6 +591,72 @@ pub fn test_anchor(value: Option<&str>) -> Option<(Rect, Option<Rect>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::fixture;
+
+    /// The shell's window on the headless platform, filled by a router.
+    fn headless_window() -> (FlyoutWindow, Router, HostSnapshot) {
+        crate::view::gallery::headless().unwrap();
+        let ui = FlyoutWindow::new().unwrap();
+        let snapshot = fixture("busy");
+        let mut router = Router::default();
+        router.fill(&ui, &snapshot);
+        (ui, router, snapshot)
+    }
+
+    /// As today's `go` (`main.tsx`): a new view puts the keyboard focus at
+    /// its top, where a screen reader hears the view's title, and Tab goes
+    /// on from there to the view's controls.
+    #[test]
+    fn a_new_view_has_the_focus_at_its_top() {
+        let (ui, mut router, snapshot) = headless_window();
+        ui.show().unwrap();
+        assert!(!ui.get_top_focused());
+        assert!(router.go(View::Settings, ""));
+        router.fill(&ui, &snapshot);
+        arrived(&ui);
+        assert!(ui.get_top_focused());
+        assert_eq!(ui.global::<Nav>().get_title(), "Settings");
+        assert_eq!(ui.global::<Nav>().get_view(), View::Settings);
+        let tab: slint::SharedString = slint::platform::Key::Tab.into();
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: tab.clone() });
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyReleased { text: tab });
+        assert!(!ui.get_top_focused(), "Tab goes on to the first control");
+        // A request for a row no row took is dropped with the view.
+        ui.global::<RowFocus>().invoke_to_id("voicedock".into(), 0);
+        arrived(&ui);
+        assert!(!ui.global::<RowFocus>().get_pending());
+        ui.hide().unwrap();
+    }
+
+    /// Compact and the window height come from the snapshot's settings
+    /// (D35), and say when they changed.
+    #[test]
+    fn compact_and_the_height_limit_follow_the_settings() {
+        let (ui, _router, snapshot) = headless_window();
+        let theme = ui.global::<Theme>();
+        let mut settings = snapshot.settings.clone();
+        settings.compact = false;
+        settings.window_height = "short".into();
+        settings.window_height_px = 400;
+        crate::view::theme::apply_settings(&theme, &settings);
+        assert!(!crate::view::theme::apply_settings(&theme, &settings));
+        settings.compact = true;
+        settings.window_height = "tall".into();
+        settings.window_height_px = 600;
+        assert!(crate::view::theme::apply_settings(&theme, &settings));
+        assert!(theme.get_compact());
+        assert_eq!(theme.get_height_limit(), 600.0);
+        // The fixture with Compact on and the tall window.
+        let tall = fixture("compactTall");
+        assert!(tall.settings.compact);
+        crate::view::theme::apply_settings(&theme, &tall.settings);
+        assert_eq!(
+            theme.get_height_limit(),
+            tall.settings.window_height_px as f32
+        );
+    }
 
     #[test]
     fn a_test_anchor_names_an_icon_and_maybe_a_work_area() {
