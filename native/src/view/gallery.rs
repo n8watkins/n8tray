@@ -181,7 +181,11 @@ pub fn fixture(name: &str) -> Result<HostSnapshot, String> {
 pub struct ViewWindow {
     pub ui: FlyoutWindow,
     pub window: Rc<MinimalSoftwareWindow>,
+    /// The router and the snapshot, for a view's test that changes either
+    /// and fills again (`router.fill(&ui, &snapshot)`).
+    #[allow(dead_code, reason = "for the views' tests")]
     pub router: Router,
+    #[allow(dead_code, reason = "for the views' tests")]
     pub snapshot: HostSnapshot,
 }
 
@@ -222,6 +226,7 @@ pub fn view_window(view: View, shot: &Shot, look: Look, font: Font) -> Result<Vi
 impl ViewWindow {
     /// Sizes the window as the shell does (its content, up to the height
     /// limit, at least 80 px) and draws it at 1x.
+    #[cfg(test)]
     pub fn draw(&self) -> Result<Picture, String> {
         self.draw_at(1.0)
     }
@@ -259,6 +264,7 @@ impl ViewWindow {
 }
 
 /// One view's picture for a shot (its golden image).
+#[cfg(test)]
 pub fn render_view(view: View, shot: &Shot, look: Look, font: Font) -> Result<Picture, String> {
     let w = view_window(view, shot, look, font)?;
     let picture = w.draw()?;
