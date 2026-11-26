@@ -97,13 +97,25 @@ function App() {
     };
   }, [snapshot !== null, view]);
 
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
+  // Escape is heard on the document, not only inside the flyout: opening a
+  // panel removes the focused row, so for a moment focus sits on the page
+  // body (until go() refocuses the flyout) and a quick Escape would be lost.
+  // The view comes from a ref set during render: an effect's closure can lag
+  // a render behind, and that is the very moment a quick Escape arrives.
+  const current = useRef(view);
+  current.current = view;
+  useEffect(() => {
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
       e.preventDefault();
-      if (view.name === "hub") hideWindow();
+      if (current.current.name === "hub") hideWindow();
       else go({ name: "hub" });
-      return;
-    }
+    };
+    document.addEventListener("keydown", onEscape);
+    return () => document.removeEventListener("keydown", onEscape);
+  }, [go]);
+
+  const onKey = (e: KeyboardEvent) => {
     if (root.current && moveFocus(e, root.current)) e.preventDefault();
   };
 

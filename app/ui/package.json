@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "screens": "playwright test",
+    "fixtures:json": "node scripts/fixtures-json.ts",
     "preview": "vite --config vite.preview.config.ts"
   },
   "dependencies": {
