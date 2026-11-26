@@ -314,6 +314,7 @@ Its shape:
   In the shared workspace, Slint moved shared dependencies of the shipping app (icu, image, moxcms, zbus) and the root Lint and Test jobs checked a Tauri build with the native crate's features unified in, which is not the one that ships.
   Its path dependencies on `n8tray-core` and `n8tray-platform` stay members of the root workspace; only CI's Native job compiles Slint, and it runs the crate's format, lint and tests (`npm run check:native`).
   The exe's version resource takes the root workspace's version, which release-kit keeps.
+  A release bumps N8 Tray's own crates, which `native/Cargo.lock` records, so the Native job and `check:native` bring those three entries up to date first and keep every other dependency locked.
 - It runs only in a home of its own: without `N8TRAY_HOME`, or with it naming the installed N8 Tray's own folder, it exits with code 3 before it writes anything, its log included, and says why on stderr.
   In the real home it would become the host of the user's apps (status, history, lease) and the installed app would find the host lock taken at sign-in.
   `N8TRAY_RUN_DIR` and `N8TRAY_MODULES_DIR` are ignored: everything stays under the home.
