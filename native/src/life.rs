@@ -93,6 +93,7 @@ impl Life {
         self.visible
     }
 
+    #[cfg(test)]
     pub fn created(&self) -> bool {
         self.created
     }
@@ -138,10 +139,6 @@ impl Life {
         if self.created {
             self.native = true;
         }
-    }
-
-    pub fn has_native(&self) -> bool {
-        self.native
     }
 
     /// Show the window if one is wanted and the native window is there;
