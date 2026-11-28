@@ -97,9 +97,11 @@ pub const SHOTS: &[super::router::Shot] = &[
     },
 ];
 
-/// The height of the pictures that show the whole panel.
+/// The height limit of the pictures that show the whole panel: more than
+/// the tallest (`full`) needs, so the window fits its content and the
+/// version line at the end is in the picture.
 #[cfg(debug_assertions)]
-const WHOLE: u32 = 1000;
+const WHOLE: u32 = 1400;
 
 /// The example icons of `spec/examples/icons`, by app id.
 #[cfg(debug_assertions)]
@@ -122,15 +124,26 @@ fn stage_armed(stage: &mut super::router::Stage) {
             .confirms
             .press(confirm::key("voicedock", action, component), true, now);
     }
-    for action in &mut stage.snapshot.apps[2].actions {
+    for action in &mut voicedock(stage).actions {
         action.confirm = action.id == "stop" || action.id == "engine.stop";
     }
+}
+
+/// The shots' app, found by its id rather than its place in the fixture.
+#[cfg(debug_assertions)]
+fn voicedock<'a>(stage: &'a mut super::router::Stage) -> &'a mut AppView {
+    stage
+        .snapshot
+        .apps
+        .iter_mut()
+        .find(|a| a.id == "voicedock")
+        .expect("the busy fixture has VoiceDock")
 }
 
 #[cfg(debug_assertions)]
 fn stage_full(stage: &mut super::router::Stage) {
     stage_icons(stage);
-    let app = &mut stage.snapshot.apps[2];
+    let app = voicedock(stage);
     app.name = "VoiceDock Studio Edition With A Very Long Name".into();
     app.pending = Some("Restarting".into());
     app.notes = vec![
@@ -160,19 +173,21 @@ fn say_tone(tone: Tone) -> crate::ui::Tone {
 pub fn say(app: &AppView) -> Vec<PanelSay> {
     let (line, tone) = format::row_line(app);
     let mut out = vec![PanelSay {
+        id: "line".into(),
         text: line.as_str().into(),
         tone: say_tone(tone),
     }];
-    let plain = |text: String| PanelSay {
+    let plain = |id: &str, text: String| PanelSay {
+        id: id.into(),
         text: text.into(),
         tone: crate::ui::Tone::Normal,
     };
     if let Some(detail) = app.detail.as_ref().filter(|d| **d != line) {
-        out.push(plain(detail.clone()));
+        out.push(plain("detail", detail.clone()));
     }
     let figures = format::panel_figures(app);
     if !figures.is_empty() {
-        out.push(plain(figures));
+        out.push(plain("figures", figures));
     }
     if let Some(gpu) = app
         .gpu
@@ -183,17 +198,17 @@ pub fn say(app: &AppView) -> Vec<PanelSay> {
             .percent
             .map(|p| format!(" · {}", format::percent(Some(p))))
             .unwrap_or_default();
-        out.push(plain(format!(
-            "GPU {}{share} ({})",
-            format::memory(gpu.mem_mb),
-            gpu.source
-        )));
+        out.push(plain(
+            "gpu",
+            format!("GPU {}{share} ({})", format::memory(gpu.mem_mb), gpu.source),
+        ));
     }
     if let Some(description) = app.description.as_ref().filter(|d| !d.is_empty()) {
-        out.push(plain(description.clone()));
+        out.push(plain("description", description.clone()));
     }
-    for note in &app.notes {
+    for (i, note) in app.notes.iter().enumerate() {
         out.push(PanelSay {
+            id: format!("note-{i}").into(),
             text: note.as_str().into(),
             tone: crate::ui::Tone::Attention,
         });
@@ -278,7 +293,9 @@ pub fn components(app: &AppView, confirms: &Confirms, now: Instant) -> Vec<Panel
         .collect()
 }
 
-const PROCESS_TITLES: [&str; 5] = ["Process", "Memory", "Private", "CPU", ""];
+/// The columns' names a screen reader says: the last one has no visible
+/// title, but today's has "Verdict" for screen readers (`sr-only`).
+const PROCESS_TITLES: [&str; 5] = ["Process", "Memory", "Private", "CPU", "Verdict"];
 
 pub fn processes(app: &AppView) -> Vec<TableRow> {
     app.processes
@@ -377,6 +394,41 @@ fn sync<T: Clone + PartialEq + 'static, K: PartialEq>(
     }
 }
 
+/// A row's inner list for its next data: the list it shows now, updated in
+/// place by `key` to hold what `new` holds, so a row whose figures changed
+/// keeps the widgets of its inner list (a component's buttons). `None` when
+/// the row has no list of its own yet.
+fn keep<T: Clone + PartialEq + 'static, K: PartialEq>(
+    shown: &ModelRc<T>,
+    new: &ModelRc<T>,
+    key: impl Fn(&T) -> K,
+) -> Option<ModelRc<T>> {
+    let model = shown.as_any().downcast_ref::<VecModel<T>>()?;
+    list::sync(model, new.iter().collect(), key);
+    Some(shown.clone())
+}
+
+/// `keep` for a list whose items have no key but their place (a table
+/// row's cells).
+fn keep_by_place<T: Clone + PartialEq + 'static>(
+    shown: &ModelRc<T>,
+    new: &ModelRc<T>,
+) -> Option<ModelRc<T>> {
+    let model = shown.as_any().downcast_ref::<VecModel<T>>()?;
+    let items: Vec<T> = new.iter().collect();
+    for (i, item) in items.iter().enumerate() {
+        match model.row_data(i) {
+            Some(current) if current == *item => {}
+            Some(_) => model.set_row_data(i, item.clone()),
+            None => model.push(item.clone()),
+        }
+    }
+    while model.row_count() > items.len() {
+        model.remove(model.row_count() - 1);
+    }
+    Some(shown.clone())
+}
+
 /// The router shows a panel only while its app is in the snapshot (it
 /// falls back to the hub when the app leaves).
 pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
@@ -389,6 +441,7 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
     let m = ui.panel();
     if m.get_app_id() != app.id.as_str() {
         // Another app's panel: no row of the last one stays.
+        m.set_actions(ModelRc::default());
         m.set_components(ModelRc::default());
         m.set_buttons(ModelRc::default());
         m.set_processes(ModelRc::default());
@@ -400,13 +453,18 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
     m.set_icon(ctx.icons.get(app.icon.as_deref()));
     m.set_level(rows::level(app.level));
     m.set_words(words(app).into());
-    m.set_actions(ModelRc::from(Rc::new(VecModel::from(bar_actions(
-        app,
-        ctx.confirms,
-        ctx.now,
-    )))));
+    // Every list below is updated in place, nested lists too: a new model
+    // makes Slint build that list's widgets anew, and the control that had
+    // the keyboard focus (Stop, just armed by Space) would lose it.
+    if let Some(new) = sync(
+        m.get_actions(),
+        bar_actions(app, ctx.confirms, ctx.now),
+        |a| a.id.clone(),
+    ) {
+        m.set_actions(new);
+    }
 
-    if let Some(new) = sync(m.get_lines(), say(app), |l| l.text.clone()) {
+    if let Some(new) = sync(m.get_lines(), say(app), |l| l.id.clone()) {
         m.set_lines(new);
     }
     let buttons: Vec<PanelButton> = format::app_actions(app)
@@ -416,7 +474,20 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
     if let Some(new) = sync(m.get_buttons(), buttons, |b| b.id.clone()) {
         m.set_buttons(new);
     }
-    let comps = components(app, ctx.confirms, ctx.now);
+    let before: Vec<PanelComponent> = m.get_components().iter().collect();
+    let comps = components(app, ctx.confirms, ctx.now)
+        .into_iter()
+        .map(|mut c| {
+            if let Some(kept) = before
+                .iter()
+                .find(|b| b.id == c.id)
+                .and_then(|b| keep(&b.buttons, &c.buttons, |x| x.id.clone()))
+            {
+                c.buttons = kept;
+            }
+            c
+        })
+        .collect();
     if let Some(new) = sync(m.get_components(), comps, |c| c.id.clone()) {
         m.set_components(new);
     }
@@ -437,8 +508,24 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
         m.set_legend_cpu(words.cpu.into());
     }
 
-    let procs = processes(app);
-    if let Some(new) = sync(m.get_processes(), procs, |r| r.label.clone()) {
+    // A process by its name and pid (`small` starts with the pid), as
+    // today's rows are keyed; its figures change on every snapshot.
+    let process_key = |r: &TableRow| (r.cells.row_data(0), r.small.clone());
+    let before: Vec<TableRow> = m.get_processes().iter().collect();
+    let procs = processes(app)
+        .into_iter()
+        .map(|mut r| {
+            if let Some(kept) = before
+                .iter()
+                .find(|b| process_key(b) == process_key(&r))
+                .and_then(|b| keep_by_place(&b.cells, &r.cells))
+            {
+                r.cells = kept;
+            }
+            r
+        })
+        .collect();
+    if let Some(new) = sync(m.get_processes(), procs, process_key) {
         m.set_processes(new);
     }
     if let Some(new) = sync(m.get_opens(), opens(app), |o| o.key.clone()) {
@@ -495,6 +582,7 @@ mod tests {
     use crate::tests::fixture;
     use crate::view::gallery::tests::tab_through;
     use crate::view::router::Shot;
+    use slint::ComponentHandle;
 
     fn app(fixture_name: &str, id: &str) -> AppView {
         fixture(fixture_name)
@@ -606,6 +694,11 @@ mod tests {
         assert_eq!(first.len(), 5);
         assert!(rows[0].label.starts_with("Process "));
         assert!(rows[0].label.contains("Memory "));
+        assert!(
+            rows[0].label.ends_with(", Verdict verified"),
+            "{}",
+            rows[0].label
+        );
         let items = opens(&vd);
         assert_eq!(items.len(), 4);
         assert_eq!(items[0].glyph, GlyphName::Gear);
@@ -657,6 +750,99 @@ mod tests {
                 app: Some("voicedock".into())
             }
         );
+    }
+
+    /// The panel of `busy`'s VoiceDock, whole, with Stop asking to confirm.
+    fn focus_window() -> crate::view::gallery::ViewWindow {
+        use crate::view::gallery::{Font, Look, view_window};
+        let shot = Shot {
+            app: "voicedock",
+            height: WHOLE,
+            ..Shot::of("focus", "busy")
+        };
+        let mut w = view_window(crate::ui::View::Panel, &shot, Look::Light, Font::Test).unwrap();
+        for app in &mut w.snapshot.apps {
+            for action in &mut app.actions {
+                action.confirm = action.id == "stop" || action.id == "engine.stop";
+            }
+        }
+        w.router.fill(&w.ui, &w.snapshot);
+        w.draw().unwrap();
+        crate::window::arrived(&w.ui);
+        w.draw().unwrap();
+        w
+    }
+
+    /// Presses Tab and says where the focus went: (x, top, in the list).
+    fn tab(w: &crate::view::gallery::ViewWindow) -> (f32, f32, bool) {
+        use slint::platform::{Key, WindowEvent};
+        let text: slint::SharedString = Key::Tab.into();
+        w.window
+            .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+        w.window.dispatch_event(WindowEvent::KeyReleased { text });
+        w.draw().unwrap();
+        let r = w.ui.reveal();
+        (
+            r.get_focused_x(),
+            r.get_focused_top(),
+            r.get_focused_reveals(),
+        )
+    }
+
+    /// A refill (a new snapshot, or a click that arms an action) keeps the
+    /// keyboard focus on the control that had it, in the title bar and in
+    /// the list: Tab then goes on to the next control, as it would have.
+    #[test]
+    fn the_focus_stays_where_it_was_through_a_refill() {
+        let w = focus_window();
+        let stops: Vec<_> = (0..14).map(|_| tab(&w)).collect();
+        w.ui.hide().unwrap();
+        // Back, Stop, Restart, Close, then the list.
+        assert!(!stops[1].2 && !stops[2].2, "{stops:?}");
+        let first_in_list = stops.iter().position(|s| s.2).unwrap();
+        for k in [1, first_in_list, first_in_list + 1, first_in_list + 3] {
+            for arm in [false, true] {
+                let mut w = focus_window();
+                for _ in 0..=k {
+                    tab(&w);
+                }
+                // The next snapshot: new figures everywhere.
+                let vd = w
+                    .snapshot
+                    .apps
+                    .iter_mut()
+                    .find(|a| a.id == "voicedock")
+                    .unwrap();
+                vd.memory_mb = vd.memory_mb.map(|m| m + 1.0);
+                for c in &mut vd.components {
+                    c.memory_mb = c.memory_mb.map(|m| m + 1.0);
+                }
+                for p in &mut vd.processes {
+                    p.rss_mb = p.rss_mb.map(|m| m + 1.0);
+                }
+                if arm {
+                    let now = Instant::now();
+                    w.router
+                        .confirms
+                        .press(confirm::key("voicedock", "stop", None), true, now);
+                    w.router.confirms.press(
+                        confirm::key("voicedock", "engine.stop", Some("kokoro")),
+                        true,
+                        now,
+                    );
+                }
+                w.router.fill(&w.ui, &w.snapshot);
+                w.draw().unwrap();
+                let next = tab(&w);
+                w.ui.hide().unwrap();
+                assert_eq!(
+                    next,
+                    stops[k + 1],
+                    "after stop {k} ({:?}, armed: {arm}) the focus was lost",
+                    stops[k]
+                );
+            }
+        }
     }
 
     /// The panel's bars never move its list, and its controls scroll into

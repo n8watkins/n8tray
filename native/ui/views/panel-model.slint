@@ -7,8 +7,11 @@ export * from "details-model.slint";
 
 import { Level, Tone, BarAction, OpenItem, TableRow } from "../widgets.slint";
 
-// One paragraph of the State section.
+// One paragraph of the State section; `id` says which (`line`, `detail`,
+// `figures`, `gpu`, `description`, `note-<n>`), so a refill updates it in
+// place.
 export struct PanelSay {
+    id: string,
     text: string,
     tone: Tone,
 }
