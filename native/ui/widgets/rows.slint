@@ -26,6 +26,9 @@ export struct RowData {
     tooltip: string,
     label: string,
     action: RowAction,
+    // The id of the app's action the button runs ("stop", "start"), as
+    // `format::row_action` named it; "" without one.
+    action-id: string,
     action-label: string,
     action-tooltip: string,
     action-enabled: bool,
@@ -454,7 +457,8 @@ export component RowList inherits VerticalLayout {
     in property <int> total: root.rows.length;
     in property <bool> compact: Theme.compact;
     callback open(id: string);
-    callback act(id: string);
+    // A row's button: the app and the action it shows, by their ids.
+    callback act(id: string, action: string);
 
     for row[i] in root.rows: AppRow {
         app-id: row.id;
@@ -481,7 +485,7 @@ export component RowList inherits VerticalLayout {
             root.open(row.id);
         }
         action-clicked => {
-            root.act(row.id);
+            root.act(row.id, row.action-id);
         }
     }
 }

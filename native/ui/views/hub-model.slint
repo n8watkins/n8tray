@@ -54,8 +54,8 @@ export global HubModel {
     in-out property <string> sign-in-tooltip;
     in-out property <[BarLink]> links;
 
-    // An app row's Start or Stop.
-    callback act(id: string);
+    // An app row's Start or Stop: the app's id and the action's.
+    callback act(id: string, action: string);
     callback update-secondary-clicked();
     callback update-primary-clicked();
     callback toggle-sign-in();

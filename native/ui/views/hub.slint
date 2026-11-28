@@ -101,8 +101,8 @@ export component HubView inherits VerticalLayout {
                     open(id) => {
                         Nav.go(View.panel, id);
                     }
-                    act(id) => {
-                        HubModel.act(id);
+                    act(id, action) => {
+                        HubModel.act(id, action);
                     }
                 }
                 for problem in HubModel.problems: ProblemRow {

@@ -89,7 +89,7 @@ A reply comes back on the UI thread to a closure that gets the window's models (
 | The window height | `send(Intent::WindowHeight(name))` | `Intent::WindowHeight("medium".into())`; `short`, `medium` or `tall` |
 | A host command | `send(Intent::HostCommand(name))` | `Intent::HostCommand("checkUpdates".into())`; or `reloadSettings` |
 | The footer's sign-in switch | `send(Intent::ToggleSignIn)` | turns Start at sign-in the other way, while the native shell may (D33) |
-| An app's action | `send(Intent::Action { app, action, component })` | `Intent::Action { app: id, action: "stop".into(), component: None }`; armed by the first press when it asks to confirm, shown armed on the next fill (`ctx.confirms`) |
+| An app's action | `send(Intent::Action { app, action, component })` | `Intent::Action { app: id, action: "stop".into(), component: None }`; armed by the first press when it asks to confirm, shown armed on the next fill (`ctx.confirms`). A row's button carries both ids: `RowData.action-id` (set by `rows::row_data`) comes back in `RowList.act(id, action)`, so a view keeps no map of its own |
 | One of N8 Tray's targets | `send(Intent::OpenHost(target))` | `Intent::OpenHost(HostTarget::Log)`; `Log`, `Folder`, `SettingsFile`, `ReleasePage` (`HostTarget::from_name("log")`) |
 | An app's item | `send(Intent::OpenItem { app, kind, key })` | `Intent::OpenItem { app: id, kind: "open".into(), key: "logs".into() }`; `kind` `open` (by key) or `menu` (by index) |
 | Install an update, or try again | `send(Intent::InstallUpdate)` | opens the release page until the native shell installs in place (D27) |

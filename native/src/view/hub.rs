@@ -9,8 +9,6 @@
 //! view asks of the shell.
 #![forbid(unsafe_code)]
 
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use n8tray_core::model::{HostSnapshot, TrayUsage};
@@ -108,12 +106,6 @@ pub const WATCH_MORE: &str = "Both trays read the same apps. Until this one repl
 /// Shown while the hub has no app at all.
 const EMPTY: &str = "No apps yet. An app appears here once it installs its manifest.";
 
-thread_local! {
-    /// The id of the action each row's button runs, as the last fill drew
-    /// it (none while watching): a button press carries only the app's id.
-    static ACTIONS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
-}
-
 /// N8 Tray's own row: "This app", its private memory and its window's, as
 /// today's `TrayRow`. `name` is the product's name as the shell shows it.
 pub fn tray_row(t: &TrayUsage, name: &str) -> RowData {
@@ -149,23 +141,27 @@ pub fn tray_row(t: &TrayUsage, name: &str) -> RowData {
 
 /// The main view's rows: the apps `format::main_view_apps` keeps, each as
 /// today's `Row`, without an action while the PowerShell tray manages them.
-/// With each row, the id of the action its button runs, the same one
-/// `rows::row_data` drew and armed.
-fn app_rows(ctx: &mut Ctx) -> Vec<(RowData, Option<String>)> {
+/// Each row carries the id of the action its button runs (`action_id`), the
+/// one `rows::row_data` drew and armed.
+fn app_rows(ctx: &mut Ctx) -> Vec<RowData> {
     let s = ctx.snapshot;
     format::main_view_apps(&s.apps)
         .into_iter()
         .map(|a| {
             let icon = ctx.icons.get(a.icon.as_deref());
-            let row = rows::row_data(a, icon, ctx.confirms, s.legacy_tray, ctx.now);
-            let action = if s.legacy_tray {
-                None
-            } else {
-                format::row_action(a).map(|x| x.id.clone())
-            };
-            (row, action)
+            rows::row_data(a, icon, ctx.confirms, s.legacy_tray, ctx.now)
         })
         .collect()
+}
+
+/// What a row's button asks for: the app's action by both ids; nothing for
+/// a row without one.
+fn act_intent(app: &str, action: &str) -> Option<Intent> {
+    (!app.is_empty() && !action.is_empty()).then(|| Intent::Action {
+        app: app.into(),
+        action: action.into(),
+        component: None,
+    })
 }
 
 /// The manifests that could not be read, after the apps.
@@ -264,16 +260,7 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
         }
     }
 
-    let (items, actions): (Vec<RowData>, Vec<Option<String>>) = app_rows(ctx).into_iter().unzip();
-    ACTIONS.with_borrow_mut(|map| {
-        map.clear();
-        for (row, action) in items.iter().zip(actions) {
-            if let Some(action) = action {
-                map.insert(row.id.to_string(), action);
-            }
-        }
-    });
-    sync_rows(ui, items);
+    sync_rows(ui, app_rows(ctx));
     model.set_problems(ModelRc::from(Rc::new(VecModel::from(problems(s)))));
     model.set_more(
         s.more
@@ -300,14 +287,9 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
 
 pub fn wire(ui: &dyn Models) {
     let model = ui.hub();
-    model.on_act(|id| {
-        let action = ACTIONS.with_borrow(|actions| actions.get(id.as_str()).cloned());
-        if let Some(action) = action {
-            intent::send(Intent::Action {
-                app: id.to_string(),
-                action,
-                component: None,
-            });
+    model.on_act(|id, action| {
+        if let Some(intent) = act_intent(&id, &action) {
+            intent::send(intent);
         }
     });
     // History then Log, set once: links made anew on every fill would take
@@ -493,26 +475,46 @@ mod tests {
     fn a_rows_button_runs_the_action_it_shows_by_id() {
         use super::super::gallery::{Font, Look, view_window};
         use crate::ui::View;
-        let action = |id: &str| ACTIONS.with_borrow(|a| a.get(id).cloned());
+        // The action id each row carries, as the view's model holds it.
+        let actions = |w: &super::super::gallery::ViewWindow| -> Vec<(String, String)> {
+            w.ui.hub()
+                .get_rows()
+                .iter()
+                .map(|r| (r.id.to_string(), r.action_id.to_string()))
+                .collect()
+        };
         let busy = SHOTS.iter().find(|s| s.state == "busy").unwrap();
         let w = view_window(View::Hub, busy, Look::Light, Font::Test).unwrap();
-        for app in format::main_view_apps(&w.snapshot.apps) {
-            assert_eq!(
-                action(&app.id),
-                format::row_action(app).map(|a| a.id.clone()),
-                "{}",
-                app.id
-            );
+        let drawn = actions(&w);
+        let apps = format::main_view_apps(&w.snapshot.apps);
+        assert_eq!(drawn.len(), apps.len());
+        for (app, (id, action)) in apps.iter().zip(&drawn) {
+            assert_eq!(id, &app.id);
+            let expected = format::row_action(app)
+                .map(|a| a.id.clone())
+                .unwrap_or_default();
+            assert_eq!(action, &expected, "{id}");
         }
-        assert_eq!(action("voicedock").as_deref(), Some("stop"));
-        assert_eq!(action("n8commentary").as_deref(), Some("start"));
+        let of = |id: &str| drawn.iter().find(|(a, _)| a == id).unwrap().1.clone();
+        assert_eq!(of("voicedock"), "stop");
+        assert_eq!(of("n8commentary"), "start");
+        // A press asks for exactly that action of that app.
+        assert_eq!(
+            act_intent("voicedock", &of("voicedock")),
+            Some(Intent::Action {
+                app: "voicedock".into(),
+                action: "stop".into(),
+                component: None
+            })
+        );
+        assert_eq!(act_intent("voicedock", ""), None);
         w.ui.hide().unwrap();
 
         let watching = SHOTS.iter().find(|s| s.state == "watching").unwrap();
         let w = view_window(View::Hub, watching, Look::Light, Font::Test).unwrap();
         assert!(w.snapshot.legacy_tray);
         assert!(
-            ACTIONS.with_borrow(HashMap::is_empty),
+            actions(&w).iter().all(|(_, a)| a.is_empty()),
             "nothing runs while watching"
         );
         w.ui.hide().unwrap();

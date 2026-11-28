@@ -90,6 +90,7 @@ pub fn row_data(
         let armed = confirms.is_armed(&confirm::key(&app.id, &action.id, None), now);
         let ui = action_ui(app, action, None, None, armed);
         data.action = row_action(action.kind);
+        data.action_id = action.id.as_str().into();
         data.action_label = ui.label.into();
         data.action_tooltip = ui.tooltip.into();
         data.action_enabled = ui.enabled;
