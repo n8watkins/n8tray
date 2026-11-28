@@ -6,9 +6,10 @@ export enum View { hub, all-apps, panel, details, settings, about, history }
 
 export global Nav {
     in-out property <View> view: View.hub;
-    // The view's title as its title bar says it ("N8 Tray", "Settings", the
-    // app's name), for the screen reader when the view opens (Rust sets it).
-    in-out property <string> title: "N8 Tray";
+    // The view's title as its title bar says it (the product's name,
+    // "Settings", the app's name), for the screen reader when the view opens
+    // (Rust sets it on every fill).
+    in-out property <string> title;
     // Open a view; `id` names the app for a panel or an app's history.
     callback go(view: View, id: string);
     callback back();

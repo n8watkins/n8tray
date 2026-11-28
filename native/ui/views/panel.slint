@@ -5,7 +5,7 @@
 import {
     Theme, TitleBar, ScrollArea, Section, SectionHeading, Say, SayLine, ActionsRow,
     SmallButton, ComponentRow, Chart, ChartLegend, HeadLink, Table, OpenLinks,
-    ToggleRow, Level
+    ToggleRow, Level, Product
 } from "../widgets.slint";
 import { Nav, View } from "../nav.slint";
 import { PanelModel } from "panel-model.slint";
@@ -149,21 +149,21 @@ export component PanelView inherits VerticalLayout {
             }
 
             Section {
-                label: "In N8 Tray";
+                label: "In " + Product.name;
                 SectionHeading {
-                    text: "In N8 Tray";
+                    text: "In " + Product.name;
                 }
                 ToggleRow {
                     first: true;
-                    text: "Start with N8 Tray";
-                    hint: "When N8 Tray starts, or when the app is installed";
+                    text: "Start with " + Product.name;
+                    hint: "When " + Product.name + " starts, or when the app is installed";
                     checked: PanelModel.auto-start;
                     toggled => {
                         PanelModel.setting(PanelModel.app-id, "autoStart", !PanelModel.auto-start);
                     }
                 }
                 ToggleRow {
-                    text: "Show in N8 Tray";
+                    text: "Show in " + Product.name;
                     hint: "Off: the app uses its own tray icon";
                     checked: PanelModel.hosted;
                     toggled => {
@@ -172,7 +172,7 @@ export component PanelView inherits VerticalLayout {
                 }
                 ToggleRow {
                     text: "Turned on";
-                    hint: "Off: N8 Tray never starts it";
+                    hint: "Off: " + Product.name + " never starts it";
                     checked: PanelModel.enabled;
                     toggled => {
                         PanelModel.setting(PanelModel.app-id, "enabled", !PanelModel.enabled);

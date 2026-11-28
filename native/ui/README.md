@@ -162,6 +162,14 @@ Their app icons are relative to the spec's examples (`icons/voicedock.svg`, as t
 - Read with `intent::history` when the view arrives (`ctx.arrived`, as `History.tsx` reads on mount) and when the range changes, not on every fill; drop a reply whose `of` or `range` is not what shows.
   The reply always comes, with no items when there is nothing to read.
 
+## The product's name
+
+The window says the product's name from one constant, `view::PRODUCT` in Rust, which `router::wire` copies to `Product.name` for Slint on every window (the gallery's `fill` too).
+The owner decided to rename the product Traybay at the native switch: for the window that is the one line of `PRODUCT`.
+Use `Product.name` (Slint) or `view::PRODUCT` (Rust) wherever today's words name the product ("In N8 Tray", "Start with N8 Tray", "About N8 Tray"), never the literal; keep the literal where the words name the old PowerShell tray ("Your PowerShell N8 Tray ...") or the installed Tauri app.
+`router::tests::the_product_name_is_one_constant` fails on a literal anywhere else in the views, the widgets and the kit's modules.
+The tray menu and the logs (`tray.rs`, `shell.rs`, `main.rs`) are outside the window and not covered yet.
+
 ## Tokens
 
 - Never write a colour, a font size or a radius in a view: use `Theme.bg`, `Theme.muted`, `Theme.text-small`, `Theme.radius-card` and the rest.

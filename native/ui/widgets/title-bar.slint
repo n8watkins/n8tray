@@ -8,7 +8,7 @@
 //
 // Both bars take data, not child controls: their controls never scroll the
 // list when they take the focus, and a screen never adds a control to them.
-import { Theme, Level } from "../theme.slint";
+import { Theme, Level, Product } from "../theme.slint";
 import { Glyph, GlyphName, Label, Pressable } from "base.slint";
 import { IconButton, LinkButton, LinkSwitch } from "buttons.slint";
 import { AppIcon, Pill } from "status.slint";
@@ -87,7 +87,7 @@ component Summary {
 // the summary; a panel's has Back, the app's small icon, its name (elided),
 // its pill and its `actions`; other views Back and their title.
 export component TitleBar {
-    in property <string> title: "N8 Tray";
+    in property <string> title: Product.name;
     // Back instead of the logo.
     in property <bool> back;
     // An app's small icon after Back (a panel).
@@ -234,7 +234,7 @@ export component TitleBar {
             IconButton {
                 glyph: GlyphName.close;
                 glyph-size: 12px;
-                label: "Hide N8 Tray";
+                label: "Hide " + Product.name;
                 tooltip: "Hide";
                 compact: false;
                 in-bar: true;

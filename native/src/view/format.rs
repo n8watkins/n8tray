@@ -631,11 +631,12 @@ pub enum UpdateAction {
 
 pub fn update_line(u: &UpdateView) -> Option<UpdateLine> {
     let v = u.available.as_deref()?;
+    let name = super::PRODUCT;
     Some(match u.install.as_str() {
         "downloading" => UpdateLine {
             text: match u.progress {
-                None => format!("Downloading N8 Tray {v}"),
-                Some(p) => format!("Downloading N8 Tray {v}: {p}%"),
+                None => format!("Downloading {name} {v}"),
+                Some(p) => format!("Downloading {name} {v}: {p}%"),
             },
             detail: None,
             action: None,
@@ -643,8 +644,8 @@ pub fn update_line(u: &UpdateView) -> Option<UpdateLine> {
             problem: false,
         },
         "installing" => UpdateLine {
-            text: format!("Installing N8 Tray {v}"),
-            detail: Some("N8 Tray starts again by itself".into()),
+            text: format!("Installing {name} {v}"),
+            detail: Some(format!("{name} starts again by itself")),
             action: None,
             progress: Some(1.0),
             problem: false,
@@ -657,7 +658,7 @@ pub fn update_line(u: &UpdateView) -> Option<UpdateLine> {
             problem: true,
         },
         _ => UpdateLine {
-            text: format!("N8 Tray {v} is available"),
+            text: format!("{name} {v} is available"),
             detail: None,
             action: Some(UpdateAction::Install),
             progress: None,

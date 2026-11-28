@@ -141,6 +141,8 @@ fn fill(ui: &Gallery) {
                 .collect::<Vec<_>>(),
         )))
     };
+    ui.global::<crate::ui::Product>()
+        .set_name(super::PRODUCT.into());
     ui.set_watch_words(format::words(hub::WATCH_NOTE));
     ui.set_spark_lines(strings(|d| &d.line));
     ui.set_spark_fills(strings(|d| &d.fill));

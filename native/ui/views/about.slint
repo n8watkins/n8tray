@@ -1,12 +1,12 @@
 // About N8 Tray (lane: settings and about). A stub until that lane lands;
 // it owns this file, `about-model.slint` and `src/view/about.rs`.
-import { TitleBar, ScrollArea, Say, SayLine } from "../widgets.slint";
+import { TitleBar, ScrollArea, Say, SayLine, Product } from "../widgets.slint";
 import { Nav } from "../nav.slint";
 import { AboutModel } from "about-model.slint";
 
 export component AboutView inherits VerticalLayout {
     TitleBar {
-        title: "About N8 Tray";
+        title: "About " + Product.name;
         back: true;
         back-clicked => {
             Nav.back();
@@ -18,7 +18,7 @@ export component AboutView inherits VerticalLayout {
     ScrollArea {
         Say {
             SayLine {
-                text: "N8 Tray " + AboutModel.version;
+                text: Product.name + " " + AboutModel.version;
             }
         }
     }

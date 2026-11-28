@@ -11,6 +11,14 @@
 //! Views (one lane each, one module each): `hub`, `all_apps`, `panel`,
 //! `details`, `settings`, `about`, `history`.
 
+/// The product's name as the window shows it: the title bar, the close
+/// button's label, the update banner, the settings' words and N8 Tray's own
+/// row. The one place to change it (the owner's rename to Traybay at the
+/// native switch is this line); Slint reads it from `Product.name`, which
+/// `router::wire` sets on every window. Words that name the old PowerShell
+/// tray ("Your PowerShell N8 Tray ...") are not the product and keep theirs.
+pub const PRODUCT: &str = "N8 Tray";
+
 // The kit is written ahead of the views that use it: until each view lane
 // lands, parts of it have no caller outside the tests.
 #[allow(dead_code, reason = "the kit for the view lanes")]

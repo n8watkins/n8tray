@@ -4,7 +4,7 @@
 // height-limit setting (the view's scroll area then scrolls), places it,
 // applies the theme, Compact and the height limit on every fill and reveal,
 // and drops it 10 s after it hides.
-import { Theme, TooltipLayer, RowFocusExpiry } from "widgets.slint";
+import { Theme, Product, TooltipLayer, RowFocusExpiry } from "widgets.slint";
 import { Nav, View } from "nav.slint";
 import { HubView } from "views/hub.slint";
 import { AllAppsView } from "views/all-apps.slint";
@@ -20,7 +20,7 @@ export component FlyoutWindow inherits Window {
     // The view's top has the keyboard focus (tests read it).
     out property <bool> top-focused: top.has-focus;
 
-    title: "N8 Tray";
+    title: Product.name;
     no-frame: true;
     always-on-top: true;
     background: Theme.bg;

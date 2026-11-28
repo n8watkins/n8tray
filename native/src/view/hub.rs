@@ -284,16 +284,15 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
     );
     let none_at_all = s.more.is_none() && format::main_view_apps(&s.apps).is_empty();
     model.set_empty(if none_at_all { EMPTY } else { "" }.into());
-    // The product's name is the shell's: the hub's title (`Nav.title`).
-    let name = ui.nav().get_title();
-    model.set_tray(tray_row(&s.tray, &name));
+    let name = super::PRODUCT;
+    model.set_tray(tray_row(&s.tray, name));
 
     let settings = &s.settings;
     model.set_sign_in_text("Start at sign-in".into());
     model.set_sign_in_checked(settings.launch_at_sign_in);
     model.set_sign_in_enabled(!(settings.sign_in_foreign || settings.error.is_some()));
     model.set_sign_in_tooltip(if settings.sign_in_foreign {
-        sign_in_foreign(&name).into()
+        sign_in_foreign(name).into()
     } else {
         SharedString::default()
     });

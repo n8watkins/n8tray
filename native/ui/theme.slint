@@ -4,6 +4,12 @@
 // window is created (src/view/theme.rs); every widget reads the tokens here,
 // never a colour of its own.
 
+// The product's name as the window shows it, from Rust's `view::PRODUCT`
+// (set by `router::wire` on every window): the one source for both.
+export global Product {
+    in-out property <string> name;
+}
+
 // A level of the host (n8tray_core::model::LevelName).
 export enum Level { hidden, off, ok, attention, problem }
 

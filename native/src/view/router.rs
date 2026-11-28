@@ -16,7 +16,7 @@ use super::{about, all_apps, details, history, hub, panel, settings};
 use crate::ui::Gallery;
 use crate::ui::{
     AboutModel, AllAppsModel, DetailsModel, FlyoutWindow, FocusProbe, HistoryModel, HubModel, Nav,
-    PanelModel, RowFocus, SettingsModel, Theme, View,
+    PanelModel, Product, RowFocus, SettingsModel, Theme, View,
 };
 use slint::ComponentHandle;
 
@@ -34,6 +34,7 @@ pub trait Models {
     fn focus_probe(&self) -> FocusProbe<'_>;
     fn theme(&self) -> Theme<'_>;
     fn nav(&self) -> Nav<'_>;
+    fn product(&self) -> Product<'_>;
 }
 
 macro_rules! models {
@@ -70,6 +71,9 @@ macro_rules! models {
                 self.global()
             }
             fn nav(&self) -> Nav<'_> {
+                self.global()
+            }
+            fn product(&self) -> Product<'_> {
                 self.global()
             }
         }
@@ -279,7 +283,7 @@ impl Router {
     /// words; `Nav.title`).
     pub fn title(&self, snapshot: &HostSnapshot) -> String {
         match self.view {
-            View::Hub => "N8 Tray".into(),
+            View::Hub => super::PRODUCT.into(),
             View::AllApps => "All apps".into(),
             View::Panel => self
                 .app
@@ -289,7 +293,7 @@ impl Router {
                 .unwrap_or_default(),
             View::Details => "Status details".into(),
             View::Settings => "Settings".into(),
-            View::About => "About N8 Tray".into(),
+            View::About => format!("About {}", super::PRODUCT),
             View::History => "Resource history".into(),
         }
     }
@@ -341,6 +345,7 @@ pub fn fill_view(view: View, ui: &dyn Models, ctx: &mut Ctx) {
 
 /// Connects every view's callbacks, once per window.
 pub fn wire(ui: &dyn Models) {
+    ui.product().set_name(super::PRODUCT.into());
     hub::wire(ui);
     all_apps::wire(ui);
     panel::wire(ui);
@@ -480,6 +485,46 @@ mod tests {
         // The same view asked again is no visit.
         assert!(!r.go(View::History, ""));
         assert!(!r.arrives());
+    }
+
+    /// The product's name has one source for the window, `view::PRODUCT`
+    /// (Slint reads it as `Product.name`): no view, widget or kit module
+    /// writes it out, except words that name the old PowerShell tray or the
+    /// installed Tauri app, which are not this product.
+    #[test]
+    fn the_product_name_is_one_constant() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut files = Vec::new();
+        for dir in ["ui", "ui/views", "ui/widgets", "src/view"] {
+            for entry in std::fs::read_dir(root.join(dir)).unwrap().flatten() {
+                let path = entry.path();
+                let kind = path.extension().and_then(|e| e.to_str());
+                if matches!(kind, Some("slint" | "rs")) && !path.ends_with("gallery.slint") {
+                    files.push(path);
+                }
+            }
+        }
+        assert!(files.len() > 20, "{files:?}");
+        let mut found = Vec::new();
+        for path in files {
+            let text = std::fs::read_to_string(&path).unwrap();
+            // A Rust file's tests may name it.
+            let code = text.split("#[cfg(test)]").next().unwrap();
+            for (n, line) in code.lines().enumerate() {
+                let line = line.trim();
+                let comment = line.starts_with("//");
+                let other = line.contains("PowerShell") || line.contains("installed N8 Tray");
+                let the_constant = line.starts_with("pub const PRODUCT");
+                if line.contains("N8 Tray") && !comment && !other && !the_constant {
+                    found.push(format!("{}:{}: {line}", path.display(), n + 1));
+                }
+            }
+        }
+        assert!(found.is_empty(), "{}", found.join("\n"));
+        assert_eq!(
+            Router::default().title(&fixture("busy")),
+            super::super::PRODUCT
+        );
     }
 
     #[test]
