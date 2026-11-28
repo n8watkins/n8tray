@@ -467,3 +467,25 @@ This entry records how the kit answers it; `native/ui/README.md` is the rulebook
 The window's height changes while it shows (content that grows or shrinks) move its top and its height in one `SetWindowPos`, so a window by a bottom taskbar keeps its bottom on the taskbar, and a refresh that changes nothing no longer calls it at all.
 Whether one frame at the old size shows in between depends on when Slint draws relative to that call; it can only be seen on a real desktop with a real taskbar, which this lane did not use (headless renders only).
 Check it when the hub lane lands: open the window with a list that grows (start an app) and watch the bottom edge.
+
+## D37. The kit after the hub and panel lanes: one scroll, one product name, today's pixels (2026-11-27)
+
+The hub (#49) and app panel (#50) lanes and their reviews found ten places where the kit drew or behaved unlike today's window.
+This entry records what was decided while fixing them; `native/ui/README.md` has the rules the remaining lanes follow.
+
+- **One scroll.** Slint 1.19 scrolls every `Flickable` around a newly focused item into view by itself (`publish_focus_item`, a smooth spring unless Windows' animations are off), so the kit's own scroll (`Reveal`) added a second one and the list overshot.
+  Slint's cannot be turned off, so it is the one kept; the kit's is gone and `Reveal` became `FocusProbe`, a probe for the keyboard test only.
+  Today's WebView scrolls a focused control into view at once; the native window scrolls smoothly, as Windows' own lists do, and at once when animations are off.
+  The headless platform of the tests has a clock that moves only when a test advances it (`gallery::advance`), so a smooth scroll or a timer ends exactly when the test says, on any machine.
+- **The hub's summary is "3/4 · 1.9 GB"** (the owner, 2026-11-27), read in full by a screen reader ("3 of 4 running · N8 1.9 GB in all"), with "0 pinned · 1.9 GB" when nothing is pinned.
+  The hub's bar is 6 px between its parts and 8 px from the logo to the title, and the summary takes the room before the buttons instead of a spacer with a gap on either side; crumb bars keep today's 10 px and their spacer.
+- **Fixture icons** are made absolute by `gallery::fixture`, as the host gives the real window absolute paths, so no view rewrites them.
+- **Table cells**: `<small>` follows the name while both fit on one line and goes under it when not (the owner's choice over today's word-by-word flow); the first column's least width is the longer of the two longest words, capped by the room the other columns leave in a section, so a table never runs past its card.
+  The cell's widths come from hidden measures rather than its laid-out content, which depends on its width.
+- **Row lines take their pixel**, as CSS's `border-top` does: the line stays at the top of the row and the padding under it is one more.
+- **The watching note's link flows after its words**: Slint's `Text` cannot say where its last line ends, and `StyledText`'s links take no keyboard focus, so a banner with a link lays its words out in a `FlexboxLayout` (one word per item, a space apart, 1.45 line boxes) with the focusable link after the last one.
+- **High Contrast** follows `forced-colors` and Windows: buttons have a ButtonText border, Highlight under the mouse, GrayText when disabled (and never a Highlight fill then), and the window has today's 1 px border.
+- **The product's name** is one constant for the window, `view::PRODUCT`, which Slint reads as `Product.name`; the owner's rename to Traybay at the native switch is that line.
+  Words that name the old PowerShell tray or the installed Tauri app keep their literal; the tray menu and the logs are not covered yet.
+- **A row's button carries its action's id** (`RowData.action-id`), so no view keeps a map from app to action.
+- **App rows**: the text column keeps the 10 px of today's empty third column, a problem line wraps to two lines as `.app .line.problem` does, and in Compact a row without an action keeps a Compact button's room, so N8 Tray's own figure lines up with the apps' (Normal keeps today's 26 px).
