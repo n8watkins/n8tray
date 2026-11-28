@@ -109,7 +109,8 @@ Fixtures for shots: `busy`, `healthy`, `trouble`, `watching`, `updating`, `updat
 
 ### Hub (copies `Hub.tsx`, the `HubHead` and `HubFoot` parts and `components/UpdateBanner.tsx`)
 
-- Title bar: logo, "N8 Tray", the level pill (`format::level_words(level)`), the summary (`format::title_summary(pinnedRunning, pinnedTotal, memory.n8Mb)`), Settings, Close.
+- Title bar: logo, "N8 Tray", the level pill (`format::level_words(level)`), the summary (`format::title_summary(pinnedRunning, pinnedTotal, memory.n8Mb)`, "3/4 · 1.9 GB", the owner's short form of 2026-11-27, read in full by a screen reader from `format::title_summary_label`), Settings, Close.
+  The hub's bar is tighter than a crumb's (6 px between its parts, 8 px from the logo to the title) and the summary takes the room before the buttons, so it fits on one line beside "Needs attention"; `hub::tests::the_summary_fits_beside_the_pill_on_one_line` checks every shot (`TitleProbe.summary-cut`), with Segoe UI too on Windows.
 - Under it, when something is wrong, the amber line with the reason only (`AlertLine`, `reason`); the summary stays in the title bar.
 - The watching note (`legacyTray`) with its own "Learn more" link, the update banner (`format::update_line(update)`), then the apps.
 - The apps in the main view: `format::main_view_apps(apps)` (those with `inMainView`), each an `AppRow` from `rows::row_data`, Start or Stop as today, no action while watching.

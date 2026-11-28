@@ -13,7 +13,7 @@
 )]
 
 use n8tray_core::model::{
-    ActionKindView, ActionView, AppView, ComponentView, LevelName, UpdateView,
+    ActionKindView, ActionView, AppView, ComponentView, HostSnapshot, LevelName, UpdateView,
 };
 use n8tray_core::pins;
 
@@ -124,15 +124,23 @@ pub fn percent(value: Option<f64>) -> String {
 }
 
 /// The title bar's summary next to the level pill: pinned apps that run of
-/// those pinned, then N8's memory in all ("3 of 3 · 1.9 GB"); with nothing
-/// pinned, "0 pinned · 1.9 GB".
+/// those pinned, then N8's memory in all ("3/4 · 1.9 GB", the owner's
+/// short form of 2026-11-27, so it fits beside "Needs attention"); with
+/// nothing pinned, "0 pinned · 1.9 GB".
 pub fn title_summary(pinned_running: u32, pinned_total: u32, n8_mb: f64) -> String {
     let n8 = memory(Some(n8_mb));
     if pinned_total == 0 {
         format!("0 pinned · {n8}")
     } else {
-        format!("{pinned_running} of {pinned_total} · {n8}")
+        format!("{pinned_running}/{pinned_total} · {n8}")
     }
+}
+
+/// What a screen reader says for the summary: the words in full, as the
+/// tray's status line has them ("3 of 4 running · N8 1.9 GB in all",
+/// "Nothing pinned · N8 1.9 GB in all"), never "3 slash 4".
+pub fn title_summary_label(s: &HostSnapshot) -> String {
+    format!("{} · {}", s.pinned_text, s.memory.text)
 }
 
 /// The level pill's words.
@@ -1005,14 +1013,21 @@ mod tests {
 
     #[test]
     fn the_title_bar_summary_counts_pinned_apps_and_n8s_memory() {
-        assert_eq!(title_summary(3, 3, 1945.6), "3 of 3 · 1.9 GB");
+        assert_eq!(title_summary(3, 3, 1945.6), "3/3 · 1.9 GB");
         assert_eq!(title_summary(0, 0, 1945.6), "0 pinned · 1.9 GB");
-        assert_eq!(title_summary(1, 2, 312.0), "1 of 2 · 312 MB");
+        assert_eq!(title_summary(1, 2, 312.0), "1/2 · 312 MB");
         let s = fixture("pinned");
         assert_eq!(
             title_summary(s.pinned_running, s.pinned_total, s.memory.n8_mb),
-            "1 of 1 · 768 MB"
+            "1/1 · 768 MB"
         );
+        assert_eq!(title_summary_label(&s), "1 of 1 running · N8 768 MB in all");
+        let s = fixture("busy");
+        assert_eq!(
+            title_summary(s.pinned_running, s.pinned_total, s.memory.n8_mb),
+            "3/4 · 1.9 GB"
+        );
+        assert_eq!(title_summary_label(&s), "3 of 4 running · N8 1.9 GB in all");
     }
 
     #[test]

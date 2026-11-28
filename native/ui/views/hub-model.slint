@@ -19,6 +19,8 @@ export global HubModel {
     in-out property <Level> level: Level.off;
     in-out property <string> level-text: "Idle";
     in-out property <string> summary;
+    // The summary's words for a screen reader, in full.
+    in-out property <string> summary-label;
     // The amber line under it: the reason, "" when nothing is wrong.
     in-out property <string> alert;
     // The PowerShell tray manages the apps: the watching note shows.

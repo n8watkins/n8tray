@@ -240,6 +240,7 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
     model.set_summary(
         format::title_summary(s.pinned_running, s.pinned_total, s.memory.n8_mb).into(),
     );
+    model.set_summary_label(format::title_summary_label(s).into());
     // The reason only: the summary stays in the title bar.
     model.set_alert(s.reason.as_deref().unwrap_or_default().into());
     model.set_watching(s.legacy_tray);
@@ -408,6 +409,49 @@ mod tests {
         assert_eq!(stops.in_bars, 6, "{stops:?}");
         // Twelve apps with a button each, then N8 Tray's row.
         assert_eq!(stops.in_list, 25, "{stops:?}");
+    }
+
+    /// The summary is never cut beside the pill ("Needs attention" is the
+    /// widest), in every shot, with the test font and, on Windows, with the
+    /// real Segoe UI; nor with two-digit counts and a two-digit memory.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn the_summary_fits_beside_the_pill_on_one_line() {
+        use super::super::gallery::{Font, Look, view_window};
+        use crate::ui::{TitleProbe, View};
+        use slint::ComponentHandle;
+        fn wide(stage: &mut super::super::router::Stage) {
+            stage_icons(stage);
+            let s = &mut stage.snapshot;
+            s.level = n8tray_core::model::LevelName::Attention;
+            s.pinned_running = 12;
+            s.pinned_total = 12;
+            s.memory.n8_mb = 13_400.0;
+        }
+        let worst = super::super::router::Shot {
+            stage: Some(wide),
+            ..shot("wide", "busy")
+        };
+        let fonts: &[Font] = if cfg!(windows) {
+            &[Font::Test, Font::System]
+        } else {
+            &[Font::Test]
+        };
+        for font in fonts {
+            for shot in SHOTS.iter().chain([&worst]) {
+                let w = view_window(View::Hub, shot, Look::Light, *font).unwrap();
+                w.draw().unwrap();
+                assert!(!w.ui.hub().get_summary().is_empty(), "{}", shot.state);
+                assert!(
+                    !w.ui.global::<TitleProbe>().get_summary_cut(),
+                    "{} ({font:?}): \"{}\" is cut beside \"{}\"",
+                    shot.state,
+                    w.ui.hub().get_summary(),
+                    w.ui.hub().get_level_text()
+                );
+                w.ui.hide().unwrap();
+            }
+        }
     }
 
     /// At the default height the trouble hub is taller than the window: N8
