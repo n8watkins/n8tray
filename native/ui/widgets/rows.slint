@@ -194,19 +194,30 @@ component RowMain {
                     size: root.compact ? Theme.app-icon-compact : Theme.app-icon;
                 }
             }
+            // The text column. Today's grid keeps its third column, and the
+            // 10 px gap before it, even when it is empty (no figures, no
+            // sparkline), so the text never takes that room.
             if !root.compact: VerticalLayout {
                 alignment: center;
                 horizontal-stretch: 1;
+                padding-right: root.show-spark || root.memory != "" ? 0px : 10px;
                 Label {
                     text: root.name;
                     font-weight: Theme.weight-bold;
                 }
                 // One line, cut with an ellipsis; the full text is the
-                // row's tooltip.
-                Label {
+                // row's tooltip. A problem wraps to two lines first
+                // (`.app .line.problem`: `-webkit-line-clamp: 2`).
+                if root.tone != Tone.problem: Label {
                     text: root.line;
                     font-size: Theme.text-small;
                     color: Theme.tone-color(root.tone);
+                }
+                if root.tone == Tone.problem: WrapLabel {
+                    text: root.line;
+                    font-size: Theme.text-small;
+                    color: Theme.tone-color(root.tone);
+                    max-lines: 2;
                 }
             }
             if !root.compact && (root.show-spark || root.memory != ""): HorizontalLayout {
@@ -408,13 +419,15 @@ export component AppRow {
         }
 
         // `.app .act { margin-right: 4px }`; without an action, the 26 px
-        // room today's empty `.act` keeps.
+        // room today's empty `.act` keeps (2 px less than a button, as
+        // today's N8 Tray row shows). Compact rows have no today: there the
+        // room is a button's, so every figure lines up.
         HorizontalLayout {
             padding-right: 4px;
             alignment: center;
             visible: root.has-action || root.reserve-action;
             width: !root.has-action && !root.reserve-action ? 0px
-                : (root.has-action ? (root.compact ? Theme.icon-button-compact : Theme.icon-button) : 26px) + 4px;
+                : (root.compact ? Theme.icon-button-compact : root.has-action ? Theme.icon-button : 26px) + 4px;
             VerticalLayout {
                 alignment: center;
                 act := IconButton {

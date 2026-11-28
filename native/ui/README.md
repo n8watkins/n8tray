@@ -189,6 +189,7 @@ The tray menu and the logs (`tray.rs`, `shell.rs`, `main.rs`) are outside the wi
 - `BottomBar`: the sign-in box (`switch-*`) and `links` as `BarLink`s.
 - `AlertLine`: the one amber line under the title bar when something is wrong; only what is wrong.
 - `RowList` (a stable `[RowData]` model, rows built by `view::rows::row_data`), `AppRow`, `ProblemRow` (a manifest that could not be read; one line in Compact), `MoreLine`.
+  An app row's text stops 10 px before its figures, or where they would be (today's empty grid column); a problem line wraps to two lines in Normal, as `.app .line.problem`; a row without an action keeps today's 26 px in Normal and a Compact button's 24 px in Compact, so N8 Tray's own figure lines up with the apps'.
 - `Pill`, `Tag`, `AppIcon` (28, 24 small, 18 compact, with the level dot), `ProgressBar`.
 - `IconButton`, `SmallButton` (plain, primary, or a toggle that looks primary when `checked`), `LinkButton`, `LinkSwitch`, `TextLink`, `HeadLink`; armed buttons show `armed`, which Rust sets.
 - `Banner` (`BannerKind` info, attention or problem; glyph, text, detail, progress, two buttons, a link that opens more text).

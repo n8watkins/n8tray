@@ -44,6 +44,13 @@ pub const SHOTS: &[super::router::Shot] = &[
         stage: Some(stage_armed),
         ..shot("armed", "busy")
     },
+    // A failure too long for one line: two lines, then an ellipsis, as
+    // today's `.app .line.problem`; the text stops where today's grid
+    // keeps its empty figures column.
+    super::router::Shot {
+        stage: Some(stage_long_failure),
+        ..shot("long-failure", "trouble")
+    },
     super::router::Shot {
         stage: Some(stage_sign_in_foreign),
         ..shot("sign-in-foreign", "healthy")
@@ -80,6 +87,25 @@ fn stage_armed(stage: &mut super::router::Stage) {
         super::confirm::key("voicedock", "stop", None),
         true,
         std::time::Instant::now(),
+    );
+}
+
+/// VoiceDock's start failed with a long message.
+#[cfg(debug_assertions)]
+fn stage_long_failure(stage: &mut super::router::Stage) {
+    let app = stage
+        .snapshot
+        .apps
+        .iter_mut()
+        .find(|a| a.id == "voicedock")
+        .expect("the trouble fixture has VoiceDock");
+    let outcome = app
+        .last_outcome
+        .as_mut()
+        .expect("VoiceDock's start failed in the trouble fixture");
+    outcome.message = Some(
+        "Start failed: bin/voicedock-hub.exe is missing from the app's folder, so the engines cannot load either"
+            .into(),
     );
 }
 
