@@ -143,6 +143,17 @@ export global Theme {
     // How long a button that asks to confirm waits for the second click.
     out property <duration> confirm-window: 4s;
 
+    // A button's border under High Contrast, as `forced-colors` draws
+    // today's `border: 1px solid transparent` and Windows draws its own
+    // buttons: ButtonText at rest, Highlight under the mouse, GrayText when
+    // disabled. Transparent otherwise (the widgets draw no border then).
+    public pure function contrast-border(enabled: bool, hovered: bool) -> color {
+        if !contrast { return transparent; }
+        if !enabled { return disabled-text; }
+        if hovered { return hover-border; }
+        return button-text;
+    }
+
     // A level's text colour (pills, lines).
     public pure function level-color(level: Level) -> color {
         if level == Level.ok { return ok; }

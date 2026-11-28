@@ -74,7 +74,7 @@ export component IconButton {
                 : p.hovered ? Theme.hover
                 : transparent;
             border-width: Theme.contrast ? 1px : 0px;
-            border-color: p.hovered ? Theme.hover-border : transparent;
+            border-color: Theme.contrast-border(root.enabled, p.hovered);
             opacity: Theme.faded(root.enabled, 0.4);
 
             Glyph {
@@ -144,12 +144,15 @@ export component SmallButton {
         Rectangle {
             border-radius: Theme.radius-button;
             border-width: 1px;
-            border-color: root.armed ? Theme.problem
-                : Theme.contrast && p.hovered ? Theme.hover-border
-                : !root.enabled && Theme.contrast ? Theme.disabled-text
+            border-color: Theme.contrast ? Theme.contrast-border(root.enabled, p.hovered)
+                : root.armed ? Theme.problem
                 : root.filled ? transparent
                 : Theme.line;
-            background: root.filled ? Theme.accent : p.hovered ? Theme.hover : Theme.bg;
+            // Under High Contrast a disabled button is never filled: its
+            // words and border in GrayText on the window's colour.
+            background: root.filled && (root.enabled || !Theme.contrast) ? Theme.accent
+                : p.hovered ? Theme.hover
+                : Theme.bg;
             opacity: Theme.faded(root.enabled, 0.45);
 
             // 3px 10px inside a 1px border.
@@ -219,7 +222,7 @@ export component LinkButton {
             border-radius: Theme.radius-button;
             background: p.hovered ? Theme.hover : transparent;
             border-width: Theme.contrast ? 1px : 0px;
-            border-color: p.hovered ? Theme.hover-border : transparent;
+            border-color: Theme.contrast-border(root.enabled, p.hovered);
             opacity: Theme.faded(root.enabled, 0.45);
 
             l := HorizontalLayout {

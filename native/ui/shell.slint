@@ -43,7 +43,15 @@ export component FlyoutWindow inherits Window {
         accessible-label: Nav.title;
     }
 
+    // Under High Contrast the window has today's `.flyout` border, 1 px of
+    // CanvasText inside its edge, the view within it.
+    if Theme.contrast: Rectangle {
+        border-width: 1px;
+        border-color: Theme.frame;
+    }
+
     frame := VerticalLayout {
+        padding: Theme.contrast ? 1px : 0px;
         if Nav.view == View.hub: HubView { }
         if Nav.view == View.all-apps: AllAppsView { }
         if Nav.view == View.panel: PanelView { }
