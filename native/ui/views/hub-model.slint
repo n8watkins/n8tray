@@ -6,18 +6,52 @@
 // The kit's export chain: keep this line as it is.
 export * from "all-apps-model.slint";
 
-import { Level } from "../widgets.slint";
+import { Level, RowData, BarLink } from "../widgets.slint";
 
-// One line of the placeholder, a struct of the view's own: Rust sees it as
-// `crate::ui::HubLine` with no deprecation warning (`view::hub` tests it).
-export struct HubLine {
-    text: string,
-    strong: bool,
+// A manifest that could not be read: the file or app id, and why.
+export struct HubProblem {
+    name: string,
+    message: string,
 }
 
 export global HubModel {
+    // The title bar: the level pill and the summary next to it.
     in-out property <Level> level: Level.off;
     in-out property <string> level-text: "Idle";
     in-out property <string> summary;
-    in-out property <[HubLine]> lines: [{ text: "Starting", strong: true }];
+    // The amber line under it: the reason, "" when nothing is wrong.
+    in-out property <string> alert;
+    // The PowerShell tray manages the apps: the watching note shows.
+    in-out property <bool> watching;
+    // The update banner (`format::update_line`).
+    in-out property <bool> update-shown;
+    in-out property <bool> update-problem;
+    in-out property <string> update-text;
+    in-out property <string> update-detail;
+    // From 0 to 1; below 0, no bar.
+    in-out property <float> update-progress: -1;
+    in-out property <string> update-secondary;
+    in-out property <string> update-primary;
+    // The main view's apps, one stable model updated in place by app id.
+    in-out property <[RowData]> rows;
+    in-out property <[HubProblem]> problems;
+    // "2 more · 1 running, 24 MB", "" when every app is in the main view.
+    in-out property <string> more;
+    // "No apps yet. ..." when the hub has no app at all, else "".
+    in-out property <string> empty;
+    // N8 Tray's own row (id `n8tray`).
+    in-out property <RowData> tray;
+    // The bottom bar.
+    in-out property <string> sign-in-text;
+    in-out property <bool> sign-in-checked;
+    in-out property <bool> sign-in-enabled: true;
+    in-out property <string> sign-in-tooltip;
+    in-out property <[BarLink]> links;
+
+    // An app row's Start or Stop.
+    callback act(id: string);
+    callback update-secondary-clicked();
+    callback update-primary-clicked();
+    callback toggle-sign-in();
+    callback open-log();
 }
