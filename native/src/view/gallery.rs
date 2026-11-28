@@ -21,44 +21,29 @@ use slint::{ComponentHandle, ModelRc, PlatformError, Rgb8Pixel, SharedString, Ve
 use super::confirm::Confirms;
 use super::format;
 use super::icons::Icons;
-use super::router::{self, Ctx, Models};
+use super::router::{self, Ctx, Models, Router, Shot, Stage};
 use super::theme::{self, Choice, NIGHT_SKY};
-use crate::ui::{Gallery, View};
+use super::{about, all_apps, details, history, hub, panel, settings};
+use crate::ui::{FlyoutWindow, Gallery, Theme, View};
 
 /// The widget families and the views, as the gallery's `only` names them.
 /// Each has its own folder of golden images.
 pub const FAMILIES: &[&str] = &[
-    "title",
-    "rows",
-    "compact",
-    "more",
-    "status",
-    "buttons",
-    "switches",
-    "banners",
-    "sections",
-    "blocks",
-    "table",
-    "scroll",
-    "tooltip",
-    "view-hub",
-    "view-all-apps",
-    "view-panel",
-    "view-details",
-    "view-settings",
-    "view-about",
-    "view-history",
+    "title", "rows", "compact", "more", "status", "buttons", "switches", "banners", "sections",
+    "blocks", "table", "scroll", "tooltip",
 ];
 
-/// The views' pages, with the view each shows.
-const VIEWS: &[(&str, View)] = &[
-    ("view-hub", View::Hub),
-    ("view-all-apps", View::AllApps),
-    ("view-panel", View::Panel),
-    ("view-details", View::Details),
-    ("view-settings", View::Settings),
-    ("view-about", View::About),
-    ("view-history", View::History),
+/// The views: each one's folder of golden images, the view, and the
+/// pictures its module asks for (`SHOTS`, see `router::Shot`). The gallery
+/// window also shows each view, on the busy fixture.
+pub const VIEWS: &[(&str, View, &[Shot])] = &[
+    ("view-hub", View::Hub, hub::SHOTS),
+    ("view-all-apps", View::AllApps, all_apps::SHOTS),
+    ("view-panel", View::Panel, panel::SHOTS),
+    ("view-details", View::Details, details::SHOTS),
+    ("view-settings", View::Settings, settings::SHOTS),
+    ("view-about", View::About, about::SHOTS),
+    ("view-history", View::History, history::SHOTS),
 ];
 
 /// A theme to render in.
@@ -149,25 +134,156 @@ fn fill(ui: &Gallery) {
 
     let confirms = Confirms::default();
     let mut icons = Icons::default();
-    for (_, view) in VIEWS {
+    for (_, view, _) in VIEWS {
         let mut ctx = Ctx {
             snapshot: &snapshot,
             app: Some("voicedock"),
             confirms: &confirms,
             icons: &mut icons,
             now: Instant::now(),
+            arrived: true,
+            warnings: &[],
         };
         router::fill_view(*view, ui, &mut ctx);
     }
 }
 
-fn set_font(ui: &Gallery, font: Font) {
+fn set_font(theme: &Theme<'_>, font: Font) {
     if font == Font::Test {
-        let theme = ui.theme();
         theme.set_font_family("Inter".into());
         // Inter's own line (ascent plus descent) is 1.21 times its size.
         theme.set_line_factor(1.4 / 1.21);
     }
+}
+
+/// Puts a look and a font on a window's theme.
+fn set_look(theme: &Theme<'_>, look: Look, font: Font) {
+    let family = if font == Font::Test {
+        "Inter"
+    } else {
+        theme::font()
+    };
+    theme::apply(theme, &look.choice(family));
+    set_font(theme, font);
+}
+
+/// A snapshot from `native/fixtures/<name>.json` (debug builds read it
+/// from the source tree).
+pub fn fixture(name: &str) -> Result<HostSnapshot, String> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures")
+        .join(format!("{name}.json"));
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The shell's window on the headless platform, showing `view` filled from
+/// `shot`'s fixture by the router (so by the view's own `fill`), with the
+/// shot's density, height limit and stage, in `look`. Times show in UTC on
+/// a 24-hour clock (`format::fix_clock_for_pictures`), so the picture is
+/// the same on every PC and runner.
+pub struct ViewWindow {
+    pub ui: FlyoutWindow,
+    pub window: Rc<MinimalSoftwareWindow>,
+    /// The router and the snapshot, for a view's test that changes either
+    /// and fills again (`router.fill(&ui, &snapshot)`).
+    #[allow(dead_code, reason = "for the views' tests")]
+    pub router: Router,
+    #[allow(dead_code, reason = "for the views' tests")]
+    pub snapshot: HostSnapshot,
+}
+
+pub fn view_window(view: View, shot: &Shot, look: Look, font: Font) -> Result<ViewWindow, String> {
+    let windows = headless()?;
+    #[cfg(test)]
+    tests::register_test_font();
+    let ui = FlyoutWindow::new().map_err(|e| e.to_string())?;
+    let window = windows
+        .borrow_mut()
+        .pop()
+        .ok_or("the window has no window")?;
+    let mut snapshot = fixture(shot.fixture)?;
+    // The shot's density and height, whatever the fixture's settings say.
+    snapshot.settings.compact = shot.compact;
+    snapshot.settings.window_height_px = shot.height;
+    snapshot.settings.window_height = match shot.height {
+        500 => "medium",
+        600 => "tall",
+        _ => "short",
+    }
+    .into();
+    let mut router = Router::default();
+    router.open_at(view, shot.app);
+    let mut warnings = Vec::new();
+    if let Some(stage) = shot.stage {
+        stage(&mut Stage {
+            snapshot: &mut snapshot,
+            warnings: &mut warnings,
+            confirms: &mut router.confirms,
+        });
+    }
+    router.warnings = Some(warnings);
+    format::fix_clock_for_pictures();
+    let theme = ui.global::<Theme>();
+    set_look(&theme, look, font);
+    theme::apply_settings(&theme, &snapshot.settings);
+    router::wire(&ui);
+    router.fill(&ui, &snapshot);
+    Ok(ViewWindow {
+        ui,
+        window,
+        router,
+        snapshot,
+    })
+}
+
+impl ViewWindow {
+    /// Sizes the window as the shell does (its content, up to the height
+    /// limit, at least 80 px) and draws it at 1x.
+    #[cfg(test)]
+    pub fn draw(&self) -> Result<Picture, String> {
+        self.draw_at(1.0)
+    }
+
+    /// The same at a display scale.
+    pub fn draw_at(&self, scale: f32) -> Result<Picture, String> {
+        let (ui, window) = (&self.ui, &self.window);
+        window.dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged {
+            scale_factor: scale,
+        });
+        let width = (380.0 * scale).ceil() as u32;
+        if !window.is_visible() {
+            window.set_size(slint::PhysicalSize::new(width, 80));
+            ui.show().map_err(|e| e.to_string())?;
+        }
+        // A first frame at the size it has brings the view up to date.
+        let now = window.size();
+        let mut scratch = vec![Rgb8Pixel::new(0, 0, 0); (now.width * now.height) as usize];
+        window.draw_if_needed(|renderer| {
+            renderer.render(&mut scratch, now.width as usize);
+        });
+        let limit = ui.global::<Theme>().get_height_limit();
+        let logical = ui.get_content_height().clamp(80.0, limit.max(80.0));
+        let height = (logical * scale).ceil() as u32;
+        window.set_size(slint::PhysicalSize::new(width, height));
+        slint::platform::update_timers_and_animations();
+        let mut pixels = vec![Rgb8Pixel::new(0, 0, 0); (width * height) as usize];
+        window.request_redraw();
+        window.draw_if_needed(|renderer| {
+            renderer.render(&mut pixels, width as usize);
+        });
+        let rgb = pixels.iter().flat_map(|p| [p.r, p.g, p.b]).collect();
+        Ok(Picture { width, height, rgb })
+    }
+}
+
+/// One view's picture for a shot (its golden image).
+#[cfg(test)]
+pub fn render_view(view: View, shot: &Shot, look: Look, font: Font) -> Result<Picture, String> {
+    let w = view_window(view, shot, look, font)?;
+    let picture = w.draw()?;
+    w.ui.hide().map_err(|e| e.to_string())?;
+    Ok(picture)
 }
 
 /// `--gallery` or `--gallery-png <folder> [--scale <n>]`: runs it and says
@@ -264,7 +380,7 @@ impl Picture {
 }
 
 /// The windows the headless platform made, the latest last.
-type Windows = Rc<RefCell<Vec<Rc<MinimalSoftwareWindow>>>>;
+pub type Windows = Rc<RefCell<Vec<Rc<MinimalSoftwareWindow>>>>;
 
 /// The software renderer with no window system, one window per component:
 /// set once per thread (Slint's platform is per thread).
@@ -284,7 +400,8 @@ thread_local! {
     static WINDOWS: RefCell<Option<Windows>> = const { RefCell::new(None) };
 }
 
-fn headless() -> Result<Windows, String> {
+/// The headless platform on this thread (set once), with the windows it made.
+pub fn headless() -> Result<Windows, String> {
     WINDOWS.with(|cell| {
         if let Some(windows) = cell.borrow().as_ref() {
             return Ok(windows.clone());
@@ -316,16 +433,7 @@ pub fn headed(look: Look, only: &str, font: Font) -> Result<Headed, String> {
         .pop()
         .ok_or("the gallery has no window")?;
     fill(&ui);
-    set_font(&ui, font);
-    let family = if font == Font::Test {
-        "Inter"
-    } else {
-        theme::font()
-    };
-    theme::apply(&ui.theme(), &look.choice(family));
-    if font == Font::Test {
-        set_font(&ui, font);
-    }
+    set_look(&ui.theme(), look, font);
     ui.set_only(only.into());
     Ok(Headed { ui, window })
 }
@@ -365,8 +473,9 @@ pub fn render(look: Look, only: &str, scale: f32, font: Font) -> Result<Picture,
     Ok(picture)
 }
 
-/// Every family and the whole gallery in every theme, as
-/// `<family>-<theme>.png` and `gallery-<theme>.png`.
+/// Every family, the whole gallery and every view's shots in every theme,
+/// as `<family>-<theme>.png`, `gallery-<theme>.png` and
+/// `view-<name>-<state>-<theme>.png`.
 pub fn write_pngs(folder: &Path, scale: f32) -> Result<usize, String> {
     std::fs::create_dir_all(folder).map_err(|e| format!("{}: {e}", folder.display()))?;
     let mut count = 0;
@@ -376,6 +485,16 @@ pub fn write_pngs(folder: &Path, scale: f32) -> Result<usize, String> {
             let name = if only.is_empty() { "gallery" } else { only };
             picture.write_png(&folder.join(format!("{name}-{}.png", look.name())))?;
             count += 1;
+        }
+        for (name, view, shots) in VIEWS {
+            for shot in *shots {
+                let w = view_window(*view, shot, look, Font::System)?;
+                let picture = w.draw_at(scale)?;
+                w.ui.hide().map_err(|e| e.to_string())?;
+                let file = format!("{name}-{}-{}.png", shot.state, look.name());
+                picture.write_png(&folder.join(file))?;
+                count += 1;
+            }
         }
     }
     Ok(count)
@@ -471,58 +590,96 @@ pub mod tests {
         )
     }
 
-    /// Every family in every look against its golden images. One test:
-    /// Slint's platform is per thread, and this thread renders them in turn.
-    #[test]
-    fn every_family_matches_its_golden_images() {
+    /// Compares one picture with its golden image at `path` (or writes it
+    /// there when `N8TRAY_UPDATE_GOLDENS` names its folder or is 1); says
+    /// what failed. `name` names the picture in the report and the diffs.
+    fn check(name: &str, folder: &str, path: &Path, actual: &Picture) -> Option<String> {
         let update = std::env::var("N8TRAY_UPDATE_GOLDENS").ok();
+        if update.as_deref().is_some_and(|u| u == "1" || u == folder) {
+            actual.write_png(path).unwrap();
+            return None;
+        }
+        let golden = match Picture::read_png(path) {
+            Ok(golden) => golden,
+            Err(e) => return Some(format!("{name}: {e}")),
+        };
+        let save = |suffix: &str, picture: &Picture| {
+            picture
+                .write_png(&diffs().join(format!("{name}{suffix}.png")))
+                .unwrap();
+        };
+        if (golden.width, golden.height) != (actual.width, actual.height) {
+            save("-actual", actual);
+            return Some(format!(
+                "{name}: {}x{} now, {}x{} in the golden image",
+                actual.width, actual.height, golden.width, golden.height
+            ));
+        }
+        let (different, diff) = compare(&golden, actual);
+        let allowed = (f64::from(golden.width * golden.height) * PIXEL_SHARE) as usize;
+        if different > allowed {
+            save("-actual", actual);
+            save("-diff", &diff);
+            return Some(format!(
+                "{name}: {different} pixels differ (at most {allowed} may)"
+            ));
+        }
+        None
+    }
+
+    /// Every family and every view's shots in every look against their
+    /// golden images. One test: Slint's platform is per thread, and this
+    /// thread renders them in turn.
+    #[test]
+    fn every_family_and_view_matches_its_golden_images() {
         let mut failures = Vec::new();
         for family in FAMILIES {
             for look in Look::ALL {
                 let actual = render(look, family, 1.0, Font::Test).unwrap();
                 let path = goldens().join(family).join(format!("{}.png", look.name()));
-                if update.as_deref().is_some_and(|u| u == "1" || u == *family) {
-                    actual.write_png(&path).unwrap();
-                    continue;
-                }
                 let name = format!("{family}-{}", look.name());
-                let golden = match Picture::read_png(&path) {
-                    Ok(golden) => golden,
-                    Err(e) => {
-                        failures.push(format!("{name}: {e}"));
-                        continue;
-                    }
-                };
-                let save = |suffix: &str, picture: &Picture| {
-                    picture
-                        .write_png(&diffs().join(format!("{name}{suffix}.png")))
-                        .unwrap();
-                };
-                if (golden.width, golden.height) != (actual.width, actual.height) {
-                    save("-actual", &actual);
-                    failures.push(format!(
-                        "{name}: {}x{} now, {}x{} in the golden image",
-                        actual.width, actual.height, golden.width, golden.height
-                    ));
-                    continue;
-                }
-                let (different, diff) = compare(&golden, &actual);
-                let allowed = (f64::from(golden.width * golden.height) * PIXEL_SHARE) as usize;
-                if different > allowed {
-                    save("-actual", &actual);
-                    save("-diff", &diff);
-                    failures.push(format!(
-                        "{name}: {different} pixels differ (at most {allowed} may)"
-                    ));
+                failures.extend(check(&name, family, &path, &actual));
+            }
+        }
+        for (folder, view, shots) in VIEWS {
+            assert!(!shots.is_empty(), "{folder} has no shot");
+            for shot in *shots {
+                for look in Look::ALL {
+                    let actual = render_view(*view, shot, look, Font::Test).unwrap();
+                    let file = format!("{}-{}.png", shot.state, look.name());
+                    let path = goldens().join(folder).join(&file);
+                    let name = format!("{folder}-{}-{}", shot.state, look.name());
+                    failures.extend(check(&name, folder, &path, &actual));
                 }
             }
         }
         assert!(
             failures.is_empty(),
-            "{}\nThe pictures are in {}; if the change is meant, refresh with N8TRAY_UPDATE_GOLDENS=1 (or =<family>)",
+            "{}\nThe pictures are in {}; if the change is meant, refresh with N8TRAY_UPDATE_GOLDENS=1 (or =<folder>)",
             failures.join("\n"),
             diffs().display()
         );
+    }
+
+    /// Every file in a view's golden folder is one of its shots: a state
+    /// that was renamed or dropped leaves no stale picture behind.
+    #[test]
+    fn each_view_folder_holds_only_its_shots() {
+        for (folder, _, shots) in VIEWS {
+            let dir = goldens().join(folder);
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.filter_map(Result::ok) {
+                let file = entry.file_name().to_string_lossy().to_string();
+                let known = shots.iter().any(|s| {
+                    Look::ALL
+                        .iter()
+                        .any(|l| file == format!("{}-{}.png", s.state, l.name()))
+                });
+                assert!(known, "{folder}/{file} is no shot of the view");
+            }
+        }
     }
 
     /// The tolerance catches a recoloured part and a 2 px shift.
@@ -561,11 +718,239 @@ pub mod tests {
         }
     }
 
+    /// Presses a key in a headless gallery and draws.
+    fn press(headed: &Headed, k: slint::platform::Key) {
+        use slint::platform::WindowEvent;
+        let text: SharedString = k.into();
+        headed
+            .window
+            .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+        headed
+            .window
+            .dispatch_event(WindowEvent::KeyReleased { text });
+        draw(headed, 1.0).unwrap();
+    }
+
+    /// What `tab_through` saw.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct Stops {
+        /// Controls in a bar (`in-bar`: they never scroll the list).
+        pub in_bars: usize,
+        /// Controls in the scroll area.
+        pub in_list: usize,
+        /// How far the list was scrolled at the bottom (0: it fits).
+        pub bottom: f32,
+    }
+
+    /// Scrolls the list to the bottom with the mouse wheel at `wheel_at`,
+    /// then Tabs through every focus stop until the first comes again, and
+    /// checks each: a control in a bar never moves the list (it is outside
+    /// the list's visible part, often), and a control in the list is
+    /// scrolled into view.
+    fn tab_core(
+        models: &dyn Models,
+        window: &MinimalSoftwareWindow,
+        draw: &dyn Fn(),
+        wheel_at: (f32, f32),
+        at_top: &dyn Fn() -> bool,
+    ) -> Stops {
+        use slint::platform::{Key, WindowEvent};
+        let reveal = models.reveal();
+        window.dispatch_event(WindowEvent::PointerScrolled {
+            position: slint::LogicalPosition::new(wheel_at.0, wheel_at.1),
+            delta_x: 0.0,
+            delta_y: -100_000.0,
+        });
+        draw();
+        let bottom = reveal.get_scrolled();
+        let tab = || {
+            let text: SharedString = Key::Tab.into();
+            window.dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+            window.dispatch_event(WindowEvent::KeyReleased { text });
+            draw();
+        };
+        let mut stops = Stops {
+            in_bars: 0,
+            in_list: 0,
+            bottom,
+        };
+        let mut first = None;
+        for _ in 0..200 {
+            let before = reveal.get_scrolled();
+            let serial = reveal.get_focused_serial();
+            tab();
+            if reveal.get_focused_serial() == serial {
+                // No kit control took the focus. Only the shell window's top
+                // (`focus-top`), where the round started, may: anything else
+                // is a focusable thing that is not a kit control (a bare
+                // FocusScope or TextInput), which reports nothing.
+                assert!(
+                    at_top(),
+                    "Tab landed on something that is not a kit control (it does not report its focus)"
+                );
+                assert!(first.is_some(), "Tab found no control to focus");
+                assert_eq!(
+                    reveal.get_scrolled(),
+                    before,
+                    "the view's top moved the list"
+                );
+                return stops;
+            }
+            let spot = (
+                reveal.get_focused_x(),
+                reveal.get_focused_top(),
+                reveal.get_focused_bottom(),
+            );
+            if reveal.get_focused_reveals() {
+                stops.in_list += 1;
+                if bottom > 0.0 {
+                    assert_eq!(
+                        reveal.get_revealed_serial(),
+                        reveal.get_serial(),
+                        "the list did not answer the control at {spot:?}"
+                    );
+                    let (top, end) = (reveal.get_revealed_top(), reveal.get_revealed_bottom());
+                    assert!(
+                        top >= reveal.get_view_top() - 0.5 && end <= reveal.get_view_bottom() + 0.5,
+                        "the control at {spot:?} is at {top}..{end}, outside the list's {}..{}",
+                        reveal.get_view_top(),
+                        reveal.get_view_bottom()
+                    );
+                }
+            } else {
+                assert_eq!(
+                    reveal.get_scrolled(),
+                    before,
+                    "the bar control at {spot:?} moved the list"
+                );
+                if first == Some(spot) {
+                    return stops;
+                }
+                if first.is_none() {
+                    first = Some(spot);
+                }
+                stops.in_bars += 1;
+            }
+            assert!(
+                first.is_some(),
+                "the first control after the view's top must be in its title bar"
+            );
+        }
+        panic!("Tab did not come back to the first control in 200 presses");
+    }
+
+    /// For a view lane's own test: the view of `shot` in the shell's window,
+    /// scrolled to the bottom, Tabbed through every focus stop from the
+    /// view's top. Fails if a control outside the list (in a bar) moves the
+    /// list, or one in the list is not brought into view; a control that is
+    /// in neither (README: "every control is in a bar or in the
+    /// ScrollArea") shows as the first of those failures. Say what you
+    /// expect of the result, such as `assert!(stops.in_list >= 4)`.
+    pub fn tab_through(view: View, shot: &Shot) -> Stops {
+        let w = view_window(view, shot, Look::Light, Font::Test).unwrap();
+        w.draw().unwrap();
+        let height = w.window.size().height as f32;
+        crate::window::arrived(&w.ui);
+        let draw = || {
+            w.draw().unwrap();
+        };
+        let at_top = || w.ui.get_top_focused();
+        let stops = tab_core(&w.ui, &w.window, &draw, (190.0, height / 2.0), &at_top);
+        w.ui.hide().unwrap();
+        stops
+    }
+
+    /// The keyboard test itself, on a view's shape: a title bar, a list
+    /// that scrolls, a bottom bar.
+    #[test]
+    fn tab_through_keeps_bars_out_of_the_list_and_brings_rows_into_view() {
+        let headed = headed(Look::Light, "keys", Font::Test).unwrap();
+        let snapshot = fixture("compactTall").unwrap();
+        let model = Rc::new(VecModel::default());
+        let data: Vec<RowData> = snapshot
+            .apps
+            .iter()
+            .map(|a| {
+                rows::row_data(
+                    a,
+                    slint::Image::default(),
+                    &Confirms::default(),
+                    false,
+                    Instant::now(),
+                )
+            })
+            .collect();
+        assert!(data.len() >= 5, "enough rows to scroll");
+        list::sync(&model, data, |r| r.id.clone());
+        set_live_rows(&headed.ui, &model);
+        draw(&headed, 1.0).unwrap();
+        let redraw = || {
+            draw(&headed, 1.0).unwrap();
+        };
+        // The gallery has no view top: every stop is a kit control.
+        let stops = tab_core(&headed.ui, &headed.window, &redraw, (200.0, 160.0), &|| {
+            false
+        });
+        assert!(stops.bottom > 0.0, "the list scrolled: {stops:?}");
+        assert!(stops.in_list >= 5, "{stops:?}");
+        assert!(stops.in_bars >= 3, "{stops:?}");
+        headed.ui.hide().unwrap();
+    }
+
+    /// A shot's stage sets up a state no fixture has, in the shot's own
+    /// copy: the snapshot, the warnings the view gets and the armed actions.
+    #[test]
+    fn a_shots_stage_changes_only_its_own_copy() {
+        fn stage(s: &mut Stage) {
+            s.snapshot.apps[0].name = "A very long name for a staged app".into();
+            s.warnings.push(n8tray_core::model::WarningView {
+                at: "18:02".into(),
+                level: "warn".into(),
+                message: "VoiceDock did not answer".into(),
+                count: 3,
+            });
+            let app = s.snapshot.apps[0].id.clone();
+            s.confirms
+                .press(confirm::key(&app, "stop", None), true, Instant::now());
+        }
+        let shot = Shot {
+            stage: Some(stage),
+            ..Shot::of("staged", "busy")
+        };
+        let w = view_window(View::Hub, &shot, Look::Light, Font::Test).unwrap();
+        assert_eq!(w.snapshot.apps[0].name, "A very long name for a staged app");
+        assert_ne!(
+            fixture("busy").unwrap().apps[0].name,
+            w.snapshot.apps[0].name
+        );
+        assert_eq!(w.router.warnings.as_ref().map(Vec::len), Some(1));
+        let key = confirm::key(&w.snapshot.apps[0].id, "stop", None);
+        assert!(w.router.confirms.is_armed(&key, Instant::now()));
+        w.ui.hide().unwrap();
+    }
+
+    /// The shell's window: the hub's bars never move its list.
+    #[test]
+    fn tab_through_the_hub() {
+        // Lower than any preset, so the placeholder's lines scroll.
+        let shot = Shot {
+            compact: true,
+            height: 200,
+            ..Shot::of("compact-low", "compactTall")
+        };
+        let stops = tab_through(View::Hub, &shot);
+        assert!(stops.bottom > 0.0, "the list scrolled: {stops:?}");
+        assert!(stops.in_bars >= 2, "{stops:?}");
+    }
+
     /// The keyboard focus follows the app, not the position, when its list
     /// is reordered (`list::sync` and `rows::refocus`), and the armed state
-    /// stays on its app.
+    /// stays on its app. As in the window, the sync and the refocus happen
+    /// in the same turn, before any layout, and the focused row is one that
+    /// `sync` moved: its widgets are new, created only at the next layout.
     #[test]
     fn focus_and_the_armed_state_follow_the_app_through_a_reorder() {
+        use slint::platform::Key;
         let headed = headed(Look::Light, "list", Font::Test).unwrap();
         let snapshot = busy();
         let mut apps: Vec<_> = snapshot
@@ -574,6 +959,7 @@ pub mod tests {
             .filter(|a| format::row_action(a).is_some())
             .cloned()
             .collect();
+        assert!(apps.len() >= 3);
         let mut confirms = Confirms::default();
         let now = Instant::now();
         let rows_of = |apps: &[n8tray_core::model::AppView], c: &Confirms| -> Vec<RowData> {
@@ -586,16 +972,19 @@ pub mod tests {
         set_live_rows(&headed.ui, &model);
         draw(&headed, 1.0).unwrap();
 
-        let a = apps[0].id.clone();
-        let stop = format::row_action(&apps[0]).unwrap().id.clone();
-        confirms.press(confirm::key(&a, &stop, None), true, now);
+        // The last row, D: reversing the list moves it to the top, so `sync`
+        // takes it out and puts it back (the others shift in place).
+        let last = apps.len() - 1;
+        let d = apps[last].id.clone();
+        let stop = format::row_action(&apps[last]).unwrap().id.clone();
+        confirms.press(confirm::key(&d, &stop, None), true, now);
         let focus = headed.ui.global::<RowFocus>();
-        focus.invoke_to_id(a.as_str().into(), 1);
+        focus.invoke_to_id(d.as_str().into(), 1);
         draw(&headed, 1.0).unwrap();
         assert_eq!(
             focus.get_focused_id(),
-            a.as_str(),
-            "the action of A has the focus"
+            d.as_str(),
+            "the action of D has the focus"
         );
         assert_eq!(focus.get_focused_part(), 1);
 
@@ -603,29 +992,118 @@ pub mod tests {
         apps.reverse();
         let synced = list::sync(&model, rows_of(&apps, &confirms), |r| r.id.clone());
         assert!(synced.moved);
-        draw(&headed, 1.0).unwrap();
-        rows::refocus(&focus, &before);
+        rows::refocus(&focus, &before, &*model);
         draw(&headed, 1.0).unwrap();
         assert_eq!(
             focus.get_focused_id(),
-            a.as_str(),
-            "the focus is on A again"
+            d.as_str(),
+            "the focus is on D again, in its new place"
         );
         assert_eq!(focus.get_focused_part(), 1);
+        assert!(!focus.get_pending(), "the new row took the request");
         let armed: Vec<String> = model
             .iter()
             .filter(|r| r.armed)
             .map(|r| r.id.to_string())
             .collect();
-        assert_eq!(armed, std::slice::from_ref(&a));
+        assert_eq!(armed, std::slice::from_ref(&d));
+
+        // The arrow keys go on from D's new place: the row under it is the
+        // one that was above it.
+        press(&headed, Key::DownArrow);
+        assert_eq!(focus.get_focused_id(), apps[1].id.as_str());
+        assert_eq!(focus.get_focused_part(), 1, "the same part");
+        press(&headed, Key::UpArrow);
+        assert_eq!(focus.get_focused_id(), d.as_str());
 
         // A refresh in the same order keeps both.
         let before = rows::focused(&focus);
         let synced = list::sync(&model, rows_of(&apps, &confirms), |r| r.id.clone());
         assert!(!synced.moved);
-        rows::refocus(&focus, &before);
+        rows::refocus(&focus, &before, &*model);
         draw(&headed, 1.0).unwrap();
-        assert_eq!(focus.get_focused_id(), a.as_str());
+        assert_eq!(focus.get_focused_id(), d.as_str());
+        headed.ui.hide().unwrap();
+    }
+
+    /// A focus request never sticks: the focused row leaves the list (a
+    /// sync removes it), the list is reordered, then the row comes back,
+    /// and the focus does not jump to it. A request no row takes is dropped
+    /// soon after (`RowFocusExpiry`), so a row added later takes nothing.
+    #[test]
+    fn a_focus_request_for_a_gone_row_never_steals_the_focus_later() {
+        let headed = headed(Look::Light, "list", Font::Test).unwrap();
+        let snapshot = busy();
+        let all: Vec<_> = snapshot
+            .apps
+            .iter()
+            .filter(|a| format::row_action(a).is_some())
+            .cloned()
+            .collect();
+        assert!(all.len() >= 3);
+        let rows_of = |apps: &[n8tray_core::model::AppView]| -> Vec<RowData> {
+            apps.iter()
+                .map(|a| {
+                    rows::row_data(
+                        a,
+                        slint::Image::default(),
+                        &Confirms::default(),
+                        false,
+                        Instant::now(),
+                    )
+                })
+                .collect()
+        };
+        let model = Rc::new(VecModel::default());
+        list::sync(&model, rows_of(&all), |r| r.id.clone());
+        set_live_rows(&headed.ui, &model);
+        draw(&headed, 1.0).unwrap();
+        let focus = headed.ui.global::<RowFocus>();
+        let reveal = headed.ui.global::<crate::ui::Reveal>();
+        let gone = all[all.len() - 1].id.clone();
+        focus.invoke_to_id(gone.as_str().into(), 0);
+        draw(&headed, 1.0).unwrap();
+        assert_eq!(focus.get_focused_id(), gone.as_str());
+
+        // The focused row leaves: no request for it.
+        let before = rows::focused(&focus);
+        let mut rest: Vec<_> = all[..all.len() - 1].to_vec();
+        list::sync(&model, rows_of(&rest), |r| r.id.clone());
+        rows::refocus(&focus, &before, &*model);
+        assert!(!focus.get_pending(), "no request for a row that left");
+        draw(&headed, 1.0).unwrap();
+        // Reordered: still nothing asked.
+        let before = rows::focused(&focus);
+        rest.reverse();
+        list::sync(&model, rows_of(&rest), |r| r.id.clone());
+        rows::refocus(&focus, &before, &*model);
+        assert!(!focus.get_pending());
+        draw(&headed, 1.0).unwrap();
+        // The row comes back: it does not take the focus.
+        let serial = reveal.get_focused_serial();
+        list::sync(&model, rows_of(&all), |r| r.id.clone());
+        draw(&headed, 1.0).unwrap();
+        assert_eq!(
+            reveal.get_focused_serial(),
+            serial,
+            "no control took the focus when the row came back"
+        );
+
+        // A request for a row that is not drawn yet and never is: dropped.
+        list::sync(&model, rows_of(&rest), |r| r.id.clone());
+        focus.invoke_to_id(gone.as_str().into(), 0);
+        assert!(focus.get_pending());
+        // A frame starts the expiry timer (as the window's next frame does).
+        draw(&headed, 1.0).unwrap();
+        assert!(focus.get_pending(), "still pending within the wait");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        slint::platform::update_timers_and_animations();
+        draw(&headed, 1.0).unwrap();
+        assert!(!focus.get_pending(), "the request expired");
+        let serial = reveal.get_focused_serial();
+        list::sync(&model, rows_of(&all), |r| r.id.clone());
+        draw(&headed, 1.0).unwrap();
+        assert_eq!(reveal.get_focused_serial(), serial, "nothing jumps later");
         headed.ui.hide().unwrap();
     }
 
@@ -633,7 +1111,7 @@ pub mod tests {
     /// keyboard.ts does.
     #[test]
     fn arrow_keys_move_between_rows_and_parts() {
-        use slint::platform::{Key, WindowEvent};
+        use slint::platform::Key;
         let headed = headed(Look::Light, "list", Font::Test).unwrap();
         let snapshot = busy();
         let apps: Vec<_> = snapshot
@@ -661,16 +1139,7 @@ pub mod tests {
         let focus = headed.ui.global::<RowFocus>();
         focus.invoke_to_index(0, 0);
         draw(&headed, 1.0).unwrap();
-        let key = |k: Key| {
-            let text: SharedString = k.into();
-            headed
-                .window
-                .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
-            headed
-                .window
-                .dispatch_event(WindowEvent::KeyReleased { text });
-            draw(&headed, 1.0).unwrap();
-        };
+        let key = |k: Key| press(&headed, k);
         assert_eq!(focus.get_focused_id(), apps[0].id.as_str());
         key(Key::DownArrow);
         assert_eq!(focus.get_focused_id(), apps[1].id.as_str());

@@ -15,15 +15,15 @@ use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 use n8tray_core::host::Command;
-use n8tray_core::model::HostSnapshot;
+use n8tray_core::model::{ActionView, AppView, HostSnapshot};
 use n8tray_core::placement::{self, Rect};
 use slint::ComponentHandle;
 use tracing::{info, warn};
 
 use crate::life::{Life, Step, WhenHidden};
-use crate::ui::{FlyoutWindow, Nav, Theme, View};
+use crate::ui::{FlyoutWindow, Nav, RowFocus, Theme, View};
 use crate::view::confirm::{self, Press};
-use crate::view::router::{self, Escape, Router};
+use crate::view::router::{self, Escape, Models, Router};
 
 /// How long a hidden window is kept before it is dropped (D17).
 pub const KEEP_HIDDEN: Duration = Duration::from_secs(10);
@@ -49,13 +49,17 @@ pub struct Hub {
     retire: slint::Timer,
     trim: slint::Timer,
     /// Fires when an armed action stops waiting for its second click.
-    #[allow(dead_code, reason = "the views that run actions come with their lanes")]
     disarm: slint::Timer,
     host: Option<Sender<Command>>,
     /// Which view shows, the armed actions and the icons.
     router: Router,
     /// The snapshot the window shows.
     latest: Option<HostSnapshot>,
+    /// The window opened on a view: put the focus at its top once shown.
+    pending_focus: bool,
+    /// Where the window was last put (`set_rect`'s arguments), so a refresh
+    /// that changes nothing moves nothing.
+    placed: Option<(i32, i32, i32, i32)>,
 }
 
 impl Hub {
@@ -72,6 +76,8 @@ impl Hub {
             host: None,
             router: Router::default(),
             latest: None,
+            pending_focus: false,
+            placed: None,
         }
     }
 
@@ -79,54 +85,91 @@ impl Hub {
         self.host = Some(host);
     }
 
-    /// Fills the view that shows from the latest snapshot.
+    /// Fills the view that shows from the latest snapshot, with Compact and
+    /// the height limit as the snapshot's settings say. When the view's app
+    /// left the snapshot it falls back to the hub, and the focus moves to
+    /// the hub's top.
     fn fill(&mut self) {
         let (Some(ui), Some(snapshot)) = (&self.ui, &self.latest) else {
             return;
         };
-        self.router.fill(ui, snapshot);
+        crate::view::theme::apply_settings(&ui.global::<Theme>(), &snapshot.settings);
+        if self.router.fill(ui, snapshot) {
+            arrived(ui);
+        }
+    }
+
+    /// The native window's handle, while it exists.
+    pub fn native(&self) -> Option<isize> {
+        self.hwnd
+    }
+
+    /// Runs `f` with the window's models, if the window exists (a reply to
+    /// a view's request, `view::intent`).
+    pub fn with_models(&self, f: impl FnOnce(&dyn Models)) {
+        if let Some(ui) = &self.ui {
+            f(ui);
+        }
+    }
+
+    /// After the router changed the view: fill it, put the focus at its top,
+    /// stop waiting for a second click, and fit the window to it.
+    fn navigated(&mut self) {
+        self.disarm.stop();
+        self.fill();
+        if let Some(ui) = &self.ui {
+            arrived(ui);
+        }
+        self.place(Place::Fit);
     }
 
     /// A view asked for another (`Nav.go`).
     pub fn go(&mut self, view: View, id: &str) {
-        self.router.go(view, id);
-        self.fill();
-        self.place(false);
+        if self.router.go(view, id) {
+            self.navigated();
+        }
     }
 
     /// Back (`Nav.back`).
     pub fn back(&mut self) {
         self.router.back();
-        self.fill();
-        self.place(false);
+        self.navigated();
     }
 
     /// Escape: back, or in the hub hide the window.
     pub fn escape(&mut self) {
         match self.router.escape() {
             Escape::Hide => self.hide(false),
-            Escape::Back => {
-                self.fill();
-                self.place(false);
-            }
+            Escape::Back => self.navigated(),
         }
     }
 
     /// A click on an action of an app (or of one of its components): it
     /// runs, or it is armed for a second click when it asks to confirm. The
-    /// armed state is the router's, by app and action, so it survives a
-    /// refresh or a reordered list.
-    #[allow(dead_code, reason = "the views that run actions come with their lanes")]
+    /// armed state is the router's, by app, action and component, so it
+    /// survives a refresh or a reordered list, and is shared by every view
+    /// until the view changes or the window hides. Views reach it through
+    /// `view::intent::send(Intent::Action { .. })`.
     pub fn press_action(&mut self, app: &str, action: &str, component: Option<&str>) {
-        let Some(found) = self
+        let Some(found_app) = self
             .latest
             .as_ref()
             .and_then(|s| s.apps.iter().find(|a| a.id == app))
-            .and_then(|a| a.actions.iter().find(|x| x.id == action))
         else {
+            warn!("No app {app}");
+            return;
+        };
+        let Some(found) = found_app.actions.iter().find(|x| x.id == action) else {
             warn!("No action {action} for {app}");
             return;
         };
+        // As the button shows it (`view::action::action_ui`): an action that
+        // is not possible now, or any action while the app is busy with
+        // another, does nothing, even from a stale click or a key.
+        if let Err(why) = pressable(found_app, found) {
+            info!("{action} of {app} not run: {why}");
+            return;
+        }
         let now = Instant::now();
         let key = confirm::key(app, action, component);
         match self.router.confirms.press(key, found.confirm, now) {
@@ -146,7 +189,6 @@ impl Hub {
     }
 
     /// Fills again when the next armed action stops waiting.
-    #[allow(dead_code, reason = "the views that run actions come with their lanes")]
     fn arm_disarm(&mut self, now: Instant) {
         if let Some(at) = self.router.confirms.next_expiry() {
             self.disarm.start(
@@ -169,24 +211,44 @@ impl Hub {
         std::env::var_os("N8TRAY_NO_ACTIVATE").is_none()
     }
 
-    /// A left click on the tray icon: open, or close when open.
+    /// A left click on the tray icon: open on the hub, or close when open.
     pub fn toggle(&mut self, anchor: Option<Rect>, snapshot: Option<&HostSnapshot>) {
         if anchor.is_some() {
             self.anchor = anchor;
         }
         let steps = self.life.toggle(Instant::now(), Self::activate());
+        if steps.contains(&Step::Fill) {
+            // Opening: every open shows the hub, as today (`hub.rs`).
+            self.opening(View::Hub, "");
+        }
         self.run(steps, snapshot);
         self.reveal();
     }
 
-    /// Opens the window next to the tray icon (`anchor`, or where it was).
-    pub fn show(&mut self, anchor: Option<Rect>, snapshot: Option<&HostSnapshot>) {
+    /// Opens the window next to the tray icon (`anchor`, or where it was) on
+    /// `view`, with nothing to go back to but the hub; shown again while
+    /// open, it moves to `view` as today's window does.
+    pub fn show_view(
+        &mut self,
+        view: View,
+        id: &str,
+        anchor: Option<Rect>,
+        snapshot: Option<&HostSnapshot>,
+    ) {
         if anchor.is_some() {
             self.anchor = anchor;
         }
         let steps = self.life.show(Self::activate());
+        self.opening(view, id);
         self.run(steps, snapshot);
         self.reveal();
+    }
+
+    /// The window opens (or is shown again) on `view`.
+    fn opening(&mut self, view: View, id: &str) {
+        self.disarm.stop();
+        self.router.open_at(view, id);
+        self.pending_focus = true;
     }
 
     /// Shows the window once its native window exists (Slint creates it
@@ -201,9 +263,16 @@ impl Hub {
         self.run(steps, None);
     }
 
+    /// Hides the window. Nothing stays armed: a second click after the
+    /// window opens again never runs an action armed before.
     pub fn hide(&mut self, from_blur: bool) {
         let steps = self.life.hide(Instant::now(), from_blur);
         self.run(steps, None);
+        self.disarm.stop();
+        if self.router.confirms.next_expiry().is_some() {
+            self.router.confirms.clear();
+            self.fill();
+        }
     }
 
     /// The window lost the focus: a shown window hides (D25).
@@ -222,14 +291,14 @@ impl Hub {
         self.latest = Some(snapshot.clone());
         if self.ui.is_some() && self.life.visible() {
             self.fill();
-            self.place(false);
+            self.place(Place::Fit);
         }
     }
 
     /// The display scale changed under a shown window.
     pub fn rescaled(&mut self) {
         if self.life.visible() {
-            self.place(false);
+            self.place(Place::Again);
         }
     }
 
@@ -250,7 +319,7 @@ impl Hub {
                 }
                 Step::Create => match create() {
                     Ok(ui) => {
-                        self.router.reset();
+                        self.router.new_window();
                         router::wire(&ui);
                         self.ui = Some(ui);
                         self.hwnd = None;
@@ -301,6 +370,7 @@ impl Hub {
                         }
                     }
                     self.hwnd = None;
+                    self.placed = None;
                 }
                 Step::StartTrim => {
                     self.trim
@@ -318,25 +388,30 @@ impl Hub {
 
     fn reveal_native(&mut self, activate: bool) {
         let Some(hwnd) = self.hwnd else { return };
-        // The theme and High Contrast as they are now, on every reveal.
+        // The theme and High Contrast as they are now, and Compact and the
+        // height limit as the latest snapshot says, on every reveal.
         if let Some(ui) = &self.ui {
-            crate::view::theme::apply(
-                &ui.global::<Theme>(),
-                &crate::view::theme::for_window(ui.window()),
-            );
+            let theme = ui.global::<Theme>();
+            crate::view::theme::apply(&theme, &crate::view::theme::for_window(ui.window()));
+            if let Some(snapshot) = &self.latest {
+                crate::view::theme::apply_settings(&theme, &snapshot.settings);
+            }
         }
-        self.place(true);
+        self.place(Place::Reveal);
         if activate {
             n8tray_platform::window::show_active(hwnd);
         } else {
             n8tray_platform::window::show_inactive(hwnd);
         }
         if let Some(ui) = &self.ui {
+            if std::mem::take(&mut self.pending_focus) {
+                arrived(ui);
+            }
             ui.window().request_redraw();
         }
         // Moving between monitors of different scale can resize the window
         // behind our back: place it once more now that it is shown.
-        self.place(false);
+        self.place(Place::Again);
     }
 
     /// The native window exists: hide it at once (Slint showed it off
@@ -359,8 +434,15 @@ impl Hub {
     }
 
     /// Sizes the window to its content and places it next to the icon,
-    /// inside the work area of the icon's monitor.
-    fn place(&self, log: bool) {
+    /// inside the work area of the icon's monitor. A refresh that changes
+    /// nothing moves nothing (`Place::Fit`).
+    ///
+    /// The top and the height change in one `SetWindowPos`, so a window by a
+    /// bottom taskbar keeps its bottom on the taskbar as its content grows or
+    /// shrinks; whether a frame at the old size shows in between is only
+    /// visible on a real desktop (D36).
+    fn place(&mut self, how: Place) {
+        let log = how == Place::Reveal;
         let (Some(hwnd), Some(ui)) = (self.hwnd, &self.ui) else {
             return;
         };
@@ -401,13 +483,11 @@ impl Hub {
         // What users see is the visible frame; any invisible border the OS
         // keeps around it sits outside the spot (D25).
         let (l, t, r, b) = n8tray_platform::window::frame_insets(hwnd).unwrap_or((0, 0, 0, 0));
-        n8tray_platform::window::set_rect(
-            hwnd,
-            spot.x - l,
-            spot.y - t,
-            width + l + r,
-            height + t + b,
-        );
+        let frame = (spot.x - l, spot.y - t, width + l + r, height + t + b);
+        if how != Place::Fit || self.placed != Some(frame) {
+            n8tray_platform::window::set_rect(hwnd, frame.0, frame.1, frame.2, frame.3);
+            self.placed = Some(frame);
+        }
         if log {
             info!(
                 "The window opens at {},{} ({width}x{height}, scale {scale}) by the {:?} taskbar; icon at {},{} ({}x{}), work area {},{} ({}x{})",
@@ -425,6 +505,36 @@ impl Hub {
             );
         }
     }
+}
+
+/// Whether an app's action may run now: it is possible (`enabled`) and the
+/// app is not busy with another (`pending`), as its button says.
+fn pressable(app: &AppView, action: &ActionView) -> Result<(), &'static str> {
+    if app.pending.is_some() {
+        Err("the app is busy")
+    } else if !action.enabled {
+        Err("not possible now")
+    } else {
+        Ok(())
+    }
+}
+
+/// Why the window is placed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Place {
+    /// It is about to show: placed, and the spot logged.
+    Reveal,
+    /// Placed again even where it was (the OS may have resized it).
+    Again,
+    /// Its content may have changed: moved only if the spot did.
+    Fit,
+}
+
+/// A new view shows: no row waits for the focus any more, and the focus is
+/// at the view's top, where a screen reader says the view's title.
+pub fn arrived(ui: &FlyoutWindow) {
+    ui.global::<RowFocus>().invoke_cancel();
+    ui.invoke_focus_top();
 }
 
 fn create() -> Result<FlyoutWindow, slint::PlatformError> {
@@ -508,6 +618,151 @@ pub fn test_anchor(value: Option<&str>) -> Option<(Rect, Option<Rect>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::fixture;
+
+    /// The shell's window on the headless platform, filled by a router.
+    fn headless_window() -> (FlyoutWindow, Router, HostSnapshot) {
+        crate::view::gallery::headless().unwrap();
+        let ui = FlyoutWindow::new().unwrap();
+        let snapshot = fixture("busy");
+        let mut router = Router::default();
+        router.fill(&ui, &snapshot);
+        (ui, router, snapshot)
+    }
+
+    /// As today's `go` (`main.tsx`): a new view puts the keyboard focus at
+    /// its top, where a screen reader hears the view's title, and Tab goes
+    /// on from there to the view's controls.
+    #[test]
+    fn a_new_view_has_the_focus_at_its_top() {
+        let (ui, mut router, snapshot) = headless_window();
+        ui.show().unwrap();
+        assert!(!ui.get_top_focused());
+        assert!(router.go(View::Settings, ""));
+        router.fill(&ui, &snapshot);
+        arrived(&ui);
+        assert!(ui.get_top_focused());
+        assert_eq!(ui.global::<Nav>().get_title(), "Settings");
+        assert_eq!(ui.global::<Nav>().get_view(), View::Settings);
+        let tab: slint::SharedString = slint::platform::Key::Tab.into();
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: tab.clone() });
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyReleased { text: tab });
+        assert!(!ui.get_top_focused(), "Tab goes on to the first control");
+        // A request for a row no row took is dropped with the view.
+        ui.global::<RowFocus>().invoke_to_id("voicedock".into(), 0);
+        arrived(&ui);
+        assert!(!ui.global::<RowFocus>().get_pending());
+        ui.hide().unwrap();
+    }
+
+    /// A hub with no window yet, its host a channel the test reads.
+    fn hub_with(snapshot: &HostSnapshot) -> (Hub, std::sync::mpsc::Receiver<Command>) {
+        crate::view::gallery::headless().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut hub = Hub::new(WhenHidden::Drop);
+        hub.set_host(tx);
+        hub.latest = Some(snapshot.clone());
+        (hub, rx)
+    }
+
+    /// An app with Stop, which asks to confirm.
+    fn confirming_stop(s: &mut HostSnapshot) -> (String, String) {
+        let app = s
+            .apps
+            .iter_mut()
+            .find(|a| crate::view::format::row_action(a).is_some())
+            .expect("an app with an action");
+        app.pending = None;
+        let id = app.id.clone();
+        let action = crate::view::format::row_action(app).unwrap().id.clone();
+        for a in &mut app.actions {
+            if a.id == action {
+                a.enabled = true;
+                a.confirm = true;
+            }
+        }
+        (id, action)
+    }
+
+    /// Hiding the window disarms: a second press after it opens again
+    /// arms again, it does not run what was armed before.
+    #[test]
+    fn hiding_clears_armed_actions() {
+        let mut s = fixture("busy");
+        let (app, action) = confirming_stop(&mut s);
+        let (mut hub, rx) = hub_with(&s);
+        hub.press_action(&app, &action, None);
+        let key = confirm::key(&app, &action, None);
+        assert!(hub.router.confirms.is_armed(&key, Instant::now()));
+        hub.hide(false);
+        assert!(!hub.router.confirms.is_armed(&key, Instant::now()));
+        hub.press_action(&app, &action, None);
+        assert!(rx.try_recv().is_err(), "armed again, not run");
+    }
+
+    /// A press on an action that is not possible now, or while the app is
+    /// busy, sends nothing and arms nothing.
+    #[test]
+    fn a_disabled_action_or_a_busy_app_runs_nothing() {
+        let mut s = fixture("busy");
+        let (app, action) = confirming_stop(&mut s);
+        let key = confirm::key(&app, &action, None);
+        let set = |s: &mut HostSnapshot, enabled: bool, pending: Option<&str>| {
+            let a = s.apps.iter_mut().find(|a| a.id == app).unwrap();
+            a.pending = pending.map(String::from);
+            for x in &mut a.actions {
+                x.confirm = false;
+                if x.id == action {
+                    x.enabled = enabled;
+                }
+            }
+        };
+        let mut disabled = s.clone();
+        set(&mut disabled, false, None);
+        let mut busy = s.clone();
+        set(&mut busy, true, Some("Stopping"));
+        for snapshot in [disabled, busy] {
+            let (mut hub, rx) = hub_with(&snapshot);
+            hub.press_action(&app, &action, None);
+            assert!(rx.try_recv().is_err());
+            assert!(!hub.router.confirms.is_armed(&key, Instant::now()));
+        }
+        let mut fine = s.clone();
+        set(&mut fine, true, None);
+        let (mut hub, rx) = hub_with(&fine);
+        hub.press_action(&app, &action, None);
+        assert!(matches!(rx.try_recv(), Ok(Command::Action { .. })));
+    }
+
+    /// Compact and the window height come from the snapshot's settings
+    /// (D35), and say when they changed.
+    #[test]
+    fn compact_and_the_height_limit_follow_the_settings() {
+        let (ui, _router, snapshot) = headless_window();
+        let theme = ui.global::<Theme>();
+        let mut settings = snapshot.settings.clone();
+        settings.compact = false;
+        settings.window_height = "short".into();
+        settings.window_height_px = 400;
+        crate::view::theme::apply_settings(&theme, &settings);
+        assert!(!crate::view::theme::apply_settings(&theme, &settings));
+        settings.compact = true;
+        settings.window_height = "tall".into();
+        settings.window_height_px = 600;
+        assert!(crate::view::theme::apply_settings(&theme, &settings));
+        assert!(theme.get_compact());
+        assert_eq!(theme.get_height_limit(), 600.0);
+        // The fixture with Compact on and the tall window.
+        let tall = fixture("compactTall");
+        assert!(tall.settings.compact);
+        crate::view::theme::apply_settings(&theme, &tall.settings);
+        assert_eq!(
+            theme.get_height_limit(),
+            tall.settings.window_height_px as f32
+        );
+    }
 
     #[test]
     fn a_test_anchor_names_an_icon_and_maybe_a_work_area() {

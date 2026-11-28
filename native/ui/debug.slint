@@ -1,0 +1,6 @@
+// What debug and test builds compile (build.rs): everything `main.slint`
+// exports, and the widget gallery (`--gallery`, `--gallery-png`, the golden
+// image tests). Release builds compile `main.slint` alone, so the gallery's
+// component, its sample texts and pictures are not in the shipped exe.
+export * from "main.slint";
+export { Gallery } from "gallery.slint";

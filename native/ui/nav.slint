@@ -1,11 +1,14 @@
 // Navigation between the window's views (kit, owned by the shell): which
 // view shows, and the requests a view makes. Rust (`view::router`) handles
 // them: Back returns to the view before, Escape goes back or, in the hub,
-// hides the window.
+// hides the window. Every open by the tray icon shows the hub.
 export enum View { hub, all-apps, panel, details, settings, about, history }
 
 export global Nav {
     in-out property <View> view: View.hub;
+    // The view's title as its title bar says it ("N8 Tray", "Settings", the
+    // app's name), for the screen reader when the view opens (Rust sets it).
+    in-out property <string> title: "N8 Tray";
     // Open a view; `id` names the app for a panel or an app's history.
     callback go(view: View, id: string);
     callback back();

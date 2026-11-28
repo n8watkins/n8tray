@@ -6,8 +6,16 @@
 // scrollbar does.
 //
 // The control that takes the keyboard focus inside it is scrolled into
-// view. Controls of the title bar and the bottom bar never ask
-// (`reveal: false`), and a request from outside the content is ignored.
+// view. Controls of the title bar and the bottom bar never ask (`in-bar`,
+// which sets `reveal: false`): that is the only thing that keeps them from
+// scrolling the list. So every control of a view is either in a bar
+// (`in-bar: true`) or inside the ScrollArea (README, "Rules for every
+// view"); `view::gallery::tests::tab_through` checks a view for it.
+//
+// The position check in `changed reveal` is no guard against a control
+// elsewhere: once the list is scrolled, the content reaches above the
+// visible part, over the title bar's place, so a control there would pass.
+// It only skips requests while nothing can scroll.
 import { Theme } from "../theme.slint";
 import { Reveal } from "base.slint";
 
@@ -53,6 +61,15 @@ export component ScrollArea {
     changed offset => {
         root.scrolling = true;
         settle.restart();
+        root.publish();
+    }
+
+    // Where the visible part is and how far it is scrolled, for the kit's
+    // keyboard test (`Reveal`).
+    function publish() {
+        Reveal.view-top = fl.absolute-position.y;
+        Reveal.view-bottom = fl.absolute-position.y + root.height;
+        Reveal.scrolled = -fl.content-y;
     }
     settle := Timer {
         interval: 800ms;
@@ -76,11 +93,16 @@ export component ScrollArea {
             return;
         }
         let view-top = fl.absolute-position.y;
+        let before = fl.content-y;
         if Reveal.top < view-top {
             fl.content-y = min(0px, fl.content-y + (view-top - Reveal.top));
         } else if Reveal.bottom > view-top + root.height {
             fl.content-y = max(-root.maximum, fl.content-y - (Reveal.bottom - view-top - root.height));
         }
+        Reveal.revealed-top = Reveal.top + (fl.content-y - before);
+        Reveal.revealed-bottom = Reveal.bottom + (fl.content-y - before);
+        Reveal.revealed-serial = Reveal.serial;
+        root.publish();
     }
 
     // The scrollbar: a 2 px line, 6 px on a soft track under the mouse; the

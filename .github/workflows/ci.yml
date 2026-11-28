@@ -310,13 +310,20 @@ jobs:
           workspaces: native
       # The native crate is a workspace of its own (D33): the root jobs never
       # compile Slint, so its format, lint and tests run here. A release bumps
-      # N8 Tray's own crates, which native/Cargo.lock records: those three
-      # entries are brought up to date first, and every other dependency
-      # stays locked.
-      - run: cargo update --manifest-path native/Cargo.toml -p n8tray-core -p n8tray-platform -p n8tray-contract
+      # N8 Tray's own crates, which native/Cargo.lock records: a plain resolve
+      # (`cargo fetch`, as `npm run check:native` does) brings those path
+      # entries up to date first, and every other dependency stays as the
+      # committed lock has it (`cargo update -p` re-resolved their
+      # dependencies too, flipping the lock between two valid states).
+      - name: Resolve the native lock for N8 Tray's own crates
+        run: cargo fetch --manifest-path native/Cargo.toml
       - run: cargo fmt --manifest-path native/Cargo.toml --check
       - run: cargo clippy --manifest-path native/Cargo.toml --all-targets --locked -- -D warnings
       - run: cargo test --manifest-path native/Cargo.toml --locked
+        env:
+          # The round trip through the real clipboard (Copy status), only on
+          # a runner: never on a PC someone is using.
+          N8TRAY_CLIPBOARD_TEST: ${{ runner.os == 'Windows' && '1' || '' }}
       # The widget gallery's golden images (native/tests/goldens): a failed
       # comparison leaves the picture and a difference image here.
       - if: failure()
@@ -326,6 +333,31 @@ jobs:
           path: native/target/golden-diffs
           if-no-files-found: ignore
       - run: cargo build --manifest-path native/Cargo.toml --release --locked
+      # Release builds compile ui/main.slint without the widget gallery
+      # (build.rs, D36). The check reads the Rust code Slint generated for
+      # each build: the test build's (ui/debug.slint) must have the gallery's
+      # component, so the check can fail, and the release build's
+      # (ui/main.slint) must not. The exe itself proves nothing: link-time
+      # optimisation drops an unused gallery's text either way.
+      - name: The release build carries no gallery
+        shell: bash
+        run: |
+          newest() { ls -t "$1"/build/n8tray-native-*/out/"$2" 2>/dev/null | head -1; }
+          debug=$(newest native/target/debug debug.rs)
+          release=$(newest native/target/release main.rs)
+          if [ -z "$debug" ] || [ -z "$release" ]; then
+            echo "::error::Slint's generated code was not found (debug: '$debug', release: '$release')"
+            exit 1
+          fi
+          if ! grep -q "struct InnerGallery" "$debug"; then
+            echo "::error::The test build's $debug has no gallery: the check below would prove nothing"
+            exit 1
+          fi
+          if grep -q "struct InnerGallery" "$release"; then
+            echo "::error::The release build's $release contains the widget gallery"
+            exit 1
+          fi
+          echo "Gallery in $debug, none in $release"
       - if: runner.os == 'Windows'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

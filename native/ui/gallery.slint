@@ -14,6 +14,7 @@ import {
     OpenItem, OpenLinks, KeyValue, KeyValues, WarningItem, WarningList,
     TableColumn, TableRow, Table, Spark, Chart, ChartLegend, ScrollArea,
     Tooltip, TooltipLayer, TitleBar, BarAction, BottomBar, BarLink,
+    RowFocusExpiry,
 } from "widgets.slint";
 import { HubView } from "views/hub.slint";
 import { AllAppsView } from "views/all-apps.slint";
@@ -324,7 +325,7 @@ component GalleryPage inherits VerticalLayout {
         }
 
         // Column 2: Compact rows, icons and pills, buttons.
-        if root.all || root.only == "compact" || root.only == "status" || root.only == "buttons" || root.only == "list": VerticalLayout {
+        if root.all || root.only == "compact" || root.only == "status" || root.only == "buttons" || root.only == "list" || root.only == "keys": VerticalLayout {
             spacing: 20px;
             alignment: start;
 
@@ -526,6 +527,31 @@ component GalleryPage inherits VerticalLayout {
                     }
                 }
             }
+
+            // A view's shape for the keyboard test (`tab_through`): a title
+            // bar, a short scroll area of rows, a bottom bar.
+            if root.only == "keys": Card {
+                caption: "Bars and a scrolling list";
+                TitleBar {
+                    title: "Keys";
+                    back: true;
+                }
+                ScrollArea {
+                    height: 150px;
+                    List {
+                        RowList {
+                            rows: root.live-rows;
+                            compact: false;
+                        }
+                    }
+                }
+                BottomBar {
+                    switch-text: "Start at sign-in";
+                    links: [
+                        { key: "log", glyph: GlyphName.file, text: "Log", tooltip: "", enabled: true },
+                    ];
+                }
+            }
         }
 
         // Column 3: settings, banners, sections and charts, blocks.
@@ -698,6 +724,12 @@ component GalleryPage inherits VerticalLayout {
                             tone: Tone.attention;
                             SmallButton { text: "Start Pocket TTS"; enabled: false; }
                         }
+                        // No buttons: no gap under the line.
+                        ComponentRow {
+                            name: "Piper";
+                            line: "Ready";
+                            memory: "88 MB";
+                        }
                     }
                     Section {
                         label: "Open";
@@ -762,6 +794,7 @@ component GalleryPage inherits VerticalLayout {
                             rows: [
                                 { cells: ["voicedock-hub", "643 MB", "598 MB", "12%", ""], small: "4120 · hub", tag: "verified", tag-level: Level.ok, tooltip: "", label: "Process voicedock-hub 4120 hub, Memory 643 MB, Private 598 MB, CPU 12%, verified" },
                                 { cells: ["python", "-", "-", "-", ""], small: "5532 · kokoro", tag: "unverified", tag-level: Level.attention, tooltip: "Started by the hub; not checked yet", label: "Process python 5532 kokoro, Memory -, Private -, CPU -, unverified" },
+                                { cells: ["n8-commentary-transcription-worker", "1.2 GB", "1.1 GB", "37%", ""], small: "7712 · whisper", tag: "verified", tag-level: Level.ok, tooltip: "", label: "Process n8-commentary-transcription-worker 7712 whisper, Memory 1.2 GB, Private 1.1 GB, CPU 37%, verified" },
                             ];
                         }
                     }
@@ -869,6 +902,8 @@ export component Gallery inherits Window {
             live-rows: root.live-rows;
         }
     }
+
+    RowFocusExpiry { }
 
     TooltipLayer {
         x: 0;

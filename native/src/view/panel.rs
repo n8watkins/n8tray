@@ -1,11 +1,20 @@
-//! One app's panel (lane: app panel; owns this file, `ui/views/panel.slint`
-//! and `native/tests/goldens/view-panel/`). A stub until it lands: the
-//! title bar with the app's icon, name and words.
+//! One app's panel (lane: app panel; owns this file, `ui/views/panel.slint`,
+//! `ui/views/panel-model.slint` and `native/tests/goldens/view-panel/`). A
+//! stub until it lands: the title bar with the app's icon, name and words.
 #![forbid(unsafe_code)]
 
 use super::router::{Ctx, Models};
 use super::rows;
 
+/// The view's golden images (`router::Shot`): add a state here.
+#[cfg(debug_assertions)]
+pub const SHOTS: &[super::router::Shot] = &[super::router::Shot {
+    app: "voicedock",
+    ..super::router::Shot::of("busy", "busy")
+}];
+
+/// The router shows a panel only while its app is in the snapshot (it
+/// falls back to the hub when the app leaves).
 pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
     let Some(app) = ctx
         .app

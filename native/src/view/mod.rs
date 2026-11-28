@@ -4,8 +4,9 @@
 //! `format` (today's words and numbers), `theme` (the palette), `router`
 //! (which view shows, Back, Escape, filling), `list` (stable models matched
 //! by id), `confirm` (armed actions), `action` (an action button's words),
-//! `rows` (app rows, levels and tones), `icons` (app icons), `gallery` (the
-//! widget gallery of debug and test builds).
+//! `rows` (app rows, levels and tones), `icons` (app icons), `intent` (what
+//! a view asks of N8 Tray: host commands, opening things, history, the
+//! clipboard), `gallery` (the widget gallery of debug and test builds).
 //!
 //! Views (one lane each, one module each): `hub`, `all_apps`, `panel`,
 //! `details`, `settings`, `about`, `history`.
@@ -17,10 +18,13 @@ pub mod action;
 #[allow(dead_code, reason = "the kit for the view lanes")]
 pub mod confirm;
 pub mod format;
-#[cfg(any(debug_assertions, test))]
+// Only where build.rs compiled the gallery (`ui/debug.slint`).
+#[cfg(debug_assertions)]
 pub mod gallery;
 #[allow(dead_code, reason = "the kit for the view lanes")]
 pub mod icons;
+#[allow(dead_code, reason = "the kit for the view lanes")]
+pub mod intent;
 #[allow(dead_code, reason = "the kit for the view lanes")]
 pub mod list;
 #[allow(dead_code, reason = "the kit for the view lanes")]

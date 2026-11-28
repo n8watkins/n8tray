@@ -15,6 +15,7 @@
 use n8tray_core::model::{
     ActionKindView, ActionView, AppView, ComponentView, LevelName, UpdateView,
 };
+use n8tray_core::pins;
 
 /// `value.toFixed(digits)` as JavaScript writes it: the exact decimal value,
 /// rounded half up, and never "-0.0" for a negative zero.
@@ -163,12 +164,33 @@ pub enum Tone {
     Problem,
 }
 
-/// The apps the hub lists: shown in N8 Tray and not hidden, in the
-/// snapshot's order.
+/// Every app the hub knows (`pins::in_hub`: shown in N8 Tray and not
+/// hidden), pinned or not, in the snapshot's order: what All apps lists.
 pub fn hub_apps(apps: &[AppView]) -> Vec<&AppView> {
+    apps.iter().filter(|a| pins::in_hub(a)).collect()
+}
+
+/// The apps the hub's main view shows (D32): those of `hub_apps` whose
+/// `inMainView` is true (pinned, or pulled in by trouble). The rest sit
+/// behind the snapshot's `more` line.
+pub fn main_view_apps(apps: &[AppView]) -> Vec<&AppView> {
     apps.iter()
-        .filter(|a| a.hosted && a.level != LevelName::Hidden)
+        .filter(|a| pins::in_hub(a) && a.in_main_view)
         .collect()
+}
+
+/// All apps' two groups (D32): "In the main view" and "Not in the main
+/// view", each in the snapshot's order. A group with no app is left out.
+pub fn all_apps_groups(apps: &[AppView]) -> Vec<(&'static str, Vec<&AppView>)> {
+    let (inside, outside): (Vec<&AppView>, Vec<&AppView>) =
+        hub_apps(apps).into_iter().partition(|a| a.in_main_view);
+    [
+        ("In the main view", inside),
+        ("Not in the main view", outside),
+    ]
+    .into_iter()
+    .filter(|(_, apps)| !apps.is_empty())
+    .collect()
 }
 
 /// The row's one action: Stop while running, Start while not.
@@ -401,6 +423,31 @@ pub fn has_history(values: Option<&[f64]>) -> bool {
     values.is_some_and(|v| v.iter().any(|&x| x > 0.0))
 }
 
+#[cfg(debug_assertions)]
+thread_local! {
+    /// This thread draws golden pictures (`fix_clock_for_pictures`).
+    static PICTURE_CLOCK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Times on this thread show in UTC on a 24-hour clock from now on, the
+/// same on every PC and runner whatever its time zone and clock setting:
+/// the golden pictures' thread (`gallery::view_window`) calls it.
+#[cfg(debug_assertions)]
+pub fn fix_clock_for_pictures() {
+    PICTURE_CLOCK.with(|fixed| fixed.set(true));
+}
+
+fn picture_clock() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        PICTURE_CLOCK.with(std::cell::Cell::get)
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        false
+    }
+}
+
 /// A start time as the local hour and minute ("14:05"), or "-".
 pub fn since(started_at: Option<&str>) -> String {
     let Some(text) = started_at else {
@@ -408,8 +455,16 @@ pub fn since(started_at: Option<&str>) -> String {
     };
     match chrono::DateTime::parse_from_rfc3339(text) {
         Ok(at) => {
-            let local = at.with_timezone(&chrono::Local);
             use chrono::Timelike;
+            if picture_clock() {
+                let utc = at.with_timezone(&chrono::Utc);
+                return clock_time(
+                    utc.hour(),
+                    utc.minute(),
+                    &n8tray_platform::locale::Clock::twenty_four(),
+                );
+            }
+            let local = at.with_timezone(&chrono::Local);
             clock_time(
                 local.hour(),
                 local.minute(),
@@ -634,6 +689,36 @@ mod tests {
             .into_iter()
             .find(|a| a.id == id)
             .unwrap_or_else(|| panic!("{id} in {fixture_name}"))
+    }
+
+    /// D32: the main view shows `inMainView` apps; All apps lists every app
+    /// of the hub in two groups, and nothing else.
+    #[test]
+    fn the_main_view_and_all_apps_follow_in_main_view() {
+        let s = fixture("pinned");
+        let all: Vec<&str> = hub_apps(&s.apps).iter().map(|a| a.id.as_str()).collect();
+        let main: Vec<&str> = main_view_apps(&s.apps)
+            .iter()
+            .map(|a| a.id.as_str())
+            .collect();
+        assert!(main.len() < all.len(), "{main:?} of {all:?}");
+        assert!(
+            s.more.is_some(),
+            "the line shows exactly when apps are left out"
+        );
+        let groups = all_apps_groups(&s.apps);
+        assert_eq!(groups[0].0, "In the main view");
+        assert_eq!(groups[1].0, "Not in the main view");
+        let ids = |g: &[&AppView]| g.iter().map(|a| a.id.clone()).collect::<Vec<_>>();
+        assert_eq!(ids(&groups[0].1), main);
+        assert_eq!(groups[0].1.len() + groups[1].1.len(), all.len());
+        assert!(groups[1].1.iter().all(|a| !a.in_main_view));
+        // Every app in the main view: one group, and no more line.
+        let h = fixture("healthy");
+        assert!(h.more.is_none());
+        let groups = all_apps_groups(&h.apps);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].1.len(), hub_apps(&h.apps).len());
     }
 
     // describe("rows")
@@ -949,6 +1034,14 @@ mod tests {
         assert_eq!(since(Some("not a time")), "-");
         assert_ne!(since(Some("2026-11-25T10:05:00Z")), "-");
         assert_eq!(duration(0), "0 seconds");
+        // A thread of its own: the clock of golden pictures stays on it.
+        std::thread::spawn(|| {
+            fix_clock_for_pictures();
+            assert_eq!(since(Some("2026-11-25T10:05:00+02:00")), "08:05");
+            assert_eq!(since(Some("2026-11-25T23:59:00Z")), "23:59");
+        })
+        .join()
+        .unwrap();
         assert_eq!(duration(1), "1 second");
         assert_eq!(duration(59), "59 seconds");
         assert_eq!(duration(60), "1 minute");

@@ -11,6 +11,13 @@
 // tested, not run.
 #![cfg_attr(not(windows), allow(dead_code, unused_imports))]
 
+// The tests render the widget gallery and the views on the headless
+// platform, and build.rs compiles the gallery only with debug assertions.
+#[cfg(all(test, not(debug_assertions)))]
+compile_error!(
+    "n8tray-native's tests need debug assertions (the gallery is compiled only then): run `cargo test` without --release, or set `debug-assertions = true` for the profile"
+);
+
 mod args;
 mod badge;
 mod commands;
@@ -19,6 +26,7 @@ mod life;
 mod logs;
 mod open;
 mod recent;
+mod report;
 mod shell;
 mod tray;
 mod view;

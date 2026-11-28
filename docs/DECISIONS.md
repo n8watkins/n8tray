@@ -324,7 +324,8 @@ Its shape:
   In the shared workspace, Slint moved shared dependencies of the shipping app (icu, image, moxcms, zbus) and the root Lint and Test jobs checked a Tauri build with the native crate's features unified in, which is not the one that ships.
   Its path dependencies on `n8tray-core` and `n8tray-platform` stay members of the root workspace; only CI's Native job compiles Slint, and it runs the crate's format, lint and tests (`npm run check:native`).
   The exe's version resource takes the root workspace's version, which release-kit keeps.
-  A release bumps N8 Tray's own crates, which `native/Cargo.lock` records, so the Native job and `check:native` bring those three entries up to date first and keep every other dependency locked.
+  A release bumps N8 Tray's own crates, which `native/Cargo.lock` records, so the Native job and `check:native` first resolve the lock plainly (`cargo fetch`, which needs no output redirect, so it runs the same under Windows' `cmd`), which updates only those path entries and keeps every other dependency as committed.
+  (Until 2026-11-26 they ran `cargo update -p` on the three crates, which also re-resolved those crates' dependencies and flipped the lock between two valid states on every run.)
 - It runs only in a home of its own: without `N8TRAY_HOME`, or with it naming the installed N8 Tray's own folder, it exits with code 3 before it writes anything, its log included, and says why on stderr.
   In the real home it would become the host of the user's apps (status, history, lease) and the installed app would find the host lock taken at sign-in.
   `N8TRAY_RUN_DIR` and `N8TRAY_MODULES_DIR` are ignored: everything stays under the home.
@@ -434,3 +435,35 @@ Today's Tauri window does not read or change either.
   The Tauri app's setting list has neither, as it has no `pinned`: the difference is deliberate, and a test on each side says so.
 - The Tauri window receives the same snapshot, so its data gains the three new `settings` fields, which no view reads.
   Its copied status text (`report.rs`) does not mention them.
+
+## D36. The native kit is a base six view lanes can build on alone (2026-11-26)
+
+An independent review of the native window kit (PR 45) found that a view lane could not build its screen without editing shared files, and that the shell differed from today's window in ways a lane would copy.
+This entry records how the kit answers it; `native/ui/README.md` is the rulebook the lanes follow.
+
+- One way for a view to reach N8 Tray, `view::intent`: settings and host commands by key, Start at sign-in, an app's actions (armed through `view::confirm`), N8 Tray's own targets by name, an app's `open` and `menu` items, installing an update, a history read on a worker thread with the reply on the UI thread, recent warnings, the status text and the clipboard.
+  Views still pass only ids and keys (D18); `view::intent::resolve` maps each request through the same validation as the tray menu and the Tauri commands, and refuses the rest.
+  Until the native shell installs updates in place, "install" and "try again" open the release page, as the tray menu's Install update does (D27).
+  The clipboard is Win32's (`n8tray_platform::clipboard`), opened with the window's own handle as its owner, and read only within the block's size; elsewhere copying says it is not available yet.
+  `press_action` refuses an action that is not possible now or an app busy with another action, as its button shows, so a stale click or key does nothing.
+  Copy status copies the same text as today: `native/src/report.rs` is a copy of the Tauri app's, kept equal by a test until the switch removes that one.
+- A view's types live in its model file, `views/<name>-model.slint`, exported whole through a chain of `export *` from `main.slint` (Slint allows one per file).
+  A struct a view declares is then a plain Rust type; one a model file did not export would reach Rust only as a deprecated alias, which `-D warnings` refuses.
+  Model files hold no component, because exporting a component that is not a window is a build warning.
+- The router follows today's window: every open by the tray icon shows the hub (`hub.rs` emits "hub" on every show); `show_view` opens another view with only the hub behind it, so the tray's status line opens the status details; a panel or one app's history whose app leaves the snapshot falls back to the hub, and the way back forgets gone apps; any view change and hiding the window disarm every armed action, as today's buttons keep their armed state in the view that shows them; a new view puts the keyboard focus at its top, where a screen reader hears its title (`Nav.title`).
+- Compact and the window height (D35) are applied from the snapshot on every fill and every reveal, and the window is fitted after each fill.
+- A focus request by app id (`RowFocus.to-id`) stays pending until a row takes it, and a row checks for one when it is created: after a reorder, the moved rows are new instances that exist only from the next layout, which a `changed` handler never sees.
+- Each view module lists its golden pictures (`SHOTS`: fixture, app, density, height), rendered in the shell's own window, so a lane adds states without touching the gallery's lists or the shared fixtures.
+  A shot's optional `stage` changes its own copy of the fixture, adds recent warnings or arms an action, for states no fixture has; times in the pictures show in UTC on a 24-hour clock, so a picture is the same on every PC and runner.
+- `Ctx::arrived` marks a view's first fill of a visit, where today's views mount (History reads its data then), and `Ctx::warnings` hands in the recent warnings, so a view's `fill` reads no global the pictures cannot set.
+- Release builds compile `ui/main.slint` alone; debug and test builds compile `ui/debug.slint`, which adds the widget gallery in the same compilation, so both share their Rust types.
+  The Native CI job checks the Rust code Slint generated for each build: the test build's must have the gallery's component (so the check can fail) and the release build's must not.
+  Measured on Windows (release, LTO, stripped): the exe is 27,452,416 bytes, 24,064 smaller than main's CI build (27,476,480).
+  Link-time optimisation had already dropped most of the gallery from release builds, since nothing there creates it: neither exe holds the gallery's words, so looking in the exe could never fail, and the check reads the generated code instead.
+- The scroll area brings a focused control into view; only `in-bar` keeps a bar's control from moving the list, since the position check cannot tell a bar's control from content once the list is scrolled.
+  So every control of a view is in a bar or in its `ScrollArea`, and `view::gallery::tests::tab_through` checks a view for it.
+- Table cells wrap as `td` does, with number columns keeping their width beside a long name, and key-value values wrap instead of eliding (a fixed `height` on any text in a row capped the row at one line).
+
+The window's height changes while it shows (content that grows or shrinks) move its top and its height in one `SetWindowPos`, so a window by a bottom taskbar keeps its bottom on the taskbar, and a refresh that changes nothing no longer calls it at all.
+Whether one frame at the old size shows in between depends on when Slint draws relative to that call; it can only be seen on a real desktop with a real taskbar, which this lane did not use (headless renders only).
+Check it when the hub lane lands: open the window with a list that grows (start an app) and watch the bottom edge.
