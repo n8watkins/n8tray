@@ -27,45 +27,71 @@ use crate::ui::{BarLink, GlyphName, HubProblem, Level, RowData, Tone};
 /// The view's golden images (`router::Shot`): add a state here.
 #[cfg(debug_assertions)]
 pub const SHOTS: &[super::router::Shot] = &[
-    super::router::Shot::of("busy", "busy"),
-    super::router::Shot::of("healthy", "healthy"),
-    super::router::Shot::of("trouble", "trouble"),
-    super::router::Shot::of("watching", "watching"),
-    super::router::Shot::of("updating", "updating"),
-    super::router::Shot::of("update-failed", "updateFailed"),
-    super::router::Shot::of("pinned", "pinned"),
-    super::router::Shot::of("empty", "empty"),
+    shot("busy", "busy"),
+    shot("healthy", "healthy"),
+    shot("trouble", "trouble"),
+    shot("watching", "watching"),
+    shot("updating", "updating"),
+    shot("update-failed", "updateFailed"),
+    shot("pinned", "pinned"),
+    shot("empty", "empty"),
+    shot("scroll", "compactTall"),
     super::router::Shot {
         stage: Some(stage_armed),
-        ..super::router::Shot::of("armed", "busy")
+        ..shot("armed", "busy")
     },
     super::router::Shot {
         stage: Some(stage_sign_in_foreign),
-        ..super::router::Shot::of("sign-in-foreign", "healthy")
-    },
-    super::router::Shot::of("scroll", "compactTall"),
-    super::router::Shot {
-        compact: true,
-        ..super::router::Shot::of("compact", "busy")
+        ..shot("sign-in-foreign", "healthy")
     },
     super::router::Shot {
         compact: true,
-        ..super::router::Shot::of("compact-trouble", "trouble")
+        ..shot("compact", "busy")
     },
     super::router::Shot {
         compact: true,
-        ..super::router::Shot::of("compact-pinned", "pinned")
+        ..shot("compact-trouble", "trouble")
+    },
+    super::router::Shot {
+        compact: true,
+        ..shot("compact-pinned", "pinned")
     },
     super::router::Shot {
         compact: true,
         height: 600,
-        ..super::router::Shot::of("compact-tall", "compactTall")
+        ..shot("compact-tall", "compactTall")
     },
 ];
+
+/// A shot in Normal rows with the real app icons.
+#[cfg(debug_assertions)]
+const fn shot(state: &'static str, fixture: &'static str) -> super::router::Shot {
+    super::router::Shot {
+        stage: Some(stage_icons),
+        ..super::router::Shot::of(state, fixture)
+    }
+}
+
+/// The fixtures name their icons relative to the spec's examples; a picture
+/// reads them from there, as the real window reads an absolute path.
+#[cfg(debug_assertions)]
+fn stage_icons(stage: &mut super::router::Stage) {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec/examples/icons");
+    for app in &mut stage.snapshot.apps {
+        let file = app
+            .icon
+            .as_deref()
+            .and_then(|p| std::path::Path::new(p).file_name());
+        if let Some(file) = file {
+            app.icon = Some(dir.join(file).to_string_lossy().into_owned());
+        }
+    }
+}
 
 /// Stop pressed once on VoiceDock: its button says Confirm.
 #[cfg(debug_assertions)]
 fn stage_armed(stage: &mut super::router::Stage) {
+    stage_icons(stage);
     stage.confirms.press(
         super::confirm::key("voicedock", "stop", None),
         true,
@@ -76,6 +102,7 @@ fn stage_armed(stage: &mut super::router::Stage) {
 /// A sign-in entry that another program made: the box is disabled.
 #[cfg(debug_assertions)]
 fn stage_sign_in_foreign(stage: &mut super::router::Stage) {
+    stage_icons(stage);
     stage.snapshot.settings.sign_in_foreign = true;
 }
 
@@ -238,10 +265,7 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
     let items = app_rows(ctx);
     ACTIONS.with_borrow_mut(|actions| {
         actions.clear();
-        for (row, app) in items
-            .iter()
-            .zip(format::main_view_apps(&ctx.snapshot.apps))
-        {
+        for (row, app) in items.iter().zip(format::main_view_apps(&ctx.snapshot.apps)) {
             if let Some(action) = format::row_action(app) {
                 actions.insert(
                     row.id.to_string(),
@@ -256,7 +280,13 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
     });
     sync_rows(ui, items);
     model.set_problems(ModelRc::from(Rc::new(VecModel::from(problems(s)))));
-    model.set_more(s.more.as_ref().map(|m| m.text.as_str()).unwrap_or("").into());
+    model.set_more(
+        s.more
+            .as_ref()
+            .map(|m| m.text.as_str())
+            .unwrap_or("")
+            .into(),
+    );
     let none_at_all = s.more.is_none() && format::main_view_apps(&s.apps).is_empty();
     model.set_empty(if none_at_all { EMPTY } else { "" }.into());
     // The product's name is the shell's: the hub's title (`Nav.title`).
@@ -267,12 +297,14 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
     model.set_sign_in_text("Start at sign-in".into());
     model.set_sign_in_checked(settings.launch_at_sign_in);
     model.set_sign_in_enabled(!(settings.sign_in_foreign || settings.error.is_some()));
-    model.set_sign_in_tooltip(if settings.sign_in_foreign {
-        SIGN_IN_FOREIGN
-    } else {
-        ""
-    }
-    .into());
+    model.set_sign_in_tooltip(
+        if settings.sign_in_foreign {
+            SIGN_IN_FOREIGN
+        } else {
+            ""
+        }
+        .into(),
+    );
     model.set_links(ModelRc::from(Rc::new(VecModel::from(links()))));
 }
 
