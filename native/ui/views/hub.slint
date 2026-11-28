@@ -75,12 +75,14 @@ export component HubView inherits VerticalLayout {
                 padding-right: 6px;
                 padding-top: 2px;
 
-                // `.empty { padding: 24px 16px }`, inside the list's 6.
+                // `<p class="empty">`: `padding: 24px 16px` inside the list's
+                // 6, plus the paragraph's default margin of 1em (13 px) above
+                // and below.
                 if HubModel.empty != "": VerticalLayout {
-                    padding-left: 10px;
-                    padding-right: 10px;
-                    padding-top: 24px;
-                    padding-bottom: 24px;
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 24px + Theme.text-body;
+                    padding-bottom: 24px + Theme.text-body;
                     WrapLabel {
                         text: HubModel.empty;
                         color: Theme.muted;
@@ -133,9 +135,13 @@ export component HubView inherits VerticalLayout {
         }
     }
     // `.list`'s bottom padding (4 px) and `.flyout-inner`'s (6 px), kept out
-    // of the scroll area: with room below the last row inside it, the
-    // focus scrolls the list a second time after the kit's reveal and the
-    // keyboard test (`tab_through`) sees a bar control move the list.
+    // of the scroll area, which differs from today while the list scrolls
+    // (rows clip 10 px above the bottom bar). With room below the last row
+    // inside it, Slint 1.19's own smooth scroll to a newly focused item
+    // (`publish_focus_item`) and the kit's `Reveal` both scroll the list and
+    // the animation ends after the next Tab, so `tab_through_the_hub` sees a
+    // bar control move it; at the content's end both are clamped alike.
+    // Remove this once the kit settles on one of the two scrolls.
     Rectangle {
         height: 10px;
     }

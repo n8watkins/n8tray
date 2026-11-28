@@ -30,6 +30,12 @@ pub const SHOTS: &[super::router::Shot] = &[
     shot("busy", "busy"),
     shot("healthy", "healthy"),
     shot("trouble", "trouble"),
+    // The same in the tall window: all of it, N8 Tray's own row included,
+    // as today's window (no height limit) shows it.
+    super::router::Shot {
+        height: 600,
+        ..shot("trouble-tall", "trouble")
+    },
     shot("watching", "watching"),
     shot("updating", "updating"),
     shot("update-failed", "updateFailed"),
@@ -109,16 +115,19 @@ fn stage_sign_in_foreign(stage: &mut super::router::Stage) {
 /// N8 Tray's own row id, so it stays in the arrow-key order.
 pub const TRAY_ID: &str = "n8tray";
 
-/// What the sign-in box says when another program made the entry.
-const SIGN_IN_FOREIGN: &str = "Another program made the sign-in entry; N8 Tray leaves it alone";
+/// What the sign-in box says when another program made the entry; `name`
+/// is the product's name as the shell shows it.
+fn sign_in_foreign(name: &str) -> String {
+    format!("Another program made the sign-in entry; {name} leaves it alone")
+}
 
 /// Shown while the hub has no app at all.
 const EMPTY: &str = "No apps yet. An app appears here once it installs its manifest.";
 
 thread_local! {
-    /// The action each row's button runs (`start` or `stop`, as the last fill
-    /// drew it): a button press carries only the app's id.
-    static ACTIONS: RefCell<HashMap<String, &'static str>> = RefCell::new(HashMap::new());
+    /// The id of the action each row's button runs, as the last fill drew
+    /// it (none while watching): a button press carries only the app's id.
+    static ACTIONS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
 }
 
 /// N8 Tray's own row: "This app", its private memory and its window's, as
@@ -156,13 +165,21 @@ pub fn tray_row(t: &TrayUsage, name: &str) -> RowData {
 
 /// The main view's rows: the apps `format::main_view_apps` keeps, each as
 /// today's `Row`, without an action while the PowerShell tray manages them.
-fn app_rows(ctx: &mut Ctx) -> Vec<RowData> {
+/// With each row, the id of the action its button runs, the same one
+/// `rows::row_data` drew and armed.
+fn app_rows(ctx: &mut Ctx) -> Vec<(RowData, Option<String>)> {
     let s = ctx.snapshot;
     format::main_view_apps(&s.apps)
         .into_iter()
         .map(|a| {
             let icon = ctx.icons.get(a.icon.as_deref());
-            rows::row_data(a, icon, ctx.confirms, s.legacy_tray, ctx.now)
+            let row = rows::row_data(a, icon, ctx.confirms, s.legacy_tray, ctx.now);
+            let action = if s.legacy_tray {
+                None
+            } else {
+                format::row_action(a).map(|x| x.id.clone())
+            };
+            (row, action)
         })
         .collect()
 }
@@ -262,19 +279,12 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
         }
     }
 
-    let items = app_rows(ctx);
-    ACTIONS.with_borrow_mut(|actions| {
-        actions.clear();
-        for (row, app) in items.iter().zip(format::main_view_apps(&ctx.snapshot.apps)) {
-            if let Some(action) = format::row_action(app) {
-                actions.insert(
-                    row.id.to_string(),
-                    if action.kind == n8tray_core::model::ActionKindView::Stop {
-                        "stop"
-                    } else {
-                        "start"
-                    },
-                );
+    let (items, actions): (Vec<RowData>, Vec<Option<String>>) = app_rows(ctx).into_iter().unzip();
+    ACTIONS.with_borrow_mut(|map| {
+        map.clear();
+        for (row, action) in items.iter().zip(actions) {
+            if let Some(action) = action {
+                map.insert(row.id.to_string(), action);
             }
         }
     });
@@ -297,29 +307,28 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
     model.set_sign_in_text("Start at sign-in".into());
     model.set_sign_in_checked(settings.launch_at_sign_in);
     model.set_sign_in_enabled(!(settings.sign_in_foreign || settings.error.is_some()));
-    model.set_sign_in_tooltip(
-        if settings.sign_in_foreign {
-            SIGN_IN_FOREIGN
-        } else {
-            ""
-        }
-        .into(),
-    );
-    model.set_links(ModelRc::from(Rc::new(VecModel::from(links()))));
+    model.set_sign_in_tooltip(if settings.sign_in_foreign {
+        sign_in_foreign(&name).into()
+    } else {
+        SharedString::default()
+    });
 }
 
 pub fn wire(ui: &dyn Models) {
     let model = ui.hub();
     model.on_act(|id| {
-        let action = ACTIONS.with_borrow(|actions| actions.get(id.as_str()).copied());
+        let action = ACTIONS.with_borrow(|actions| actions.get(id.as_str()).cloned());
         if let Some(action) = action {
             intent::send(Intent::Action {
                 app: id.to_string(),
-                action: action.into(),
+                action,
                 component: None,
             });
         }
     });
+    // History then Log, set once: links made anew on every fill would take
+    // the keyboard focus from them at each refresh.
+    model.set_links(ModelRc::from(Rc::new(VecModel::from(links()))));
     model.on_update_secondary_clicked(|| intent::send(Intent::OpenHost(HostTarget::ReleasePage)));
     model.on_update_primary_clicked(|| intent::send(Intent::InstallUpdate));
     model.on_toggle_sign_in(|| intent::send(Intent::ToggleSignIn));
@@ -330,6 +339,8 @@ pub fn wire(ui: &dyn Models) {
 mod tests {
     use super::*;
     use crate::tests::fixture;
+    #[cfg(debug_assertions)]
+    use slint::ComponentHandle;
 
     #[test]
     fn the_tray_row_says_this_app_with_its_private_and_window_memory() {
@@ -396,6 +407,126 @@ mod tests {
         assert!(stops.bottom > 0.0, "the list scrolls: {stops:?}");
         assert_eq!(stops.in_bars, 6, "{stops:?}");
         // Twelve apps with a button each, then N8 Tray's row.
-        assert!(stops.in_list >= 13, "{stops:?}");
+        assert_eq!(stops.in_list, 25, "{stops:?}");
+    }
+
+    /// At the default height the trouble hub is taller than the window: N8
+    /// Tray's own row is below the fold, not gone. Tab reaches it and the
+    /// list scrolls to it; every shot fills it.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn n8_trays_own_row_is_in_every_shot_and_reachable_below_the_fold() {
+        use super::super::gallery::tests::tab_through;
+        use super::super::gallery::{Font, Look, view_window};
+        use crate::ui::View;
+        for shot in SHOTS {
+            let w = view_window(View::Hub, shot, Look::Light, Font::Test).unwrap();
+            let tray = w.ui.hub().get_tray();
+            assert_eq!(tray.id, TRAY_ID, "{}", shot.state);
+            assert_eq!(tray.line, "This app", "{}", shot.state);
+            assert!(!tray.name.is_empty(), "{}", shot.state);
+            w.ui.hide().unwrap();
+        }
+        let shot = SHOTS.iter().find(|s| s.state == "trouble").unwrap();
+        let stops = tab_through(View::Hub, shot);
+        assert!(stops.bottom > 0.0, "the trouble hub scrolls: {stops:?}");
+        // The update banner's two buttons, three apps, the two whose button
+        // can be pressed (Restarting disables N8 Hotkeys' Stop; the problem
+        // row takes no focus), then N8 Tray's row.
+        assert_eq!(stops.in_list, 8, "{stops:?}");
+    }
+
+    /// A row's button runs the action its row drew, by the action's id, and
+    /// none while the PowerShell tray manages the apps. The sign-in box's
+    /// tooltip is today's.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_rows_button_runs_the_action_it_shows_by_id() {
+        use super::super::gallery::{Font, Look, view_window};
+        use crate::ui::View;
+        let action = |id: &str| ACTIONS.with_borrow(|a| a.get(id).cloned());
+        let busy = SHOTS.iter().find(|s| s.state == "busy").unwrap();
+        let w = view_window(View::Hub, busy, Look::Light, Font::Test).unwrap();
+        for app in format::main_view_apps(&w.snapshot.apps) {
+            assert_eq!(
+                action(&app.id),
+                format::row_action(app).map(|a| a.id.clone()),
+                "{}",
+                app.id
+            );
+        }
+        assert_eq!(action("voicedock").as_deref(), Some("stop"));
+        assert_eq!(action("n8commentary").as_deref(), Some("start"));
+        w.ui.hide().unwrap();
+
+        let watching = SHOTS.iter().find(|s| s.state == "watching").unwrap();
+        let w = view_window(View::Hub, watching, Look::Light, Font::Test).unwrap();
+        assert!(w.snapshot.legacy_tray);
+        assert!(
+            ACTIONS.with_borrow(HashMap::is_empty),
+            "nothing runs while watching"
+        );
+        w.ui.hide().unwrap();
+
+        let foreign = SHOTS.iter().find(|s| s.state == "sign-in-foreign").unwrap();
+        let w = view_window(View::Hub, foreign, Look::Light, Font::Test).unwrap();
+        let hub = w.ui.hub();
+        assert!(!hub.get_sign_in_enabled());
+        assert_eq!(
+            hub.get_sign_in_tooltip(),
+            "Another program made the sign-in entry; N8 Tray leaves it alone"
+        );
+        w.ui.hide().unwrap();
+    }
+
+    /// A refresh keeps the keyboard focus on the bottom bar's links: they
+    /// are not made anew on every fill.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_refresh_keeps_the_focus_on_a_bottom_bar_link() {
+        use super::super::gallery::{Font, Look, view_window};
+        use crate::ui::View;
+        use slint::platform::{Key, WindowEvent};
+        let shot = SHOTS.iter().find(|s| s.state == "healthy").unwrap();
+        let mut w = view_window(View::Hub, shot, Look::Light, Font::Test).unwrap();
+        w.draw().unwrap();
+        let height = w.window.size().height as f32;
+        let reveal = w.ui.reveal();
+        let tab = |w: &super::super::gallery::ViewWindow| {
+            let text: SharedString = Key::Tab.into();
+            w.window
+                .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+            w.window.dispatch_event(WindowEvent::KeyReleased { text });
+            w.draw().unwrap();
+        };
+        // Tab to the bottom bar: the sign-in box, then History.
+        let mut in_foot = 0;
+        for _ in 0..40 {
+            tab(&w);
+            if !reveal.get_focused_reveals() && reveal.get_focused_top() > height - 40.0 {
+                in_foot += 1;
+                if in_foot == 2 {
+                    break;
+                }
+            }
+        }
+        assert_eq!(in_foot, 2, "Tab reached History");
+        let history_x = reveal.get_focused_x();
+        // A new snapshot arrives while History has the focus.
+        let snapshot = w.snapshot.clone();
+        w.router.fill(&w.ui, &snapshot);
+        w.draw().unwrap();
+        let serial = reveal.get_focused_serial();
+        tab(&w);
+        // A Tab that lands on the view's top reports nothing (the serial
+        // stays): the focus had gone back to the top with the old links.
+        assert_ne!(reveal.get_focused_serial(), serial, "Tab reached a control");
+        assert!(
+            reveal.get_focused_top() > height - 40.0 && reveal.get_focused_x() > history_x,
+            "Tab after a refresh goes on from History to Log, not from the top: at {}, {}",
+            reveal.get_focused_x(),
+            reveal.get_focused_top()
+        );
+        w.ui.hide().unwrap();
     }
 }
