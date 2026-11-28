@@ -53,7 +53,7 @@ export component IconButton {
         height: 100%;
         enabled: root.enabled;
         tooltip: root.tooltip;
-        reveal: !root.in-bar;
+        in-bar: root.in-bar;
         demo-hover: root.demo-hover;
         demo-pressed: root.demo-pressed;
         demo-focus: root.demo-focus;
@@ -208,7 +208,7 @@ export component LinkButton {
         height: 100%;
         enabled: root.enabled;
         tooltip: root.tooltip;
-        reveal: !root.in-bar;
+        in-bar: root.in-bar;
         demo-hover: root.demo-hover;
         demo-focus: root.demo-focus;
         clicked => {

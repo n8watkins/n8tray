@@ -1,7 +1,7 @@
 // The pieces every widget is made of: glyphs, text in CSS line boxes, the
 // focus ring, the press-and-focus behaviour of every control, and the
-// window-wide hand-offs (scrolling the focused control into view,
-// tooltips).
+// window-wide hand-offs (tooltips, and where the focus is for the keyboard
+// test).
 import { Theme } from "../theme.slint";
 
 // The window's own small glyphs (app/ui/src/components/Glyph.tsx), 16 x 16,
@@ -75,32 +75,31 @@ export component FocusRing inherits Rectangle {
     background: transparent;
 }
 
-// Where the control that last took the keyboard focus is, so the window's
-// scroll area can bring it into view (Slint does not scroll a Flickable to
-// a focused child by itself). Controls in the title bar and the bottom bar
-// never report (`reveal: false`), so focusing them never scrolls the list.
+// Where the control with the keyboard focus is, for the kit's keyboard test
+// (`view::gallery::tests::tab_through`); nothing in the window reads it.
 //
-// The rest is for the kit's keyboard test (`view::gallery::tests::
-// tab_through`): every control says where it is when it takes the focus,
-// whether it reveals itself, and the scroll area says its visible part and
-// how far it is scrolled.
-export global Reveal {
-    in-out property <length> top;
-    in-out property <length> bottom;
-    in-out property <int> serial;
+// Scrolling a focused control into view is Slint's own: when an item takes
+// the focus, the window scrolls every Flickable around it so it shows
+// (`publish_focus_item`, smooth unless Windows' animations are off). The
+// kit adds no scrolling of its own, so there is one scroll, never two. The
+// title bar and the bottom bar are outside the view's `ScrollArea`, so
+// their controls never move the list.
+//
+// Every control says where it was when it took the focus, whether it is in
+// a bar (`in-bar`), and where it is now while it keeps the focus (after the
+// list scrolled for it); the scroll area says its visible part and how far
+// it is scrolled.
+export global FocusProbe {
     in-out property <length> focused-x;
     in-out property <length> focused-top;
     in-out property <length> focused-bottom;
-    in-out property <bool> focused-reveals;
+    in-out property <bool> focused-in-bar;
     in-out property <int> focused-serial;
+    in-out property <length> now-top;
+    in-out property <length> now-bottom;
     in-out property <length> view-top;
     in-out property <length> view-bottom;
     in-out property <length> scrolled;
-    // Where the last revealed control is after the scroll area moved for
-    // it, and the `serial` it answered.
-    in-out property <length> revealed-top;
-    in-out property <length> revealed-bottom;
-    in-out property <int> revealed-serial;
 }
 
 // The tooltip the window shows: set by a hovered control after a pause,
@@ -145,10 +144,10 @@ export component TipArea inherits TouchArea {
 }
 
 // What every control does: hover, press, a click from the mouse or from
-// Enter or Space, keyboard focus with the ring, being scrolled into view
-// when it takes the focus, and its tooltip. A control puts this inside
-// itself (`width: 100%; height: 100%`), sets its own accessible role and
-// label, and forwards its focus here (`forward-focus: p;`).
+// Enter or Space, keyboard focus with the ring (Slint scrolls it into view),
+// and its tooltip. A control puts this inside itself (`width: 100%; height:
+// 100%`), sets its own accessible role and label, and forwards its focus
+// here (`forward-focus: p;`).
 //
 // A disabled control takes no clicks and no focus, but still shows its
 // tooltip ("Stop: not possible now"), as a disabled button's `title` does.
@@ -157,9 +156,9 @@ export component Pressable {
     // False: the keyboard only (the mouse goes through to what is under it).
     in property <bool> mouse: true;
     in property <string> tooltip;
-    // False for the title bar's and the bottom bar's controls: focusing
-    // them never scrolls the list.
-    in property <bool> reveal: true;
+    // True for the title bar's and the bottom bar's controls (outside the
+    // view's `ScrollArea`), for the keyboard test.
+    in property <bool> in-bar;
     in property <length> ring-radius: Theme.focus-radius;
     // A ring around the control (`outline-offset: 2px`, the switch) rather
     // than inside its edge.
@@ -230,21 +229,29 @@ export component Pressable {
             reject
         }
         focus-gained(reason) => {
-            Reveal.focused-x = root.absolute-position.x;
-            Reveal.focused-top = root.absolute-position.y;
-            Reveal.focused-bottom = root.absolute-position.y + root.height;
-            Reveal.focused-reveals = root.reveal;
-            Reveal.focused-serial += 1;
-            if root.reveal {
-                Reveal.top = root.absolute-position.y;
-                Reveal.bottom = root.absolute-position.y + root.height;
-                Reveal.serial += 1;
-            }
+            FocusProbe.focused-x = root.absolute-position.x;
+            FocusProbe.focused-top = root.absolute-position.y;
+            FocusProbe.focused-bottom = root.absolute-position.y + root.height;
+            FocusProbe.focused-in-bar = root.in-bar;
+            FocusProbe.focused-serial += 1;
+            root.probe();
             root.focus-changed(true);
         }
         focus-lost(reason) => {
             root.focus-changed(false);
         }
+    }
+
+    // Where it is now, while it has the focus (the list scrolls it).
+    property <length> top-now: root.absolute-position.y;
+    changed top-now => {
+        if fs.has-focus {
+            root.probe();
+        }
+    }
+    function probe() {
+        FocusProbe.now-top = root.absolute-position.y;
+        FocusProbe.now-bottom = root.absolute-position.y + root.height;
     }
 
     // Once per hover, where the mouse was when it showed; it does not follow

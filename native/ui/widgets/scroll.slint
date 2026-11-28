@@ -5,19 +5,15 @@
 // (approved 2026-11-26), widening under the mouse as WebView2's overlay
 // scrollbar does.
 //
-// The control that takes the keyboard focus inside it is scrolled into
-// view. Controls of the title bar and the bottom bar never ask (`in-bar`,
-// which sets `reveal: false`): that is the only thing that keeps them from
-// scrolling the list. So every control of a view is either in a bar
-// (`in-bar: true`) or inside the ScrollArea (README, "Rules for every
-// view"); `view::gallery::tests::tab_through` checks a view for it.
-//
-// The position check in `changed reveal` is no guard against a control
-// elsewhere: once the list is scrolled, the content reaches above the
-// visible part, over the title bar's place, so a control there would pass.
-// It only skips requests while nothing can scroll.
+// The control that takes the keyboard focus inside it is scrolled into view
+// by Slint itself (the window scrolls each Flickable around a newly focused
+// item, the least distance that shows it), so the kit adds no scrolling of
+// its own. Controls of the title bar and the bottom bar are outside it and
+// never move it. Every control of a view is either in a bar (`in-bar:
+// true`) or inside the ScrollArea (README, "Rules for every view");
+// `view::gallery::tests::tab_through` checks a view for it.
 import { Theme } from "../theme.slint";
-import { Reveal } from "base.slint";
+import { FocusProbe } from "base.slint";
 
 export component ScrollArea {
     // The height the children want; the window is sized from it.
@@ -65,11 +61,17 @@ export component ScrollArea {
     }
 
     // Where the visible part is and how far it is scrolled, for the kit's
-    // keyboard test (`Reveal`).
+    // keyboard test (`FocusProbe`).
     function publish() {
-        Reveal.view-top = fl.absolute-position.y;
-        Reveal.view-bottom = fl.absolute-position.y + root.height;
-        Reveal.scrolled = -fl.content-y;
+        FocusProbe.view-top = fl.absolute-position.y;
+        FocusProbe.view-bottom = fl.absolute-position.y + root.height;
+        FocusProbe.scrolled = -fl.content-y;
+    }
+    init => {
+        root.publish();
+    }
+    changed height => {
+        root.publish();
     }
     settle := Timer {
         interval: 800ms;
@@ -78,31 +80,6 @@ export component ScrollArea {
             root.scrolling = false;
             self.stop();
         }
-    }
-
-    // A control in the content took the focus: bring it into view.
-    property <int> reveal: Reveal.serial;
-    changed reveal => {
-        if !root.overflows {
-            return;
-        }
-        // Its position already includes the scrolling: it is in the content
-        // when it lies within the content's whole height.
-        let content-top = inner.absolute-position.y;
-        if Reveal.top < content-top || Reveal.bottom > content-top + inner.height {
-            return;
-        }
-        let view-top = fl.absolute-position.y;
-        let before = fl.content-y;
-        if Reveal.top < view-top {
-            fl.content-y = min(0px, fl.content-y + (view-top - Reveal.top));
-        } else if Reveal.bottom > view-top + root.height {
-            fl.content-y = max(-root.maximum, fl.content-y - (Reveal.bottom - view-top - root.height));
-        }
-        Reveal.revealed-top = Reveal.top + (fl.content-y - before);
-        Reveal.revealed-bottom = Reveal.bottom + (fl.content-y - before);
-        Reveal.revealed-serial = Reveal.serial;
-        root.publish();
     }
 
     // The scrollbar: a 2 px line, 6 px on a soft track under the mouse; the

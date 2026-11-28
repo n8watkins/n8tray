@@ -781,11 +781,11 @@ mod tests {
             .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
         w.window.dispatch_event(WindowEvent::KeyReleased { text });
         w.draw().unwrap();
-        let r = w.ui.reveal();
+        let r = w.ui.focus_probe();
         (
             r.get_focused_x(),
             r.get_focused_top(),
-            r.get_focused_reveals(),
+            !r.get_focused_in_bar(),
         )
     }
 

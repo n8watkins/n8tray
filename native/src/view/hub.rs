@@ -491,7 +491,7 @@ mod tests {
         let mut w = view_window(View::Hub, shot, Look::Light, Font::Test).unwrap();
         w.draw().unwrap();
         let height = w.window.size().height as f32;
-        let reveal = w.ui.reveal();
+        let reveal = w.ui.focus_probe();
         let tab = |w: &super::super::gallery::ViewWindow| {
             let text: SharedString = Key::Tab.into();
             w.window
@@ -503,7 +503,7 @@ mod tests {
         let mut in_foot = 0;
         for _ in 0..40 {
             tab(&w);
-            if !reveal.get_focused_reveals() && reveal.get_focused_top() > height - 40.0 {
+            if reveal.get_focused_in_bar() && reveal.get_focused_top() > height - 40.0 {
                 in_foot += 1;
                 if in_foot == 2 {
                     break;

@@ -383,9 +383,13 @@ impl Picture {
 pub type Windows = Rc<RefCell<Vec<Rc<MinimalSoftwareWindow>>>>;
 
 /// The software renderer with no window system, one window per component:
-/// set once per thread (Slint's platform is per thread).
+/// set once per thread (Slint's platform is per thread). Its clock moves
+/// only when asked (`advance`), so timers and animations (a focused
+/// control's smooth scroll, the focus request's expiry) end exactly when a
+/// test says, whatever the machine's speed.
 struct Headless {
     windows: Windows,
+    clock: Rc<std::cell::Cell<std::time::Duration>>,
 }
 
 impl Platform for Headless {
@@ -394,10 +398,15 @@ impl Platform for Headless {
         self.windows.borrow_mut().push(window.clone());
         Ok(window)
     }
+
+    fn duration_since_start(&self) -> std::time::Duration {
+        self.clock.get()
+    }
 }
 
 thread_local! {
     static WINDOWS: RefCell<Option<Windows>> = const { RefCell::new(None) };
+    static CLOCK: Rc<std::cell::Cell<std::time::Duration>> = Rc::default();
 }
 
 /// The headless platform on this thread (set once), with the windows it made.
@@ -409,11 +418,20 @@ pub fn headless() -> Result<Windows, String> {
         let windows = Rc::new(RefCell::new(Vec::new()));
         slint::platform::set_platform(Box::new(Headless {
             windows: windows.clone(),
+            clock: CLOCK.with(Rc::clone),
         }))
         .map_err(|e| format!("the headless platform could not be set: {e}"))?;
         *cell.borrow_mut() = Some(windows.clone());
         Ok(windows)
     })
+}
+
+/// Moves the headless platform's clock on by `by` and runs the timers and
+/// animations that are due.
+#[cfg(test)]
+pub fn advance(by: std::time::Duration) {
+    CLOCK.with(|c| c.set(c.get() + by));
+    slint::platform::update_timers_and_animations();
 }
 
 /// A gallery on the headless platform, with its window.
@@ -744,9 +762,10 @@ pub mod tests {
 
     /// Scrolls the list to the bottom with the mouse wheel at `wheel_at`,
     /// then Tabs through every focus stop until the first comes again, and
-    /// checks each: a control in a bar never moves the list (it is outside
-    /// the list's visible part, often), and a control in the list is
-    /// scrolled into view.
+    /// checks each once its scroll has ended: a control in a bar never
+    /// moves the list (it is outside the list's visible part, often), and a
+    /// control in the list is scrolled into view, the list moving no
+    /// further than that (one scroll, not two that add up).
     fn tab_core(
         models: &dyn Models,
         window: &MinimalSoftwareWindow,
@@ -755,19 +774,26 @@ pub mod tests {
         at_top: &dyn Fn() -> bool,
     ) -> Stops {
         use slint::platform::{Key, WindowEvent};
-        let reveal = models.reveal();
+        let reveal = models.focus_probe();
+        // Every smooth scroll has ended after this long.
+        let settle = || {
+            advance(std::time::Duration::from_secs(3));
+            draw();
+        };
         window.dispatch_event(WindowEvent::PointerScrolled {
             position: slint::LogicalPosition::new(wheel_at.0, wheel_at.1),
             delta_x: 0.0,
             delta_y: -100_000.0,
         });
         draw();
+        settle();
         let bottom = reveal.get_scrolled();
         let tab = || {
             let text: SharedString = Key::Tab.into();
             window.dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
             window.dispatch_event(WindowEvent::KeyReleased { text });
             draw();
+            settle();
         };
         let mut stops = Stops {
             in_bars: 0,
@@ -801,21 +827,23 @@ pub mod tests {
                 reveal.get_focused_top(),
                 reveal.get_focused_bottom(),
             );
-            if reveal.get_focused_reveals() {
+            if !reveal.get_focused_in_bar() {
                 stops.in_list += 1;
                 if bottom > 0.0 {
-                    assert_eq!(
-                        reveal.get_revealed_serial(),
-                        reveal.get_serial(),
-                        "the list did not answer the control at {spot:?}"
-                    );
-                    let (top, end) = (reveal.get_revealed_top(), reveal.get_revealed_bottom());
+                    let (top, end) = (reveal.get_now_top(), reveal.get_now_bottom());
+                    let (view_top, view_bottom) = (reveal.get_view_top(), reveal.get_view_bottom());
                     assert!(
-                        top >= reveal.get_view_top() - 0.5 && end <= reveal.get_view_bottom() + 0.5,
-                        "the control at {spot:?} is at {top}..{end}, outside the list's {}..{}",
-                        reveal.get_view_top(),
-                        reveal.get_view_bottom()
+                        top >= view_top - 0.5 && end <= view_bottom + 0.5,
+                        "the control at {spot:?} is at {top}..{end}, outside the list's {view_top}..{view_bottom}"
                     );
+                    // It moved only as far as it had to: the control now
+                    // touches the edge it came in by.
+                    if reveal.get_scrolled() != before {
+                        assert!(
+                            (top - view_top).abs() < 0.5 || (end - view_bottom).abs() < 0.5,
+                            "the list moved past the control at {spot:?}: it is at {top}..{end} in {view_top}..{view_bottom}"
+                        );
+                    }
                 }
             } else {
                 assert_eq!(
@@ -1059,7 +1087,7 @@ pub mod tests {
         set_live_rows(&headed.ui, &model);
         draw(&headed, 1.0).unwrap();
         let focus = headed.ui.global::<RowFocus>();
-        let reveal = headed.ui.global::<crate::ui::Reveal>();
+        let reveal = headed.ui.global::<crate::ui::FocusProbe>();
         let gone = all[all.len() - 1].id.clone();
         focus.invoke_to_id(gone.as_str().into(), 0);
         draw(&headed, 1.0).unwrap();
@@ -1096,8 +1124,10 @@ pub mod tests {
         // A frame starts the expiry timer (as the window's next frame does).
         draw(&headed, 1.0).unwrap();
         assert!(focus.get_pending(), "still pending within the wait");
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        slint::platform::update_timers_and_animations();
+        advance(std::time::Duration::from_millis(200));
+        draw(&headed, 1.0).unwrap();
+        assert!(focus.get_pending(), "still pending 200 ms on");
+        advance(std::time::Duration::from_millis(100));
         draw(&headed, 1.0).unwrap();
         assert!(!focus.get_pending(), "the request expired");
         let serial = reveal.get_focused_serial();

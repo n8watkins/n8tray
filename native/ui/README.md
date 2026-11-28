@@ -186,6 +186,7 @@ Fixtures for shots: `busy`, `healthy`, `trouble`, `watching`, `updating`, `updat
 - `Say` with `SayLine`s, `ActionsRow`, `ComponentRow`, `OpenLinks`, `KeyValues` (values wrap), `WarningList`, `Table` (text cells wrap, number columns keep their width; row labels from `view::format::table_row_label`).
 - `Spark`, `Chart` and `ChartLegend`: path commands from `view::format::spark` and `chart`, words from `chart_words`.
 - `ScrollArea`: the one scrolling part of a view.
+- `FocusProbe`: where the focused control is, for the keyboard test only; the headless platform's clock moves only when a test calls `gallery::advance`, so a smooth scroll or a timer ends exactly when the test says.
 - `TooltipLayer` is the window's; any control or `TipArea` with a `tooltip` shows it once per hover, disabled controls included.
 
 ## Behaviour the kit gives every view
@@ -193,7 +194,8 @@ Fixtures for shots: `busy`, `healthy`, `trouble`, `watching`, `updating`, `updat
 - Every open by the tray icon shows the hub, as today; the tray's status line opens the status details; either way Back leads only to the hub.
 - A new view puts the keyboard focus at its top, where a screen reader says its title (`Nav.title`, which the router sets), and Tab goes on to its first control.
 - Keyboard: every control takes the focus from Tab and shows the ring; `AppRow` moves with Up, Down, Home, End, Left and Right as `keyboard.ts` does (`RowFocus`), and Rust can focus a row by app id (`RowFocus.to-id`), even a row a reorder just made anew.
-- Focusing a control in the list scrolls it into view; the title bar's and bottom bar's controls never scroll the list.
+- Focusing a control in the list scrolls it into view, by the least distance that shows it; the title bar's and bottom bar's controls never scroll the list.
+  The scroll is Slint's own (a newly focused item scrolls every `Flickable` around it into view, smoothly unless Windows' animations are off); the kit adds none, so there is one scroll, never two that add up.
 - An action that asks to confirm is armed by the first click for 4 seconds, held by app, action and component in Rust, so a refresh or a reordered list keeps it on its app; any view change and hiding the window disarm everything.
 - A panel (or one app's history) whose app leaves the snapshot falls back to the hub, and Back forgets views of apps that are gone.
 - Escape goes back, or in the hub hides the window; Back returns to the view before.
@@ -201,6 +203,7 @@ Fixtures for shots: `busy`, `healthy`, `trouble`, `watching`, `updating`, `updat
 ## Rules for every view
 
 - Words and numbers come from Rust (`view::format`, ported from `format.ts` and `model.ts` with today's rounding), never formatted in Slint.
-- Every control is in a bar (the title bar or the bottom bar, `in-bar: true`) or inside the view's `ScrollArea`: only `in-bar` keeps a control from scrolling the list (`tab_through` checks it).
+- Every control is in a bar (the title bar or the bottom bar, `in-bar: true`) or inside the view's `ScrollArea` (`tab_through` checks it).
+  Room below a list's last row (padding, the flyout's 6 px) goes inside the `ScrollArea`, as today's, so the last row scrolls up to its own room above the bottom bar.
 - Do not use whole-PC memory (`memory.freeGb`, `memory.totalGb`, `memory.level`, `memory.system`): it is gone from N8 Tray (D34).
 - Show the real N8 icon (`view::icons::n8tray()`, or `app/src-tauri/icons/128x128.png` in Slint) wherever the app's own icon shows.

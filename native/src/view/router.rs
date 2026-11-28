@@ -15,8 +15,8 @@ use super::{about, all_apps, details, history, hub, panel, settings};
 #[cfg(debug_assertions)]
 use crate::ui::Gallery;
 use crate::ui::{
-    AboutModel, AllAppsModel, DetailsModel, FlyoutWindow, HistoryModel, HubModel, Nav, PanelModel,
-    Reveal, RowFocus, SettingsModel, Theme, View,
+    AboutModel, AllAppsModel, DetailsModel, FlyoutWindow, FocusProbe, HistoryModel, HubModel, Nav,
+    PanelModel, RowFocus, SettingsModel, Theme, View,
 };
 use slint::ComponentHandle;
 
@@ -31,7 +31,7 @@ pub trait Models {
     fn about(&self) -> AboutModel<'_>;
     fn history(&self) -> HistoryModel<'_>;
     fn row_focus(&self) -> RowFocus<'_>;
-    fn reveal(&self) -> Reveal<'_>;
+    fn focus_probe(&self) -> FocusProbe<'_>;
     fn theme(&self) -> Theme<'_>;
     fn nav(&self) -> Nav<'_>;
 }
@@ -63,7 +63,7 @@ macro_rules! models {
             fn row_focus(&self) -> RowFocus<'_> {
                 self.global()
             }
-            fn reveal(&self) -> Reveal<'_> {
+            fn focus_probe(&self) -> FocusProbe<'_> {
                 self.global()
             }
             fn theme(&self) -> Theme<'_> {
