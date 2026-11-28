@@ -218,10 +218,12 @@ pub enum HistoryOf {
     App(String),
 }
 
-/// The ids a history reads, in the order to show them: for `All`, every
-/// app shown in N8 Tray (`hosted`), then `n8tray`, as `History.tsx` lists
-/// them; for one app, its id if the snapshot has it (or `n8tray`).
+/// The ids a history reads, in the order to show them, as `History.tsx`
+/// lists them: for `All`, every app shown in N8 Tray (`hosted`), then
+/// `n8tray`; for one app, its id if it is shown in N8 Tray (or `n8tray`),
+/// else none.
 pub fn history_ids(snapshot: &HostSnapshot, of: &HistoryOf) -> Vec<String> {
+    let shown = |id: &str| snapshot.apps.iter().any(|a| a.hosted && a.id == id);
     match of {
         HistoryOf::All => snapshot
             .apps
@@ -230,9 +232,7 @@ pub fn history_ids(snapshot: &HostSnapshot, of: &HistoryOf) -> Vec<String> {
             .map(|a| a.id.clone())
             .chain(std::iter::once("n8tray".to_string()))
             .collect(),
-        HistoryOf::App(id) if id == "n8tray" || snapshot.apps.iter().any(|a| &a.id == id) => {
-            vec![id.clone()]
-        }
+        HistoryOf::App(id) if id == "n8tray" || shown(id) => vec![id.clone()],
         HistoryOf::App(_) => Vec::new(),
     }
 }
@@ -271,7 +271,9 @@ pub type Reply<T> = Box<dyn FnOnce(&dyn Models, T) + Send + 'static>;
 
 /// Reads `of`'s history over `range` on a worker thread; `done` gets it on
 /// the UI thread, if the window still exists then. A view that asked again
-/// in between compares `of` and `range` with what it shows now.
+/// in between compares `of` and `range` with what it shows now. `done` is
+/// always called while the window exists: with no items when there is
+/// nothing to read (no such app, no snapshot yet, no thread).
 pub fn history(
     of: HistoryOf,
     range: Range,
@@ -524,6 +526,19 @@ mod tests {
             ["n8tray"]
         );
         assert!(history_ids(&s, &HistoryOf::App("../../etc".into())).is_empty());
+        // An app with its own icon is not shown in N8 Tray: no history, as
+        // today's `History.tsx` lists only `hosted` apps.
+        let mut own = s.clone();
+        own.apps
+            .iter_mut()
+            .find(|a| a.id == "voicedock")
+            .unwrap()
+            .hosted = false;
+        assert!(history_ids(&own, &HistoryOf::App("voicedock".into())).is_empty());
+        assert!(
+            !history_ids(&own, &HistoryOf::All).contains(&"voicedock".to_string()),
+            "nor among every app's"
+        );
         assert_eq!(Range::from_name("day"), Some(Range::Day));
         assert_eq!(Range::from_name("week"), Some(Range::Week));
         assert_eq!(Range::from_name("month"), None);

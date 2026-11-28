@@ -215,21 +215,40 @@ impl Shell {
 
     /// Reads a history on a worker thread and hands it to `done` on the UI
     /// thread (`view::intent::history`).
+    /// Whatever happens, `done` hears once while the window exists: with no
+    /// items when there is nothing to read, so a view never waits forever.
     pub fn history(&mut self, of: HistoryOf, range: Range, done: Reply<HistoryReply>) {
-        let Some(snapshot) = self.latest.clone() else {
-            warn!("History asked for before the first snapshot");
-            return;
+        let ids = match self.latest.as_deref() {
+            Some(snapshot) => intent::history_ids(snapshot, &of),
+            None => {
+                warn!("History asked for before the first snapshot");
+                Vec::new()
+            }
         };
-        let ids = intent::history_ids(&snapshot, &of);
         if ids.is_empty() {
             warn!("No history for {of:?}");
+            let reply = HistoryReply {
+                of,
+                range,
+                items: Vec::new(),
+            };
+            self.hub.with_models(|ui| done(ui, reply));
+            return;
         }
+        // The worker takes `done` from here; if no worker starts, it is
+        // still here to hear the empty reply.
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(Some(done)));
+        let worker = slot.clone();
         let dir = self.folders.history.clone();
+        let asked = of.clone();
         let spawned = std::thread::Builder::new()
             .name("n8tray-history".into())
             .spawn(move || {
                 let items = intent::read_history(&dir, &ids, range, chrono::Utc::now());
                 let reply = HistoryReply { of, range, items };
+                let Some(done) = worker.lock().ok().and_then(|mut d| d.take()) else {
+                    return;
+                };
                 if slint::invoke_from_event_loop(move || {
                     with(|s| s.hub.with_models(|ui| done(ui, reply)));
                 })
@@ -240,6 +259,14 @@ impl Shell {
             });
         if let Err(e) = spawned {
             warn!("The history could not be read: {e}");
+            if let Some(done) = slot.lock().ok().and_then(|mut d| d.take()) {
+                let reply = HistoryReply {
+                    of: asked,
+                    range,
+                    items: Vec::new(),
+                };
+                self.hub.with_models(|ui| done(ui, reply));
+            }
         }
     }
 
