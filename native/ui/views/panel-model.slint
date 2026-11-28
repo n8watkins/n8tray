@@ -5,12 +5,66 @@
 // The kit's export chain: keep this line as it is.
 export * from "details-model.slint";
 
-import { Level } from "../widgets.slint";
+import { Level, Tone, BarAction, OpenItem, TableRow } from "../widgets.slint";
+
+// One paragraph of the State section.
+export struct PanelSay {
+    text: string,
+    tone: Tone,
+}
+
+// One text button (an app's own action, or a component's): its words, what a
+// screen reader says, its tooltip, its state, and whether it is armed.
+export struct PanelButton {
+    id: string,
+    text: string,
+    label: string,
+    tooltip: string,
+    enabled: bool,
+    armed: bool,
+}
+
+// One component of the app with its buttons.
+export struct PanelComponent {
+    id: string,
+    name: string,
+    line: string,
+    tone: Tone,
+    memory: string,
+    buttons: [PanelButton],
+}
 
 export global PanelModel {
+    // The app this panel shows; the callbacks below get it back.
+    in-out property <string> app-id;
     in-out property <string> name;
     in-out property <image> icon;
     in-out property <Level> level: Level.off;
     in-out property <string> words;
-    in-out property <string> note: "The app's panel comes with its own lane.";
+    // The title bar's Stop or Start, and Restart.
+    in-out property <[BarAction]> actions;
+    in-out property <[PanelSay]> lines;
+    in-out property <[PanelButton]> buttons;
+    in-out property <[PanelComponent]> components;
+    in-out property <bool> has-history;
+    in-out property <string> memory-line;
+    in-out property <string> memory-fill;
+    in-out property <string> cpu-line;
+    in-out property <string> chart-label;
+    in-out property <string> legend-memory;
+    in-out property <string> legend-cpu;
+    in-out property <[TableRow]> processes;
+    in-out property <[OpenItem]> opens;
+    in-out property <bool> auto-start;
+    in-out property <bool> hosted;
+    in-out property <bool> enabled;
+    in-out property <string> version-line;
+
+    // An action of the app (`component` is empty for the app's own).
+    callback action(app: string, action: string, component: string);
+    // Something to open: an `open` entry by its key, a `menu` line as
+    // "menu:<index>".
+    callback open(app: string, key: string);
+    // One of the app's settings (`autoStart`, `hosted`, `enabled`).
+    callback setting(app: string, key: string, on: bool);
 }

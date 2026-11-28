@@ -1,7 +1,13 @@
-// One app's panel (lane: app panel). A stub until that lane lands; it owns
-// this file, `panel-model.slint` and `src/view/panel.rs`.
-import { TitleBar, ScrollArea, Say, SayLine } from "../widgets.slint";
-import { Nav } from "../nav.slint";
+// One app's panel (`Panel.tsx` with `PanelHead`): its state, components,
+// the last 15 minutes, its processes, what it lets you open, and its
+// settings. Lane: app panel; owns this file, `panel-model.slint` and
+// `src/view/panel.rs`.
+import {
+    Theme, TitleBar, ScrollArea, Section, SectionHeading, Say, SayLine, ActionsRow,
+    SmallButton, ComponentRow, Chart, ChartLegend, HeadLink, Table, OpenLinks,
+    ToggleRow, Level
+} from "../widgets.slint";
+import { Nav, View } from "../nav.slint";
 import { PanelModel } from "panel-model.slint";
 
 export component PanelView inherits VerticalLayout {
@@ -14,17 +20,170 @@ export component PanelView inherits VerticalLayout {
         show-pill: true;
         level: PanelModel.level;
         level-text: PanelModel.words;
+        actions: PanelModel.actions;
         back-clicked => {
             Nav.back();
+        }
+        action-clicked(id) => {
+            PanelModel.action(PanelModel.app-id, id, "");
         }
         close-clicked => {
             Nav.close();
         }
     }
     ScrollArea {
-        Say {
+        // `.flyout-inner`: sections 6 px apart with 10 px at the sides, the
+        // version line after them, 6 px at the bottom.
+        VerticalLayout {
+            padding-left: Theme.gutter;
+            padding-right: Theme.gutter;
+            padding-top: Theme.section-gap;
+            padding-bottom: Theme.section-gap;
+            spacing: Theme.section-gap;
+
+            Section {
+                label: "State";
+                SectionHeading {
+                    text: "State";
+                }
+                Say {
+                    for line in PanelModel.lines: SayLine {
+                        text: line.text;
+                        tone: line.tone;
+                    }
+                }
+                if PanelModel.buttons.length > 0: ActionsRow {
+                    for button in PanelModel.buttons: SmallButton {
+                        text: button.text;
+                        label: button.label;
+                        tooltip: button.tooltip;
+                        enabled: button.enabled;
+                        armed: button.armed;
+                        clicked => {
+                            PanelModel.action(PanelModel.app-id, button.id, "");
+                        }
+                    }
+                }
+            }
+
+            if PanelModel.components.length > 0: Section {
+                label: "Components";
+                SectionHeading {
+                    text: "Components";
+                }
+                for component[i] in PanelModel.components: ComponentRow {
+                    first: i == 0;
+                    name: component.name;
+                    line: component.line;
+                    tone: component.tone;
+                    memory: component.memory;
+                    for button in component.buttons: SmallButton {
+                        text: button.text;
+                        label: button.label;
+                        tooltip: button.tooltip;
+                        enabled: button.enabled;
+                        armed: button.armed;
+                        clicked => {
+                            PanelModel.action(PanelModel.app-id, button.id, component.id);
+                        }
+                    }
+                }
+            }
+
+            if PanelModel.has-history: Section {
+                label: "Last 15 minutes";
+                SectionHeading {
+                    text: "Last 15 minutes";
+                    has-links: true;
+                    HeadLink {
+                        text: "24 hours, 7 days";
+                        clicked => {
+                            Nav.go(View.history, PanelModel.app-id);
+                        }
+                    }
+                }
+                VerticalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    padding-top: 4px;
+                    padding-bottom: 10px;
+                    Chart {
+                        memory-line: PanelModel.memory-line;
+                        memory-fill: PanelModel.memory-fill;
+                        cpu-line: PanelModel.cpu-line;
+                        label: PanelModel.chart-label;
+                    }
+                    ChartLegend {
+                        memory: PanelModel.legend-memory;
+                        cpu: PanelModel.legend-cpu;
+                    }
+                }
+            }
+
+            if PanelModel.processes.length > 0: Section {
+                label: "Processes";
+                SectionHeading {
+                    text: "Processes";
+                }
+                Table {
+                    label: "Processes";
+                    columns: [
+                        { title: "Process", numeric: false },
+                        { title: "Memory", numeric: true },
+                        { title: "Private", numeric: true },
+                        { title: "CPU", numeric: true },
+                        { title: "", numeric: false },
+                    ];
+                    rows: PanelModel.processes;
+                }
+            }
+
+            if PanelModel.opens.length > 0: Section {
+                label: "Open";
+                OpenLinks {
+                    items: PanelModel.opens;
+                    open(key) => {
+                        PanelModel.open(PanelModel.app-id, key);
+                    }
+                }
+            }
+
+            Section {
+                label: "In N8 Tray";
+                SectionHeading {
+                    text: "In N8 Tray";
+                }
+                ToggleRow {
+                    first: true;
+                    text: "Start with N8 Tray";
+                    hint: "When N8 Tray starts, or when the app is installed";
+                    checked: PanelModel.auto-start;
+                    toggled => {
+                        PanelModel.setting(PanelModel.app-id, "autoStart", !PanelModel.auto-start);
+                    }
+                }
+                ToggleRow {
+                    text: "Show in N8 Tray";
+                    hint: "Off: the app uses its own tray icon";
+                    checked: PanelModel.hosted;
+                    toggled => {
+                        PanelModel.setting(PanelModel.app-id, "hosted", !PanelModel.hosted);
+                    }
+                }
+                ToggleRow {
+                    text: "Turned on";
+                    hint: "Off: N8 Tray never starts it";
+                    checked: PanelModel.enabled;
+                    toggled => {
+                        PanelModel.setting(PanelModel.app-id, "enabled", !PanelModel.enabled);
+                    }
+                }
+            }
+
+            // `<p class="say" style="margin: 4px 10px 0; padding: 0">`: it
+            // sits at the section's left edge.
             SayLine {
-                text: PanelModel.note;
+                text: PanelModel.version-line;
             }
         }
     }
