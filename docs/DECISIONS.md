@@ -454,6 +454,8 @@ This entry records how the kit answers it; `native/ui/README.md` is the rulebook
 - Compact and the window height (D35) are applied from the snapshot on every fill and every reveal, and the window is fitted after each fill.
 - A focus request by app id (`RowFocus.to-id`) stays pending until a row takes it, and a row checks for one when it is created: after a reorder, the moved rows are new instances that exist only from the next layout, which a `changed` handler never sees.
 - Each view module lists its golden pictures (`SHOTS`: fixture, app, density, height), rendered in the shell's own window, so a lane adds states without touching the gallery's lists or the shared fixtures.
+  A shot's optional `stage` changes its own copy of the fixture, adds recent warnings or arms an action, for states no fixture has; times in the pictures show in UTC on a 24-hour clock, so a picture is the same on every PC and runner.
+- `Ctx::arrived` marks a view's first fill of a visit, where today's views mount (History reads its data then), and `Ctx::warnings` hands in the recent warnings, so a view's `fill` reads no global the pictures cannot set.
 - Release builds compile `ui/main.slint` alone; debug and test builds compile `ui/debug.slint`, which adds the widget gallery in the same compilation, so both share their Rust types.
   The Native CI job checks the Rust code Slint generated for each build: the test build's must have the gallery's component (so the check can fail) and the release build's must not.
   Measured on Windows (release, LTO, stripped): the exe is 27,452,416 bytes, 24,064 smaller than main's CI build (27,476,480).
