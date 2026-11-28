@@ -40,8 +40,12 @@ A view lane adds nothing to a shared file.
 - `views/<name>.slint` holds one component `<Name>View` (its title bar, its `ScrollArea`, and for the hub its bottom bar), and any components only it uses.
 - `src/view/<name>.rs` has `fill(ui: &dyn Models, ctx: &mut Ctx)`, called with the latest snapshot whenever the view shows or the snapshot changes, and `wire(ui: &dyn Models)`, called once per window to connect the global's callbacks.
   A callback asks for things through `view::intent` (below) and for other views through `Nav`.
-- `SHOTS` in the same module lists the view's golden pictures (`router::Shot`: a state name, a fixture, an app id, Compact or not, the height limit).
+  `ctx.arrived` is true on the first fill after the view began to show (opened, gone to, come back to by Back, or a new window), where today's view mounts: read a history then, or forget a "Copied" from an earlier visit; it is false on the refills of later snapshots.
+  `ctx.warnings` are the recent warnings, newest first.
+- `SHOTS` in the same module lists the view's golden pictures (`router::Shot`: a state name, a fixture, an app id, Compact or not, the height limit, and an optional `stage`).
   Add a state by adding a line; the golden test renders each in the shell's window, in light, dark and High Contrast.
+  A state no fixture has comes from `stage`, a function in your module that changes the shot's copy of the snapshot, adds recent warnings or arms an action (`router::Stage`) before the fill; the fixtures stay as they are.
+  Times in the pictures show in UTC on a 24-hour clock, so they match on every PC and runner.
 - Its tests go in its module; helpers only one view needs go in its module too, not in `format.rs`.
 
 ### Your types reach Rust
@@ -90,7 +94,7 @@ A reply comes back on the UI thread to a closure that gets the window's models (
 | An app's item | `send(Intent::OpenItem { app, kind, key })` | `Intent::OpenItem { app: id, kind: "open".into(), key: "logs".into() }`; `kind` `open` (by key) or `menu` (by index) |
 | Install an update, or try again | `send(Intent::InstallUpdate)` | opens the release page until the native shell installs in place (D27) |
 | A history | `history(of, range, done)` | `history(HistoryOf::App(id), Range::Day, \|ui, reply\| fill_chart(ui, reply))`; `HistoryOf::All` is every app shown in N8 Tray, then N8 Tray; read on a worker thread; compare `reply.of` and `reply.range` with what shows now |
-| Recent warnings | `warnings()` | `for w in intent::warnings() { .. }` in `fill`, newest first |
+| Recent warnings | `ctx.warnings` | `for w in ctx.warnings { .. }` in `fill`, newest first (`intent::warnings()` in the window; a shot's `stage` sets them in a picture) |
 | The status text | `status_text(snapshot)` | what Copy status copies, today's `report.rs` |
 | Copy status | `copy_status(done)` | `copy_status(\|ui, ok\| ui.details().set_copied(if ok { "Copied" } else { "Could not copy" }.into()))` |
 | Copy any text | `copy(text, done)` | `copy(line, \|_, _\| {})` |
@@ -136,7 +140,7 @@ Fixtures for shots: `busy`, `healthy`, `trouble`, `watching`, `updating`, `updat
 ### Details (copies `Details.tsx`)
 
 - Title bar: Back, "Status details", Close.
-- Overall (`KeyValues`) with "Copy status" (`copy_status`, then "Copied" or "Could not copy" for 2.5 s), Apps, Problems, Recent warnings (`WarningList` from `intent::warnings()`), and the times from `format::since` (the Windows clock setting).
+- Overall (`KeyValues`) with "Copy status" (`copy_status`, then "Copied" or "Could not copy" for 2.5 s), Apps, Problems, Recent warnings (`WarningList` from `ctx.warnings`), and the times from `format::since` (the Windows clock setting).
 - No whole-PC memory (D34).
 - The tray's status line opens this view (`Shell::show_view`).
 
@@ -153,7 +157,8 @@ Fixtures for shots: `busy`, `healthy`, `trouble`, `watching`, `updating`, `updat
 - Title bar: Back, "Resource history", Close.
 - The range buttons "24 hours" and "7 days" (toggle `SmallButton`s), then one section per app: `HistoryOf::All` (every app shown in N8 Tray, then N8 Tray), or one app when `ctx.app` names it (from the panel).
 - Each section: the app's icon and name (`SectionHeading` `plain`), then "Reading" until the reply, the `Chart` and its legend, or "Nothing recorded in the last 24 hours." / "7 days."
-- Read with `intent::history`; drop a reply whose `of` or `range` is not what shows.
+- Read with `intent::history` when the view arrives (`ctx.arrived`, as `History.tsx` reads on mount) and when the range changes, not on every fill; drop a reply whose `of` or `range` is not what shows.
+  The reply always comes, with no items when there is nothing to read.
 
 ## Tokens
 

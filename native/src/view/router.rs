@@ -7,7 +7,7 @@
 
 use std::time::Instant;
 
-use n8tray_core::model::HostSnapshot;
+use n8tray_core::model::{HostSnapshot, WarningView};
 
 use super::confirm::Confirms;
 use super::icons::Icons;
@@ -87,6 +87,14 @@ pub struct Ctx<'a> {
     pub confirms: &'a Confirms,
     pub icons: &'a mut Icons,
     pub now: Instant,
+    /// The first fill since this view (with this app) began to show: the
+    /// window opened on it, Nav went to it, Back came back to it, or a new
+    /// window was made. Today's views mount then: read a history, forget a
+    /// "Copied" from before. False on the refills of every new snapshot.
+    pub arrived: bool,
+    /// The recent warnings, newest first (Recent warnings): the log's
+    /// (`intent::warnings`) in the window, the shot's in a golden picture.
+    pub warnings: &'a [WarningView],
 }
 
 /// One picture of a view for its golden images,
@@ -94,7 +102,7 @@ pub struct Ctx<'a> {
 /// shell's window, filled from a fixture by the view's own `fill`, at a
 /// density and a height limit, in light, dark and High Contrast. Each view
 /// module lists its own (`SHOTS`); adding one touches no other file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct Shot {
     /// The picture's name (`busy`, `compact-tall`, `armed`).
     pub state: &'static str,
@@ -106,6 +114,11 @@ pub struct Shot {
     pub compact: bool,
     /// The window's height limit: 400, 500 or 600 (D35).
     pub height: u32,
+    /// A state no fixture has, set up in the view's own module: a change to
+    /// the fixture's snapshot (a long name, an app busy stopping), recent
+    /// warnings, an armed action. Runs after `compact` and `height` are
+    /// applied, before the view is filled.
+    pub stage: Option<fn(&mut Stage)>,
 }
 
 impl Shot {
@@ -117,8 +130,21 @@ impl Shot {
             app: "",
             compact: false,
             height: 400,
+            stage: None,
         }
     }
+}
+
+/// What a shot's `stage` may change before its view is filled.
+pub struct Stage<'a> {
+    /// The fixture's snapshot (a copy: the fixture file stays as it is).
+    pub snapshot: &'a mut HostSnapshot,
+    /// The recent warnings the view gets (`Ctx::warnings`), newest first;
+    /// none unless the stage adds some.
+    pub warnings: &'a mut Vec<WarningView>,
+    /// The armed actions: `confirms.press(confirm::key(app, action, None),
+    /// true, Instant::now())` shows that action armed.
+    pub confirms: &'a mut Confirms,
 }
 
 /// What Escape does.
@@ -134,6 +160,11 @@ pub struct Router {
     back: Vec<(View, Option<String>)>,
     pub confirms: Confirms,
     pub icons: Icons,
+    /// The view (and app) the last fill filled, so the next fill knows
+    /// whether the view just arrived (`Ctx::arrived`); `None` after an open.
+    shown: Option<(View, Option<String>)>,
+    /// Fixed recent warnings (a golden picture's); `None`: the log's.
+    pub warnings: Option<Vec<WarningView>>,
 }
 
 impl Default for Router {
@@ -144,6 +175,8 @@ impl Default for Router {
             back: Vec::new(),
             confirms: Confirms::default(),
             icons: Icons::default(),
+            shown: None,
+            warnings: None,
         }
     }
 }
@@ -202,13 +235,16 @@ impl Router {
         self.app = (!id.is_empty()).then(|| id.to_string());
         self.back.clear();
         self.confirms.clear();
+        self.shown = None;
     }
 
     /// A new window (the old one was dropped): its icons are loaded again and
-    /// nothing is armed. The view stays the one `open_at` chose.
+    /// nothing is armed. The view stays the one `open_at` chose, and arrives
+    /// again in the new window's models.
     pub fn new_window(&mut self) {
         self.icons = Icons::default();
         self.confirms.clear();
+        self.shown = None;
     }
 
     /// The snapshot no longer has an app the router remembers: a panel (or
@@ -228,6 +264,15 @@ impl Router {
         }
         self.open_at(View::Hub, "");
         true
+    }
+
+    /// Whether the view that shows arrives with this fill (`Ctx::arrived`):
+    /// it is not the one the last fill filled, or the window opened since.
+    fn arrives(&mut self) -> bool {
+        let here = (self.view, self.app.clone());
+        let arrived = self.shown.as_ref() != Some(&here);
+        self.shown = Some(here);
+        arrived
     }
 
     /// The title a screen reader hears when the view opens (the title bar's
@@ -257,13 +302,24 @@ impl Router {
         let fell_back = self.forget_gone(snapshot);
         ui.nav().set_view(self.view);
         ui.nav().set_title(self.title(snapshot).into());
+        let arrived = self.arrives();
         let app = self.app.clone();
+        let live;
+        let warnings: &[WarningView] = match &self.warnings {
+            Some(fixed) => fixed,
+            None => {
+                live = super::intent::warnings();
+                &live
+            }
+        };
         let mut ctx = Ctx {
             snapshot,
             app: app.as_deref(),
             confirms: &self.confirms,
             icons: &mut self.icons,
             now: Instant::now(),
+            arrived,
+            warnings,
         };
         fill_view(self.view, ui, &mut ctx);
         fell_back
@@ -400,6 +456,30 @@ mod tests {
         assert_eq!((r.view(), r.app()), (View::History, Some("n8tray")));
         r.back();
         assert_eq!(r.view(), View::Hub, "the gone panel was dropped");
+    }
+
+    /// A view arrives on its first fill (today's views mount then: History
+    /// reads its data), not on the refills of later snapshots.
+    #[test]
+    fn a_view_arrives_once_per_visit() {
+        let mut r = Router::default();
+        assert!(r.arrives(), "the first fill");
+        assert!(!r.arrives(), "a refill");
+        r.go(View::History, "");
+        assert!(r.arrives());
+        assert!(!r.arrives());
+        r.go(View::History, "voicedock");
+        assert!(r.arrives(), "another app's history");
+        r.back();
+        assert!(r.arrives(), "back to the history of every app");
+        r.open_at(View::History, "");
+        assert!(r.arrives(), "the window opened again on the same view");
+        assert!(!r.arrives());
+        r.new_window();
+        assert!(r.arrives(), "a new window's models are empty");
+        // The same view asked again is no visit.
+        assert!(!r.go(View::History, ""));
+        assert!(!r.arrives());
     }
 
     #[test]

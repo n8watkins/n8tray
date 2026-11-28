@@ -423,6 +423,31 @@ pub fn has_history(values: Option<&[f64]>) -> bool {
     values.is_some_and(|v| v.iter().any(|&x| x > 0.0))
 }
 
+#[cfg(debug_assertions)]
+thread_local! {
+    /// This thread draws golden pictures (`fix_clock_for_pictures`).
+    static PICTURE_CLOCK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Times on this thread show in UTC on a 24-hour clock from now on, the
+/// same on every PC and runner whatever its time zone and clock setting:
+/// the golden pictures' thread (`gallery::view_window`) calls it.
+#[cfg(debug_assertions)]
+pub fn fix_clock_for_pictures() {
+    PICTURE_CLOCK.with(|fixed| fixed.set(true));
+}
+
+fn picture_clock() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        PICTURE_CLOCK.with(std::cell::Cell::get)
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        false
+    }
+}
+
 /// A start time as the local hour and minute ("14:05"), or "-".
 pub fn since(started_at: Option<&str>) -> String {
     let Some(text) = started_at else {
@@ -430,8 +455,16 @@ pub fn since(started_at: Option<&str>) -> String {
     };
     match chrono::DateTime::parse_from_rfc3339(text) {
         Ok(at) => {
-            let local = at.with_timezone(&chrono::Local);
             use chrono::Timelike;
+            if picture_clock() {
+                let utc = at.with_timezone(&chrono::Utc);
+                return clock_time(
+                    utc.hour(),
+                    utc.minute(),
+                    &n8tray_platform::locale::Clock::twenty_four(),
+                );
+            }
+            let local = at.with_timezone(&chrono::Local);
             clock_time(
                 local.hour(),
                 local.minute(),
@@ -1001,6 +1034,14 @@ mod tests {
         assert_eq!(since(Some("not a time")), "-");
         assert_ne!(since(Some("2026-11-25T10:05:00Z")), "-");
         assert_eq!(duration(0), "0 seconds");
+        // A thread of its own: the clock of golden pictures stays on it.
+        std::thread::spawn(|| {
+            fix_clock_for_pictures();
+            assert_eq!(since(Some("2026-11-25T10:05:00+02:00")), "08:05");
+            assert_eq!(since(Some("2026-11-25T23:59:00Z")), "23:59");
+        })
+        .join()
+        .unwrap();
         assert_eq!(duration(1), "1 second");
         assert_eq!(duration(59), "59 seconds");
         assert_eq!(duration(60), "1 minute");

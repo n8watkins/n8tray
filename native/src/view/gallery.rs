@@ -21,7 +21,7 @@ use slint::{ComponentHandle, ModelRc, PlatformError, Rgb8Pixel, SharedString, Ve
 use super::confirm::Confirms;
 use super::format;
 use super::icons::Icons;
-use super::router::{self, Ctx, Models, Router, Shot};
+use super::router::{self, Ctx, Models, Router, Shot, Stage};
 use super::theme::{self, Choice, NIGHT_SKY};
 use super::{about, all_apps, details, history, hub, panel, settings};
 use crate::ui::{FlyoutWindow, Gallery, Theme, View};
@@ -141,6 +141,8 @@ fn fill(ui: &Gallery) {
             confirms: &confirms,
             icons: &mut icons,
             now: Instant::now(),
+            arrived: true,
+            warnings: &[],
         };
         router::fill_view(*view, ui, &mut ctx);
     }
@@ -177,7 +179,9 @@ pub fn fixture(name: &str) -> Result<HostSnapshot, String> {
 
 /// The shell's window on the headless platform, showing `view` filled from
 /// `shot`'s fixture by the router (so by the view's own `fill`), with the
-/// shot's density and height limit, in `look`.
+/// shot's density, height limit and stage, in `look`. Times show in UTC on
+/// a 24-hour clock (`format::fix_clock_for_pictures`), so the picture is
+/// the same on every PC and runner.
 pub struct ViewWindow {
     pub ui: FlyoutWindow,
     pub window: Rc<MinimalSoftwareWindow>,
@@ -208,12 +212,22 @@ pub fn view_window(view: View, shot: &Shot, look: Look, font: Font) -> Result<Vi
         _ => "short",
     }
     .into();
+    let mut router = Router::default();
+    router.open_at(view, shot.app);
+    let mut warnings = Vec::new();
+    if let Some(stage) = shot.stage {
+        stage(&mut Stage {
+            snapshot: &mut snapshot,
+            warnings: &mut warnings,
+            confirms: &mut router.confirms,
+        });
+    }
+    router.warnings = Some(warnings);
+    format::fix_clock_for_pictures();
     let theme = ui.global::<Theme>();
     set_look(&theme, look, font);
     theme::apply_settings(&theme, &snapshot.settings);
     router::wire(&ui);
-    let mut router = Router::default();
-    router.open_at(view, shot.app);
     router.fill(&ui, &snapshot);
     Ok(ViewWindow {
         ui,
@@ -881,6 +895,38 @@ pub mod tests {
         assert!(stops.in_list >= 5, "{stops:?}");
         assert!(stops.in_bars >= 3, "{stops:?}");
         headed.ui.hide().unwrap();
+    }
+
+    /// A shot's stage sets up a state no fixture has, in the shot's own
+    /// copy: the snapshot, the warnings the view gets and the armed actions.
+    #[test]
+    fn a_shots_stage_changes_only_its_own_copy() {
+        fn stage(s: &mut Stage) {
+            s.snapshot.apps[0].name = "A very long name for a staged app".into();
+            s.warnings.push(n8tray_core::model::WarningView {
+                at: "18:02".into(),
+                level: "warn".into(),
+                message: "VoiceDock did not answer".into(),
+                count: 3,
+            });
+            let app = s.snapshot.apps[0].id.clone();
+            s.confirms
+                .press(confirm::key(&app, "stop", None), true, Instant::now());
+        }
+        let shot = Shot {
+            stage: Some(stage),
+            ..Shot::of("staged", "busy")
+        };
+        let w = view_window(View::Hub, &shot, Look::Light, Font::Test).unwrap();
+        assert_eq!(w.snapshot.apps[0].name, "A very long name for a staged app");
+        assert_ne!(
+            fixture("busy").unwrap().apps[0].name,
+            w.snapshot.apps[0].name
+        );
+        assert_eq!(w.router.warnings.as_ref().map(Vec::len), Some(1));
+        let key = confirm::key(&w.snapshot.apps[0].id, "stop", None);
+        assert!(w.router.confirms.is_armed(&key, Instant::now()));
+        w.ui.hide().unwrap();
     }
 
     /// The shell's window: the hub's bars never move its list.
