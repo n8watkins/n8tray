@@ -22,66 +22,100 @@ use crate::ui::{
     BarAction, GlyphName, Level, OpenItem, PanelButton, PanelComponent, PanelSay, TableRow,
 };
 
-/// The view's golden images (`router::Shot`).
+/// The view's golden images (`router::Shot`). Every stage first gives each
+/// app its example icon, as today's preview does (the fixtures name icons
+/// by a relative path no machine has).
 #[cfg(debug_assertions)]
 pub const SHOTS: &[super::router::Shot] = &[
     super::router::Shot {
         app: "voicedock",
+        stage: Some(stage_icons),
         ..super::router::Shot::of("busy", "busy")
     },
     super::router::Shot {
         app: "voicedock",
         compact: true,
+        stage: Some(stage_icons),
         ..super::router::Shot::of("compact", "busy")
     },
-    // A tall window shows the whole panel without scrolling.
+    // The tall window (600) cuts the panel and scrolls.
     super::router::Shot {
         app: "voicedock",
         height: 600,
+        stage: Some(stage_icons),
         ..super::router::Shot::of("busy-tall", "busy")
+    },
+    // Every section in view: a height no setting has, for the picture only.
+    super::router::Shot {
+        app: "voicedock",
+        height: WHOLE,
+        stage: Some(stage_icons),
+        ..super::router::Shot::of("whole", "busy")
     },
     // Stop asks for a second click (an app's own action that confirms):
     // armed in the title bar and in a component's button.
     super::router::Shot {
         app: "voicedock",
-        height: 600,
+        height: WHOLE,
         stage: Some(stage_armed),
         ..super::router::Shot::of("armed", "busy")
     },
-    // Not running: Start, no Restart, no processes, nothing to chart.
+    // Not running: Start, no Restart, no processes, nothing to chart; a
+    // log that is not there yet.
     super::router::Shot {
         app: "n8commentary",
+        stage: Some(stage_icons),
         ..super::router::Shot::of("off", "busy")
     },
-    // An alert on the row's line, the app's detail, two processes.
+    // An alert on the line, memory reported inside WSL, two processes.
     super::router::Shot {
         app: "leadscraper",
-        height: 600,
+        height: WHOLE,
+        stage: Some(stage_icons),
         ..super::router::Shot::of("alert", "busy")
     },
     // Failed, with problem components and no history.
     super::router::Shot {
         app: "voicedock",
-        height: 600,
+        height: WHOLE,
+        stage: Some(stage_icons),
         ..super::router::Shot::of("trouble", "trouble")
     },
-    // Busy with an action, a note, a GPU line, a long name and a long
-    // description, memory reported inside WSL.
+    // Busy with an action, notes, a GPU line, a long name and a long
+    // detail, memory reported inside WSL.
     super::router::Shot {
         app: "voicedock",
-        height: 600,
+        height: WHOLE,
         stage: Some(stage_full),
         ..super::router::Shot::of("full", "busy")
     },
-    // The PowerShell tray manages the apps: the panel's own buttons stay.
+    // The PowerShell tray manages the apps: the panel keeps its buttons.
     super::router::Shot {
         app: "n8hotkeys",
+        stage: Some(stage_icons),
         ..super::router::Shot::of("watching", "watching")
     },
 ];
 
+/// The height of the pictures that show the whole panel.
+#[cfg(debug_assertions)]
+const WHOLE: u32 = 1000;
+
+/// The example icons of `spec/examples/icons`, by app id.
+#[cfg(debug_assertions)]
+fn stage_icons(stage: &mut super::router::Stage) {
+    for app in &mut stage.snapshot.apps {
+        app.icon = Some(format!(
+            "{}/../spec/examples/icons/{}.svg",
+            env!("CARGO_MANIFEST_DIR"),
+            app.id
+        ));
+    }
+}
+
 #[cfg(debug_assertions)]
 fn stage_armed(stage: &mut super::router::Stage) {
+    stage_icons(stage);
     let now = Instant::now();
     for (action, component) in [("stop", None), ("engine.stop", Some("kokoro"))] {
         stage
@@ -95,6 +129,7 @@ fn stage_armed(stage: &mut super::router::Stage) {
 
 #[cfg(debug_assertions)]
 fn stage_full(stage: &mut super::router::Stage) {
+    stage_icons(stage);
     let app = &mut stage.snapshot.apps[2];
     app.name = "VoiceDock Studio Edition With A Very Long Name".into();
     app.pending = Some("Restarting".into());
@@ -223,14 +258,20 @@ pub fn components(app: &AppView, confirms: &Confirms, now: Instant) -> Vec<Panel
             };
             let buttons: Vec<PanelButton> = format::component_actions(app, c)
                 .into_iter()
-                .map(|(action, label)| button(app, action, Some(&c.id), Some(&label), confirms, now))
+                .map(|(action, label)| {
+                    button(app, action, Some(&c.id), Some(&label), confirms, now)
+                })
                 .collect();
             PanelComponent {
                 id: c.id.as_str().into(),
                 name: c.name.as_str().into(),
                 line: c.detail.as_deref().unwrap_or(&c.words).into(),
                 tone: say_tone(tone),
-                memory: c.memory_mb.map(|m| format::memory(Some(m))).unwrap_or_default().into(),
+                memory: c
+                    .memory_mb
+                    .map(|m| format::memory(Some(m)))
+                    .unwrap_or_default()
+                    .into(),
                 buttons: ModelRc::from(Rc::new(VecModel::from(buttons))),
             }
         })
@@ -243,12 +284,15 @@ pub fn processes(app: &AppView) -> Vec<TableRow> {
     app.processes
         .iter()
         .map(|p| {
-            let small = [Some(p.pid.to_string()), p.component.clone().or(p.role.clone())]
-                .into_iter()
-                .flatten()
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-                .join(" · ");
+            let small = [
+                Some(p.pid.to_string()),
+                p.component.clone().or(p.role.clone()),
+            ]
+            .into_iter()
+            .flatten()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" · ");
             let dash = |mb: Option<f64>| mb.map(|m| format::memory(Some(m))).unwrap_or("-".into());
             let cells = [
                 p.name.clone(),
@@ -357,7 +401,9 @@ pub fn fill(ui: &dyn Models, ctx: &mut Ctx) {
     m.set_level(rows::level(app.level));
     m.set_words(words(app).into());
     m.set_actions(ModelRc::from(Rc::new(VecModel::from(bar_actions(
-        app, ctx.confirms, ctx.now,
+        app,
+        ctx.confirms,
+        ctx.now,
     )))));
 
     if let Some(new) = sync(m.get_lines(), say(app), |l| l.text.clone()) {
@@ -475,7 +521,11 @@ mod tests {
         let lines = say(&ls);
         assert_eq!(lines[0].text, ls.alert.as_deref().unwrap());
         assert_eq!(lines[0].tone, crate::ui::Tone::Attention);
-        assert!(texts(&lines).iter().any(|l| l.ends_with("reported inside WSL")));
+        assert!(
+            texts(&lines)
+                .iter()
+                .any(|l| l.ends_with("reported inside WSL"))
+        );
     }
 
     #[test]
@@ -489,7 +539,10 @@ mod tests {
         vd.notes = vec!["Heads up".into()];
         let lines = say(&vd);
         let t = texts(&lines);
-        assert!(t.contains(&"GPU 2.0 GB · 37% (measured)".to_string()), "{t:?}");
+        assert!(
+            t.contains(&"GPU 2.0 GB · 37% (measured)".to_string()),
+            "{t:?}"
+        );
         assert_eq!(lines.last().unwrap().text, "Heads up");
         assert_eq!(lines.last().unwrap().tone, crate::ui::Tone::Attention);
         // No reading, no line.
@@ -528,9 +581,17 @@ mod tests {
         assert_eq!(buttons.len(), 2);
         assert!(buttons[0].text.contains("Kokoro"));
         assert!(!buttons[0].armed);
-        confirms.press(confirm::key("voicedock", "engine.stop", Some("kokoro")), true, now);
+        confirms.press(
+            confirm::key("voicedock", "engine.stop", Some("kokoro")),
+            true,
+            now,
+        );
         let armed = components(&vd, &confirms, now);
-        let stop = armed[0].buttons.iter().find(|b| b.id == "engine.stop").unwrap();
+        let stop = armed[0]
+            .buttons
+            .iter()
+            .find(|b| b.id == "engine.stop")
+            .unwrap();
         assert!(stop.armed);
         assert_eq!(stop.text, "Confirm");
         assert!(!armed[1].buttons.iter().any(|b| b.armed));
