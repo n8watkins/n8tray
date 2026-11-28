@@ -255,6 +255,34 @@ export struct TableRow {
     label: string,
 }
 
+// A `td`'s text: wraps at word boundaries, and inside a word only when the
+// word is wider than the column (Slint's `word-wrap`). It sits at the top
+// of its cell (`vertical-align: top`) in CSS line boxes, and sets a least
+// height, never a fixed one: a fixed height in a row would cap the row at
+// one line.
+component CellText inherits Text {
+    font-size: Theme.text-pill;
+    wrap: word-wrap;
+    vertical-alignment: top;
+    line-height-factor: Theme.line-factor;
+    min-height: self.font-size * Theme.line-height;
+    accessible-role: none;
+}
+
+// `<small>` (a size smaller, in the faint colour), in its parent's line box
+// and centred on it.
+component CellSmall inherits VerticalLayout {
+    in property <string> text;
+    padding-top: Theme.text-pill * (1 - 0.833) * Theme.line-height / 2;
+    min-height: Theme.text-pill * Theme.line-height;
+    horizontal-stretch: 0;
+    CellText {
+        text: root.text;
+        font-size: Theme.text-pill * 0.833;
+        color: Theme.faint;
+    }
+}
+
 component Cell {
     in property <string> text;
     in property <string> small;
@@ -266,13 +294,54 @@ component Cell {
     in property <bool> header;
     in property <string> tooltip;
     in property <string> label;
+    // The most the text's least width may ask for (the table's room left by
+    // the other columns), so the table never runs past its card; a word
+    // wider than that breaks inside.
+    in property <length> room: 100000px;
     // Text wraps as a `td` does; headings (`th`: nowrap), numbers and tags
     // keep their width, so the number columns stay on screen beside a long
     // name.
     property <bool> wraps: !root.header && !root.numeric && root.tag == "";
+    property <length> pad-x: (root.first ? 12px : 6px) + (root.last ? 10px : 6px);
+    // A `td`'s least width is its longest word, the name's or the small's
+    // (they wrap apart), never the two side by side.
+    property <length> text-min: max(name.min-width, root.small != "" ? small.min-width : 0px);
+    property <length> text-wide: name.preferred-width + (root.small != "" ? 4px + small.preferred-width : 0px);
+    // `name <small>` flow on one line while both fit, as today's inline
+    // `<small>` does; when not, the small goes under the name.
+    property <bool> inline: root.small == "" || root.width - root.pad-x >= root.text-wide - 0.5px;
+    // The widths come from the measures, never from the laid-out content,
+    // which depends on the width (`inline`).
+    property <length> wide: root.tag != "" ? tag.preferred-width : root.wraps ? root.text-wide : name.preferred-width;
     accessible-role: none;
-    min-width: root.wraps ? l.min-width : l.preferred-width;
+    min-width: root.pad-x + (root.wraps ? min(root.text-min, root.room) : root.wide);
+    preferred-width: root.pad-x + root.wide;
     min-height: l.preferred-height;
+    preferred-height: l.preferred-height;
+
+    // The measures (not shown): one line each, and their longest words.
+    // Placed, so their own sizes never bound the cell's.
+    name := CellText {
+        x: 0;
+        y: 0;
+        visible: false;
+        text: root.text;
+        font-weight: root.header ? Theme.weight-bold : Theme.weight-normal;
+    }
+    small := CellText {
+        x: 0;
+        y: 0;
+        visible: false;
+        text: root.small;
+        font-size: Theme.text-pill * 0.833;
+    }
+    tag := Tag {
+        x: 0;
+        y: 0;
+        visible: false;
+        level: root.tag-level;
+        text: root.tag;
+    }
 
     if !root.header: Rectangle {
         y: 0;
@@ -288,62 +357,52 @@ component Cell {
         accessible-label: root.label;
     }
 
-    l := HorizontalLayout {
+    // Placed, so the cell's widths stay the measures' alone.
+    l := VerticalLayout {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
         padding-left: root.first ? 12px : 6px;
         padding-right: root.last ? 10px : 6px;
         padding-top: 4px;
         padding-bottom: 4px;
-        spacing: 4px;
-        alignment: root.numeric ? LayoutAlignment.end : LayoutAlignment.start;
 
-        // Every text sits at the top of its cell (`vertical-align: top`) in
-        // CSS line boxes, and sets a least height, never a fixed one: a
-        // fixed height in a row would cap the row at one line.
-        if root.tag == "" && !root.wraps: Text {
-            text: root.text;
-            font-size: Theme.text-pill;
-            font-weight: root.header ? Theme.weight-bold : Theme.weight-normal;
-            color: root.header ? Theme.faint : root.first ? Theme.fg : Theme.muted;
-            horizontal-alignment: root.numeric ? right : left;
-            vertical-alignment: top;
-            line-height-factor: Theme.line-factor;
-            min-height: self.font-size * Theme.line-height;
-            accessible-role: none;
-        }
-        // A `td`'s text: wraps at word boundaries, and inside a word that
-        // is wider than the column (`overflow-wrap: anywhere`).
-        if root.wraps: Text {
-            text: root.text;
-            font-size: Theme.text-pill;
-            color: root.first ? Theme.fg : Theme.muted;
-            wrap: word-wrap;
-            vertical-alignment: top;
-            line-height-factor: Theme.line-factor;
-            min-height: self.font-size * Theme.line-height;
-            horizontal-stretch: 0;
-            accessible-role: none;
-        }
-        // `<small>`: a size smaller, right after the text, centred on its
-        // first line; it wraps too, so a long name leaves the numbers room.
-        if root.small != "": VerticalLayout {
-            padding-top: Theme.text-pill * (1 - 0.833) * Theme.line-height / 2;
-            horizontal-stretch: 0;
-            Text {
-                text: root.small;
-                font-size: Theme.text-pill * 0.833;
-                color: Theme.faint;
-                wrap: word-wrap;
-                vertical-alignment: top;
-                line-height-factor: Theme.line-factor;
-                min-height: self.font-size * Theme.line-height;
-                accessible-role: none;
+        if !root.wraps: HorizontalLayout {
+            alignment: root.numeric ? LayoutAlignment.end : LayoutAlignment.start;
+            if root.tag == "": CellText {
+                text: root.text;
+                wrap: no-wrap;
+                font-weight: root.header ? Theme.weight-bold : Theme.weight-normal;
+                color: root.header ? Theme.faint : root.first ? Theme.fg : Theme.muted;
+                horizontal-alignment: root.numeric ? right : left;
+            }
+            if root.tag != "": VerticalLayout {
+                alignment: start;
+                Tag {
+                    level: root.tag-level;
+                    text: root.tag;
+                }
             }
         }
-        if root.tag != "": VerticalLayout {
+        if root.wraps && root.inline: HorizontalLayout {
+            spacing: 4px;
             alignment: start;
-            Tag {
-                level: root.tag-level;
-                text: root.tag;
+            CellText {
+                text: root.text;
+                color: root.first ? Theme.fg : Theme.muted;
+            }
+            if root.small != "": CellSmall {
+                text: root.small;
+            }
+        }
+        if root.wraps && !root.inline: VerticalLayout {
+            CellText {
+                text: root.text;
+                color: root.first ? Theme.fg : Theme.muted;
+            }
+            if root.small != "": CellSmall {
+                text: root.small;
             }
         }
     }
@@ -351,13 +410,42 @@ component Cell {
 
 // A table (`table`: 11.5px, the header faint and bold, a line above each
 // row, numbers right-aligned, 6 px after the last row). The first column
-// takes the room left over.
+// takes the room left over, and never asks for more than that.
 export component Table inherits VerticalLayout {
     in property <[TableColumn]> columns;
     in property <[TableRow]> rows;
     in property <string> label;
+    // The width it has: a section's, inside the window's gutters and the
+    // card's border. Not the table's own width, which its least width sets.
+    in property <length> card-width: Theme.window-width - 2 * Theme.gutter - 2px;
     accessible-role: table;
     accessible-label: root.label;
+
+    // The other columns' widths (not shown): the same table with the first
+    // column's words left out.
+    others := GridLayout {
+        visible: false;
+        height: 0px;
+        Row {
+            for column[j] in root.columns: Cell {
+                header: true;
+                text: j == 0 ? "" : column.title;
+                numeric: column.numeric;
+                first: j == 0;
+                last: j == root.columns.length - 1;
+            }
+        }
+        for row in root.rows: Row {
+            for cell[j] in row.cells: Cell {
+                text: j == 0 ? "" : cell;
+                tag: j == root.columns.length - 1 ? row.tag : "";
+                tag-level: row.tag-level;
+                numeric: root.columns[j].numeric;
+                first: j == 0;
+                last: j == root.columns.length - 1;
+            }
+        }
+    }
 
     GridLayout {
         Row {
@@ -381,6 +469,7 @@ export component Table inherits VerticalLayout {
                 last: j == root.columns.length - 1;
                 tooltip: row.tooltip;
                 label: j == 0 ? row.label : "";
+                room: max(0px, root.card-width - others.preferred-width);
                 horizontal-stretch: j == 0 ? 1 : 0;
             }
         }

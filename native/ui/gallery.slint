@@ -795,6 +795,8 @@ component GalleryPage inherits VerticalLayout {
                                 { cells: ["voicedock-hub", "643 MB", "598 MB", "12%", ""], small: "4120 · hub", tag: "verified", tag-level: Level.ok, tooltip: "", label: "Process voicedock-hub 4120 hub, Memory 643 MB, Private 598 MB, CPU 12%, verified" },
                                 { cells: ["python", "-", "-", "-", ""], small: "5532 · kokoro", tag: "unverified", tag-level: Level.attention, tooltip: "Started by the hub; not checked yet", label: "Process python 5532 kokoro, Memory -, Private -, CPU -, unverified" },
                                 { cells: ["n8-commentary-transcription-worker", "1.2 GB", "1.1 GB", "37%", ""], small: "7712 · whisper", tag: "verified", tag-level: Level.ok, tooltip: "", label: "Process n8-commentary-transcription-worker 7712 whisper, Memory 1.2 GB, Private 1.1 GB, CPU 37%, verified" },
+                                // One word wider than the room the other columns leave: it breaks inside, and the table stays in its card.
+                                { cells: ["speechtranscriptionservicehost.exe", "88 MB", "80 MB", "1%", ""], small: "9001 · service", tag: "unverified", tag-level: Level.attention, tooltip: "", label: "Process speechtranscriptionservicehost.exe 9001 service, Memory 88 MB, Private 80 MB, CPU 1%, unverified" },
                             ];
                         }
                     }

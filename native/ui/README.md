@@ -186,6 +186,7 @@ Their app icons are relative to the spec's examples (`icons/voicedock.svg`, as t
 - `Banner` (`BannerKind` info, attention or problem; glyph, text, detail, progress, two buttons, a link that opens more text).
 - `Section` (a labelled region), `SectionHeading` (with `has-links` for links at the right, or `plain` with an app icon for the history), `GroupHeading`, `Divider`, `Switch`, `ToggleRow`.
 - `Say` with `SayLine`s, `ActionsRow`, `ComponentRow`, `OpenLinks`, `KeyValues` (values wrap), `WarningList`, `Table` (text cells wrap, number columns keep their width; row labels from `view::format::table_row_label`).
+  A first cell's `small` follows the name on its line while both fit, as today's inline `<small>`, and goes under the name when not; the first column's least width is the longer of the two longest words, never more than the room the other columns leave in a section (`card-width`), so the table never runs past its card (a word wider than that breaks inside).
 - `Spark`, `Chart` and `ChartLegend`: path commands from `view::format::spark` and `chart`, words from `chart_words`.
 - `ScrollArea`: the one scrolling part of a view.
 - `FocusProbe`: where the focused control is, for the keyboard test only; the headless platform's clock moves only when a test calls `gallery::advance`, so a smooth scroll or a timer ends exactly when the test says.
