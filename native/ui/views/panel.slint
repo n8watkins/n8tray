@@ -71,20 +71,29 @@ export component PanelView inherits VerticalLayout {
                 SectionHeading {
                     text: "Components";
                 }
-                for component[i] in PanelModel.components: ComponentRow {
-                    first: i == 0;
-                    name: component.name;
-                    line: component.line;
-                    tone: component.tone;
-                    memory: component.memory;
-                    for button in component.buttons: SmallButton {
-                        text: button.text;
-                        label: button.label;
-                        tooltip: button.tooltip;
-                        enabled: button.enabled;
-                        armed: button.armed;
-                        clicked => {
-                            PanelModel.action(PanelModel.app-id, button.id, component.id);
+                for component[i] in PanelModel.components: VerticalLayout {
+                    // CSS `border-top: 1px` takes a pixel of the row's
+                    // height; the kit's line is drawn over the row, so the
+                    // line is made here and the row is the first kind.
+                    if i > 0: Rectangle {
+                        height: 1px;
+                        background: Theme.line;
+                    }
+                    ComponentRow {
+                        first: true;
+                        name: component.name;
+                        line: component.line;
+                        tone: component.tone;
+                        memory: component.memory;
+                        for button in component.buttons: SmallButton {
+                            text: button.text;
+                            label: button.label;
+                            tooltip: button.tooltip;
+                            enabled: button.enabled;
+                            armed: button.armed;
+                            clicked => {
+                                PanelModel.action(PanelModel.app-id, button.id, component.id);
+                            }
                         }
                     }
                 }
@@ -153,29 +162,46 @@ export component PanelView inherits VerticalLayout {
                 SectionHeading {
                     text: "In N8 Tray";
                 }
-                ToggleRow {
-                    first: true;
-                    text: "Start with N8 Tray";
-                    hint: "When N8 Tray starts, or when the app is installed";
-                    checked: PanelModel.auto-start;
-                    toggled => {
-                        PanelModel.setting(PanelModel.app-id, "autoStart", !PanelModel.auto-start);
+                // As the components: the line between rows takes its pixel.
+                VerticalLayout {
+                    ToggleRow {
+                        first: true;
+                        text: "Start with N8 Tray";
+                        hint: "When N8 Tray starts, or when the app is installed";
+                        checked: PanelModel.auto-start;
+                        toggled => {
+                            PanelModel.setting(PanelModel.app-id, "autoStart", !PanelModel.auto-start);
+                        }
                     }
                 }
-                ToggleRow {
-                    text: "Show in N8 Tray";
-                    hint: "Off: the app uses its own tray icon";
-                    checked: PanelModel.hosted;
-                    toggled => {
-                        PanelModel.setting(PanelModel.app-id, "hosted", !PanelModel.hosted);
+                VerticalLayout {
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.line;
+                    }
+                    ToggleRow {
+                        first: true;
+                        text: "Show in N8 Tray";
+                        hint: "Off: the app uses its own tray icon";
+                        checked: PanelModel.hosted;
+                        toggled => {
+                            PanelModel.setting(PanelModel.app-id, "hosted", !PanelModel.hosted);
+                        }
                     }
                 }
-                ToggleRow {
-                    text: "Turned on";
-                    hint: "Off: N8 Tray never starts it";
-                    checked: PanelModel.enabled;
-                    toggled => {
-                        PanelModel.setting(PanelModel.app-id, "enabled", !PanelModel.enabled);
+                VerticalLayout {
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.line;
+                    }
+                    ToggleRow {
+                        first: true;
+                        text: "Turned on";
+                        hint: "Off: N8 Tray never starts it";
+                        checked: PanelModel.enabled;
+                        toggled => {
+                            PanelModel.setting(PanelModel.app-id, "enabled", !PanelModel.enabled);
+                        }
                     }
                 }
             }
