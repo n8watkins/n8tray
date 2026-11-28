@@ -1,8 +1,10 @@
-// The hub (lane: hub screen). Until that lane lands, the placeholder of lane
-// N0: the level, the headline and each app as plain text, in the kit's
-// title bar. The hub lane owns this file, `hub-model.slint` and
-// `src/view/hub.rs`, and replaces them.
-import { Theme, TitleBar, ScrollArea, Say, SayLine } from "../widgets.slint";
+// The hub (copies `Hub.tsx`, `HubHead`, `HubFoot` and `UpdateBanner.tsx`):
+// the title bar with the level pill and the summary, the amber line when
+// something is wrong, then in the scroll area the watching note, the update
+// banner, the main view's apps, the manifest problems, the more line and N8
+// Tray's own row, and the bottom bar. Words and numbers come from Rust
+// (`view::hub`); the product name is the title bar's own default.
+import { Theme, TitleBar, ScrollArea, Banner, BannerKind, AlertLine, GlyphName, RowList, AppRow, ProblemRow, MoreLine, Divider, BottomBar, WrapLabel } from "../widgets.slint";
 import { Nav, View } from "../nav.slint";
 import { HubModel } from "hub-model.slint";
 
@@ -23,11 +25,140 @@ export component HubView inherits VerticalLayout {
             Nav.close();
         }
     }
+    if HubModel.alert != "": HorizontalLayout {
+        padding-left: Theme.gutter;
+        padding-right: Theme.gutter;
+        padding-bottom: Theme.section-gap;
+        AlertLine {
+            text: HubModel.alert;
+        }
+    }
     ScrollArea {
-        Say {
-            for line in HubModel.lines: SayLine {
-                text: line.text;
-                color: line.strong ? Theme.fg : Theme.muted;
+        VerticalLayout {
+            if HubModel.watching: VerticalLayout {
+                padding-left: Theme.gutter;
+                padding-right: Theme.gutter;
+                padding-bottom: Theme.banner-gap;
+                Banner {
+                    glyph: GlyphName.info;
+                    text: "Your PowerShell N8 Tray is managing these apps. This app is watching only; nothing here starts or stops apps.";
+                    link: "Learn more";
+                    link-open: "Show less";
+                    more: "Both trays read the same apps. Until this one replaces the PowerShell tray, it only shows their state and memory, so the two never fight over an app. Exit the PowerShell N8 Tray and this one manages them.";
+                }
+            }
+            if HubModel.update-shown: VerticalLayout {
+                padding-left: Theme.gutter;
+                padding-right: Theme.gutter;
+                padding-bottom: Theme.banner-gap;
+                Banner {
+                    kind: HubModel.update-problem ? BannerKind.problem : BannerKind.info;
+                    glyph: GlyphName.update;
+                    text: HubModel.update-text;
+                    detail: HubModel.update-detail;
+                    progress: HubModel.update-progress;
+                    secondary: HubModel.update-secondary;
+                    primary: HubModel.update-primary;
+                    secondary-clicked => {
+                        HubModel.update-secondary-clicked();
+                    }
+                    primary-clicked => {
+                        HubModel.update-primary-clicked();
+                    }
+                }
+            }
+
+            // `.list { padding: 2px 6px 4px }`; the bottom 4 px and the
+            // flyout's own 6 px are the spacer below the scroll area.
+            VerticalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                padding-top: 2px;
+
+                // `<p class="empty">`: `padding: 24px 16px` inside the list's
+                // 6, plus the paragraph's default margin of 1em (13 px) above
+                // and below.
+                if HubModel.empty != "": VerticalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 24px + Theme.text-body;
+                    padding-bottom: 24px + Theme.text-body;
+                    WrapLabel {
+                        text: HubModel.empty;
+                        color: Theme.muted;
+                        accessible-role: AccessibleRole.text;
+                        accessible-label: self.text;
+                    }
+                }
+                RowList {
+                    rows: HubModel.rows;
+                    first-index: 0;
+                    total: HubModel.rows.length + 1;
+                    open(id) => {
+                        Nav.go(View.panel, id);
+                    }
+                    act(id) => {
+                        HubModel.act(id);
+                    }
+                }
+                for problem in HubModel.problems: ProblemRow {
+                    name: problem.name;
+                    message: problem.message;
+                }
+                if HubModel.more != "": MoreLine {
+                    text: HubModel.more;
+                    clicked => {
+                        Nav.go(View.all-apps, "");
+                    }
+                }
+                Divider { }
+                AppRow {
+                    app-id: HubModel.tray.id;
+                    index: HubModel.rows.length;
+                    total: HubModel.rows.length + 1;
+                    name: HubModel.tray.name;
+                    line: HubModel.tray.line;
+                    tone: HubModel.tray.tone;
+                    memory: HubModel.tray.memory;
+                    sub: HubModel.tray.sub;
+                    spark-line: HubModel.tray.spark-line;
+                    spark-fill: HubModel.tray.spark-fill;
+                    level: HubModel.tray.level;
+                    icon: HubModel.tray.icon;
+                    tooltip: HubModel.tray.tooltip;
+                    label: HubModel.tray.label;
+                    clicked => {
+                        Nav.go(View.details, "");
+                    }
+                }
+            }
+        }
+    }
+    // `.list`'s bottom padding (4 px) and `.flyout-inner`'s (6 px), kept out
+    // of the scroll area, which differs from today while the list scrolls
+    // (rows clip 10 px above the bottom bar). With room below the last row
+    // inside it, Slint 1.19's own smooth scroll to a newly focused item
+    // (`publish_focus_item`) and the kit's `Reveal` both scroll the list and
+    // the animation ends after the next Tab, so `tab_through_the_hub` sees a
+    // bar control move it; at the content's end both are clamped alike.
+    // Remove this once the kit settles on one of the two scrolls.
+    Rectangle {
+        height: 10px;
+    }
+    BottomBar {
+        switch-text: HubModel.sign-in-text;
+        switch-checked: HubModel.sign-in-checked;
+        switch-enabled: HubModel.sign-in-enabled;
+        switch-tooltip: HubModel.sign-in-tooltip;
+        links: HubModel.links;
+        switch-toggled => {
+            HubModel.toggle-sign-in();
+        }
+        link-clicked(key) => {
+            if key == "history" {
+                Nav.go(View.history, "");
+            } else {
+                HubModel.open-log();
             }
         }
     }
