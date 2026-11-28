@@ -88,7 +88,24 @@ pub enum Font {
 const BUSY: &str = include_str!("../../fixtures/busy.json");
 
 fn busy() -> HostSnapshot {
-    serde_json::from_str(BUSY).expect("the busy fixture reads")
+    let mut snapshot = serde_json::from_str(BUSY).expect("the busy fixture reads");
+    example_icons(&mut snapshot);
+    snapshot
+}
+
+/// The fixtures name each app's icon relative to the spec's examples
+/// (`icons/voicedock.svg`), as today's preview reads them; they are made
+/// absolute here, as the real window gets them from the host, so every
+/// picture shows the real icons with no stage of its own.
+fn example_icons(snapshot: &mut HostSnapshot) {
+    let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec/examples");
+    for app in &mut snapshot.apps {
+        if let Some(icon) = app.icon.as_mut()
+            && Path::new(icon.as_str()).is_relative()
+        {
+            *icon = examples.join(icon.as_str()).to_string_lossy().into_owned();
+        }
+    }
 }
 
 /// Fills the gallery's drawings from the busy fixture (VoiceDock's, Lead
@@ -168,13 +185,17 @@ fn set_look(theme: &Theme<'_>, look: Look, font: Font) {
 }
 
 /// A snapshot from `native/fixtures/<name>.json` (debug builds read it
-/// from the source tree).
+/// from the source tree), its app icons the spec's examples
+/// (`example_icons`).
 pub fn fixture(name: &str) -> Result<HostSnapshot, String> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("fixtures")
         .join(format!("{name}.json"));
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+    let mut snapshot: HostSnapshot =
+        serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    example_icons(&mut snapshot);
+    Ok(snapshot)
 }
 
 /// The shell's window on the headless platform, showing `view` filled from

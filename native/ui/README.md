@@ -106,6 +106,7 @@ Navigation is `Nav.go(View, id)`, `Nav.back()` and `Nav.close()` in Slint.
 Each lane copies one of today's files (`app/ui/src/views/`) and its helpers in `model.ts` and `format.ts` (ported in `view::format`).
 "Today's" means the shipped window as it draws on 2026-11-26; where a spec says otherwise, the spec wins.
 Fixtures for shots: `busy`, `healthy`, `trouble`, `watching`, `updating`, `updateFailed`, `empty`, `pinned` and `compactTall` in `native/fixtures/`.
+Their app icons are relative to the spec's examples (`icons/voicedock.svg`, as today's preview reads them); `gallery::fixture` makes them absolute, so a shot shows the real icons with no stage of its own.
 
 ### Hub (copies `Hub.tsx`, the `HubHead` and `HubFoot` parts and `components/UpdateBanner.tsx`)
 

@@ -69,35 +69,15 @@ pub const SHOTS: &[super::router::Shot] = &[
     },
 ];
 
-/// A shot in Normal rows with the real app icons.
+/// A shot in Normal rows, in the short window.
 #[cfg(debug_assertions)]
 const fn shot(state: &'static str, fixture: &'static str) -> super::router::Shot {
-    super::router::Shot {
-        stage: Some(stage_icons),
-        ..super::router::Shot::of(state, fixture)
-    }
-}
-
-/// The fixtures name their icons relative to the spec's examples; a picture
-/// reads them from there, as the real window reads an absolute path.
-#[cfg(debug_assertions)]
-fn stage_icons(stage: &mut super::router::Stage) {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec/examples/icons");
-    for app in &mut stage.snapshot.apps {
-        let file = app
-            .icon
-            .as_deref()
-            .and_then(|p| std::path::Path::new(p).file_name());
-        if let Some(file) = file {
-            app.icon = Some(dir.join(file).to_string_lossy().into_owned());
-        }
-    }
+    super::router::Shot::of(state, fixture)
 }
 
 /// Stop pressed once on VoiceDock: its button says Confirm.
 #[cfg(debug_assertions)]
 fn stage_armed(stage: &mut super::router::Stage) {
-    stage_icons(stage);
     stage.confirms.press(
         super::confirm::key("voicedock", "stop", None),
         true,
@@ -108,7 +88,6 @@ fn stage_armed(stage: &mut super::router::Stage) {
 /// A sign-in entry that another program made: the box is disabled.
 #[cfg(debug_assertions)]
 fn stage_sign_in_foreign(stage: &mut super::router::Stage) {
-    stage_icons(stage);
     stage.snapshot.settings.sign_in_foreign = true;
 }
 
@@ -421,7 +400,6 @@ mod tests {
         use crate::ui::{TitleProbe, View};
         use slint::ComponentHandle;
         fn wide(stage: &mut super::super::router::Stage) {
-            stage_icons(stage);
             let s = &mut stage.snapshot;
             s.level = n8tray_core::model::LevelName::Attention;
             s.pinned_running = 12;

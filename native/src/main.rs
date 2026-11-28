@@ -327,13 +327,10 @@ mod tests {
 
     use super::*;
 
-    /// A snapshot from `native/fixtures/<name>.json`.
+    /// A snapshot from `native/fixtures/<name>.json`, its icons made
+    /// absolute (`view::gallery::fixture`).
     pub fn fixture(name: &str) -> HostSnapshot {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("fixtures")
-            .join(format!("{name}.json"));
-        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
-        serde_json::from_str(&text).unwrap_or_else(|e| panic!("{path:?}: {e}"))
+        crate::view::gallery::fixture(name).unwrap_or_else(|e| panic!("{e}"))
     }
 
     pub fn fixture_names() -> Vec<String> {
@@ -359,6 +356,26 @@ mod tests {
         for name in names {
             fixture(&name);
         }
+    }
+
+    /// Every app icon a fixture names is one of the spec's examples, found
+    /// and drawn as the window draws it, with no view rewriting the path.
+    #[test]
+    fn every_fixtures_icons_load() {
+        let mut icons = crate::view::icons::Icons::default();
+        let mut seen = 0;
+        for name in fixture_names() {
+            for app in fixture(&name).apps {
+                let Some(icon) = app.icon.as_deref() else {
+                    continue;
+                };
+                assert!(Path::new(icon).is_absolute(), "{name}: {icon}");
+                let image = icons.get(Some(icon));
+                assert!(image.size().width > 0, "{name}: {icon} did not load");
+                seen += 1;
+            }
+        }
+        assert!(seen > 10, "{seen}");
     }
 
     #[test]

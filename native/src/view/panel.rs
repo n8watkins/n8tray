@@ -22,34 +22,29 @@ use crate::ui::{
     BarAction, GlyphName, Level, OpenItem, PanelButton, PanelComponent, PanelSay, TableRow,
 };
 
-/// The view's golden images (`router::Shot`). Every stage first gives each
-/// app its example icon, as today's preview does (the fixtures name icons
-/// by a relative path no machine has).
+/// The view's golden images (`router::Shot`); the fixtures' icons are the
+/// spec's examples (`gallery::fixture` resolves them).
 #[cfg(debug_assertions)]
 pub const SHOTS: &[super::router::Shot] = &[
     super::router::Shot {
         app: "voicedock",
-        stage: Some(stage_icons),
         ..super::router::Shot::of("busy", "busy")
     },
     super::router::Shot {
         app: "voicedock",
         compact: true,
-        stage: Some(stage_icons),
         ..super::router::Shot::of("compact", "busy")
     },
     // The tall window (600) cuts the panel and scrolls.
     super::router::Shot {
         app: "voicedock",
         height: 600,
-        stage: Some(stage_icons),
         ..super::router::Shot::of("busy-tall", "busy")
     },
     // Every section in view: a height no setting has, for the picture only.
     super::router::Shot {
         app: "voicedock",
         height: WHOLE,
-        stage: Some(stage_icons),
         ..super::router::Shot::of("whole", "busy")
     },
     // Stop asks for a second click (an app's own action that confirms):
@@ -64,21 +59,18 @@ pub const SHOTS: &[super::router::Shot] = &[
     // log that is not there yet.
     super::router::Shot {
         app: "n8commentary",
-        stage: Some(stage_icons),
         ..super::router::Shot::of("off", "busy")
     },
     // An alert on the line, memory reported inside WSL, two processes.
     super::router::Shot {
         app: "leadscraper",
         height: WHOLE,
-        stage: Some(stage_icons),
         ..super::router::Shot::of("alert", "busy")
     },
     // Failed, with problem components and no history.
     super::router::Shot {
         app: "voicedock",
         height: WHOLE,
-        stage: Some(stage_icons),
         ..super::router::Shot::of("trouble", "trouble")
     },
     // Busy with an action, notes, a GPU line, a long name and a long
@@ -92,7 +84,6 @@ pub const SHOTS: &[super::router::Shot] = &[
     // The PowerShell tray manages the apps: the panel keeps its buttons.
     super::router::Shot {
         app: "n8hotkeys",
-        stage: Some(stage_icons),
         ..super::router::Shot::of("watching", "watching")
     },
 ];
@@ -103,21 +94,8 @@ pub const SHOTS: &[super::router::Shot] = &[
 #[cfg(debug_assertions)]
 const WHOLE: u32 = 1400;
 
-/// The example icons of `spec/examples/icons`, by app id.
-#[cfg(debug_assertions)]
-fn stage_icons(stage: &mut super::router::Stage) {
-    for app in &mut stage.snapshot.apps {
-        app.icon = Some(format!(
-            "{}/../spec/examples/icons/{}.svg",
-            env!("CARGO_MANIFEST_DIR"),
-            app.id
-        ));
-    }
-}
-
 #[cfg(debug_assertions)]
 fn stage_armed(stage: &mut super::router::Stage) {
-    stage_icons(stage);
     let now = Instant::now();
     for (action, component) in [("stop", None), ("engine.stop", Some("kokoro"))] {
         stage
@@ -142,7 +120,6 @@ fn voicedock<'a>(stage: &'a mut super::router::Stage) -> &'a mut AppView {
 
 #[cfg(debug_assertions)]
 fn stage_full(stage: &mut super::router::Stage) {
-    stage_icons(stage);
     let app = voicedock(stage);
     app.name = "VoiceDock Studio Edition With A Very Long Name".into();
     app.pending = Some("Restarting".into());
