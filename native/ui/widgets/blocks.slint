@@ -57,10 +57,12 @@ export component ComponentRow {
         background: Theme.line;
     }
 
+    // `padding: 7px 12px` under a `border-top: 1px` that takes a pixel of
+    // the row's height, as CSS's does (the line is drawn at the top).
     l := VerticalLayout {
         padding-left: 12px;
         padding-right: 12px;
-        padding-top: 7px;
+        padding-top: root.first ? 7px : 8px;
         padding-bottom: 7px;
 
         HorizontalLayout {
@@ -365,7 +367,9 @@ component Cell {
         height: root.height;
         padding-left: root.first ? 12px : 6px;
         padding-right: root.last ? 10px : 6px;
-        padding-top: 4px;
+        // A `td`'s `border-top: 1px` takes a pixel of its row, above
+        // `padding: 4px`; a `th` has none.
+        padding-top: root.header ? 4px : 5px;
         padding-bottom: 4px;
 
         if !root.wraps: HorizontalLayout {

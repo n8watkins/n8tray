@@ -214,10 +214,12 @@ export component ToggleRow {
         background: Theme.line;
     }
 
+    // `padding: 7px 12px` under a `border-top: 1px` that takes a pixel of
+    // the row's height, as CSS's does (the line is drawn at the top).
     l := HorizontalLayout {
         padding-left: 12px;
         padding-right: 12px;
-        padding-top: 7px;
+        padding-top: root.first ? 7px : 8px;
         padding-bottom: 7px;
         spacing: 10px;
 
