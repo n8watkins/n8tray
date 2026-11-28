@@ -25,6 +25,10 @@ export global HubModel {
     in-out property <string> alert;
     // The PowerShell tray manages the apps: the watching note shows.
     in-out property <bool> watching;
+    // Its words (set once: the link flows after them), and what it opens.
+    in-out property <string> watch-text;
+    in-out property <[string]> watch-words;
+    in-out property <string> watch-more;
     // The update banner (`format::update_line`).
     in-out property <bool> update-shown;
     in-out property <bool> update-problem;

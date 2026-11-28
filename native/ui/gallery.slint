@@ -84,6 +84,7 @@ component GalleryPage inherits VerticalLayout {
     in property <string> chart-memory-fill;
     in property <string> chart-cpu-line;
     in property <[RowData]> live-rows;
+    in property <[string]> watch-words;
     property <bool> all: root.only == "";
     alignment: start;
 
@@ -596,6 +597,7 @@ component GalleryPage inherits VerticalLayout {
                     Banner {
                         glyph: GlyphName.info;
                         text: "Your PowerShell N8 Tray is managing these apps. This app is watching only; nothing here starts or stops apps.";
+                        words: root.watch-words;
                         link: "Learn more";
                         link-open: "Show less";
                         more: "Both trays read the same apps. Until this one replaces the PowerShell tray, it only shows their state and memory, so the two never fight over an app. Exit the PowerShell N8 Tray and this one manages them.";
@@ -603,6 +605,7 @@ component GalleryPage inherits VerticalLayout {
                     Banner {
                         glyph: GlyphName.info;
                         text: "Your PowerShell N8 Tray is managing these apps. This app is watching only; nothing here starts or stops apps.";
+                        words: root.watch-words;
                         link: "Learn more";
                         link-open: "Show less";
                         more: "Both trays read the same apps. Until this one replaces the PowerShell tray, it only shows their state and memory, so the two never fight over an app. Exit the PowerShell N8 Tray and this one manages them.";
@@ -878,6 +881,8 @@ export component Gallery inherits Window {
     in property <string> chart-memory-fill;
     in property <string> chart-cpu-line;
     in property <[RowData]> live-rows;
+    // The watching note's words (`hub::WATCH_NOTE`).
+    in property <[string]> watch-words;
 
     // Its full size: a headless render uses it, a window scrolls to it.
     out property <length> content-width: page.preferred-width;
@@ -902,6 +907,7 @@ export component Gallery inherits Window {
             chart-memory-fill: root.chart-memory-fill;
             chart-cpu-line: root.chart-cpu-line;
             live-rows: root.live-rows;
+            watch-words: root.watch-words;
         }
     }
 

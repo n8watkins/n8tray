@@ -12,8 +12,8 @@ export enum BannerKind { info, attention, problem }
 // while something downloads, and up to two buttons. The buttons sit beside
 // the text, 8 px from it, as today's `margin-left: auto`; when the text
 // would get less than 170 px beside them (`flex: 1 1 170px`) they go under
-// it, 8 px down, at the right. A `link` ("Learn more") is a link of its own
-// on its own line under the text, and opens `more` under it.
+// it, 8 px down, at the right. A `link` ("Learn more") follows the text on
+// its last line, as today's inline link does, and opens `more` under it.
 export component Banner {
     in property <BannerKind> kind: BannerKind.info;
     in property <GlyphName> glyph: GlyphName.none;
@@ -27,6 +27,9 @@ export component Banner {
     // The link's words while closed and open, and the paragraph it opens.
     in property <string> link;
     in property <string> link-open;
+    // With a link: the paragraph's words, split at its spaces (Rust's
+    // `view::format::words`), so the link flows after the last one.
+    in property <[string]> words;
     in property <string> more;
     in-out property <bool> expanded;
     // Announced when it appears or its text changes: a problem at once, the
@@ -67,6 +70,19 @@ export component Banner {
         font-size: Theme.text-small;
         accessible-role: none;
     }
+    // A space's width in the paragraph's font, between two letters.
+    space := Text {
+        visible: false;
+        text: "x x";
+        font-size: Theme.text-small;
+        accessible-role: none;
+    }
+    nospace := Text {
+        visible: false;
+        text: "xx";
+        font-size: Theme.text-small;
+        accessible-role: none;
+    }
 
     Rectangle {
         border-radius: Theme.radius-card;
@@ -101,14 +117,27 @@ export component Banner {
                 horizontal-stretch: 1;
                 alignment: center;
 
-                WrapLabel {
+                if root.link == "": WrapLabel {
                     text: root.text;
                     font-size: Theme.text-small;
                     line-height-factor: root.factor;
-                    min-height: self.font-size * (root.link != "" ? Theme.line-height-note : Theme.line-height);
+                    min-height: self.font-size * Theme.line-height;
                 }
-                if root.link != "": HorizontalLayout {
-                    alignment: start;
+                // The paragraph with its link at the end of its last line,
+                // as today's inline `<button>`: the words flow and wrap at
+                // the spaces between them, each line a 1.45 line box.
+                if root.link != "": FlexboxLayout {
+                    spacing-horizontal: space.preferred-width - nospace.preferred-width;
+                    spacing-vertical: 0px;
+                    accessible-role: AccessibleRole.text;
+                    accessible-label: root.text;
+                    for word in root.words: Label {
+                        text: word;
+                        min-width: self.preferred-width;
+                        font-size: Theme.text-small;
+                        height: self.font-size * Theme.line-height-note;
+                        overflow: clip;
+                    }
                     TextLink {
                         text: root.expanded ? root.link-open : root.link;
                         expandable: true;

@@ -184,6 +184,7 @@ Their app icons are relative to the spec's examples (`icons/voicedock.svg`, as t
 - `Pill`, `Tag`, `AppIcon` (28, 24 small, 18 compact, with the level dot), `ProgressBar`.
 - `IconButton`, `SmallButton` (plain, primary, or a toggle that looks primary when `checked`), `LinkButton`, `LinkSwitch`, `TextLink`, `HeadLink`; armed buttons show `armed`, which Rust sets.
 - `Banner` (`BannerKind` info, attention or problem; glyph, text, detail, progress, two buttons, a link that opens more text).
+  With a `link`, pass the paragraph's `words` too (`format::words(text)`, set once, not on every fill): the words flow in 1.45 line boxes and the link follows the last one on its line, as today's inline "Learn more".
 - `Section` (a labelled region), `SectionHeading` (with `has-links` for links at the right, or `plain` with an app icon for the history), `GroupHeading`, `Divider`, `Switch`, `ToggleRow`.
 - `Say` with `SayLine`s, `ActionsRow`, `ComponentRow`, `OpenLinks`, `KeyValues` (values wrap), `WarningList`, `Table` (text cells wrap, number columns keep their width; row labels from `view::format::table_row_label`).
   A first cell's `small` follows the name on its line while both fit, as today's inline `<small>`, and goes under the name when not; the first column's least width is the longer of the two longest words, never more than the room the other columns leave in a section (`card-width`), so the table never runs past its card (a word wider than that breaks inside).

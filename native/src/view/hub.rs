@@ -100,6 +100,11 @@ fn sign_in_foreign(name: &str) -> String {
     format!("Another program made the sign-in entry; {name} leaves it alone")
 }
 
+/// The watching note (`legacyTray`), as today's `WatchNote`, and what its
+/// "Learn more" opens. Both name the old PowerShell tray, not this product.
+pub const WATCH_NOTE: &str = "Your PowerShell N8 Tray is managing these apps. This app is watching only; nothing here starts or stops apps.";
+pub const WATCH_MORE: &str = "Both trays read the same apps. Until this one replaces the PowerShell tray, it only shows their state and memory, so the two never fight over an app. Exit the PowerShell N8 Tray and this one manages them.";
+
 /// Shown while the hub has no app at all.
 const EMPTY: &str = "No apps yet. An app appears here once it installs its manifest.";
 
@@ -309,6 +314,11 @@ pub fn wire(ui: &dyn Models) {
     // History then Log, set once: links made anew on every fill would take
     // the keyboard focus from them at each refresh.
     model.set_links(ModelRc::from(Rc::new(VecModel::from(links()))));
+    // The note's words, set once too: made anew, its link would lose the
+    // focus at each refresh.
+    model.set_watch_text(WATCH_NOTE.into());
+    model.set_watch_words(format::words(WATCH_NOTE));
+    model.set_watch_more(WATCH_MORE.into());
     model.on_update_secondary_clicked(|| intent::send(Intent::OpenHost(HostTarget::ReleasePage)));
     model.on_update_primary_clicked(|| intent::send(Intent::InstallUpdate));
     model.on_toggle_sign_in(|| intent::send(Intent::ToggleSignIn));
@@ -388,6 +398,24 @@ mod tests {
         assert_eq!(stops.in_bars, 6, "{stops:?}");
         // Twelve apps with a button each, then N8 Tray's row.
         assert_eq!(stops.in_list, 25, "{stops:?}");
+    }
+
+    /// The watching note's "Learn more", now inline at the end of its last
+    /// line, still takes the focus in the list, before the rows (which have
+    /// no button while watching) and N8 Tray's own row.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn the_watching_notes_link_takes_the_focus() {
+        use super::super::gallery::tests::tab_through;
+        use crate::ui::View;
+        let shot = super::super::router::Shot {
+            height: 200,
+            ..shot("watching-low", "watching")
+        };
+        let stops = tab_through(View::Hub, &shot);
+        assert!(stops.bottom > 0.0, "{stops:?}");
+        let rows = format::main_view_apps(&fixture("watching").apps).len();
+        assert_eq!(stops.in_list, 1 + rows + 1, "{stops:?}");
     }
 
     /// The summary is never cut beside the pill ("Needs attention" is the

@@ -136,6 +136,13 @@ pub fn title_summary(pinned_running: u32, pinned_total: u32, n8_mb: f64) -> Stri
     }
 }
 
+/// A paragraph's words, split at its spaces, for a `Banner` whose link
+/// flows after its last word (`words`).
+pub fn words(text: &str) -> slint::ModelRc<slint::SharedString> {
+    let words: Vec<slint::SharedString> = text.split_whitespace().map(Into::into).collect();
+    slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(words)))
+}
+
 /// What a screen reader says for the summary: the words in full, as the
 /// tray's status line has them ("3 of 4 running · N8 1.9 GB in all",
 /// "Nothing pinned · N8 1.9 GB in all"), never "3 slash 4".

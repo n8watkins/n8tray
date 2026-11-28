@@ -42,10 +42,11 @@ export component HubView inherits VerticalLayout {
                 padding-bottom: Theme.banner-gap;
                 Banner {
                     glyph: GlyphName.info;
-                    text: "Your PowerShell N8 Tray is managing these apps. This app is watching only; nothing here starts or stops apps.";
+                    text: HubModel.watch-text;
+                    words: HubModel.watch-words;
                     link: "Learn more";
                     link-open: "Show less";
-                    more: "Both trays read the same apps. Until this one replaces the PowerShell tray, it only shows their state and memory, so the two never fight over an app. Exit the PowerShell N8 Tray and this one manages them.";
+                    more: HubModel.watch-more;
                 }
             }
             if HubModel.update-shown: VerticalLayout {

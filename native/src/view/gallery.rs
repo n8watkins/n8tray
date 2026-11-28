@@ -141,6 +141,7 @@ fn fill(ui: &Gallery) {
                 .collect::<Vec<_>>(),
         )))
     };
+    ui.set_watch_words(format::words(hub::WATCH_NOTE));
     ui.set_spark_lines(strings(|d| &d.line));
     ui.set_spark_fills(strings(|d| &d.fill));
     let (memory, cpu) = history("voicedock");
